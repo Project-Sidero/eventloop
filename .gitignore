@@ -1,0 +1,17 @@
+.dub
+docs.json
+__dummy.html
+docs/
+eventloop.so
+eventloop.dylib
+eventloop.dll
+eventloop.a
+eventloop.lib
+eventloop-test-*
+*.exe
+*.o
+*.obj
+*.lst
+.idea/
+eventloop.iml
+*.exp

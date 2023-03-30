@@ -1,0 +1,35 @@
+{
+    "authors": [
+        "Richard (Rikki) Andrew Cattermole"
+    ],
+    "copyright": "Copyright © 2022-2023, Richard Cattermole",
+	"description": "Event loop & threads for -betterC and beyond.",
+	"license": "Artistic-2.0",
+	"name": "sidero_eventloop",
+    "dflags": ["-preview=dip1000", "-preview=dip25"],
+    "dependencies": {
+        "sidero_base": "*"
+    },
+    "dflags-dmd": ["-allinst"],
+    "configurations": [
+        {
+            "name": "library",
+            "targetType": "dynamicLibrary",
+            "versions": ["DynamicSideroEventLoop"],
+            "dflags-windows-ldc": ["--fvisibility=public"],
+            "buildOptions": [
+                "betterC"
+            ]
+        },
+        {
+            "name": "static",
+            "targetType": "staticLibrary",
+            "buildOptions": [
+                "betterC"
+            ]
+        },
+        {
+            "name": "unittest"
+        }
+    ]
+}
