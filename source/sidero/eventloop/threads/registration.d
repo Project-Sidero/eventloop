@@ -1,25 +1,20 @@
 module sidero.eventloop.threads.registration;
 
-void attachThisThread() {
-    // attachCount++;
-    // if attachCount == 1
-    // tell our thread implementation & all external thread registration mechanisms
-}
+export nothrow @nogc:
 
-void detachThisThread() {
-    // attachCount--;
-    // when attachCount == 0
-    // tell our thread implementation (which in turn calls ExternalThreadRegistration.doneWithThread)
-}
+///
+alias OnAttachThisFunction = extern (C) void function();
+///
+alias OnDetachThisFunction = extern (C) void function();
+///
+alias IsThreadRegisteredFunction = extern (C) bool function();
 
-alias OnAttachThisFunction = extern(C) void function();
-alias OnDetachThisFunction = extern(C) void function();
-alias IsThreadRegisteredFunction = extern(C) bool function();
-
-void registerThreadRegistration(void* key, OnAttachThisFunction onAttach, OnDetachThisFunction onDetach, IsThreadRegisteredFunction isRegistered) {
+///
+void registerThreadRegistration(void* key, OnAttachThisFunction onAttach, OnDetachThisFunction onDetach,
+        IsThreadRegisteredFunction isRegistered) {
     rwlock.pureWriteLock;
     scope (exit)
-    rwlock.writeUnlock;
+        rwlock.writeUnlock;
 
     ThreadSystemRegistrationInfo* current = threadSystemRegistrationLL;
     ThreadSystemRegistrationInfo** parent = &threadSystemRegistrationLL;
@@ -52,10 +47,11 @@ void registerThreadRegistration(void* key, OnAttachThisFunction onAttach, OnDeta
     }
 }
 
+///
 void deregisterThreadRegistration(void* key) {
     rwlock.pureWriteLock;
     scope (exit)
-    rwlock.writeUnlock;
+        rwlock.writeUnlock;
 
     ThreadSystemRegistrationInfo* current = threadSystemRegistrationLL;
     ThreadSystemRegistrationInfo** parent = &threadSystemRegistrationLL;
@@ -73,14 +69,31 @@ void deregisterThreadRegistration(void* key) {
 
 package(sidero.eventloop.threads):
 
-struct ExternalThreadRegistration {
-    private{
-        ptrdiff_t attachCount;
+void onAttachOfThread() {
+    rwlock.pureReadLock;
+    scope (exit)
+    rwlock.pureReadUnlock;
+
+    ThreadSystemRegistrationInfo* current = threadSystemRegistrationLL;
+
+    while(current !is null) {
+        if (current.attachFunc !is null)
+            current.attachFunc();
+        current = current.next;
     }
+}
 
-    // called outside this module once our representation is done for
-    void doneWithThread() {
+void onDetachOfThread() {
+    rwlock.pureReadLock;
+    scope (exit)
+    rwlock.pureReadUnlock;
 
+    ThreadSystemRegistrationInfo* current = threadSystemRegistrationLL;
+
+    while(current !is null) {
+        if (current.detachFunc !is null)
+            current.detachFunc();
+        current = current.next;
     }
 }
 
@@ -102,3 +115,4 @@ struct ThreadSystemRegistrationInfo {
     OnDetachThisFunction detachFunc;
     IsThreadRegisteredFunction isThisRegisteredFunc;
 }
+

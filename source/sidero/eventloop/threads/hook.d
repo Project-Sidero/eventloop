@@ -1,9 +1,10 @@
 module sidero.eventloop.threads.hook;
 import sidero.eventloop.threads.registration;
+import sidero.eventloop.threads.osthread;
 
 version (D_BetterC) {
 } else {
-    import core.thread.osthread : thread_attachThis, Thread;
+    import core.thread.osthread : thread_attachThis;
     import core.thread.threadbase : thread_detachThis;
 
     extern (C) void rt_moduleTlsCtor();
@@ -22,10 +23,13 @@ version (D_BetterC) {
         }
 
         static extern (C) bool isRegistered() {
+            import core.thread.osthread : Thread;
+
             return Thread.getThis() !is null;
         }
 
-        registerThreadRegistration(&globalThreadSystemKey, &onAttach, &onDetach, &isRegistered);
+        registerThreadRegistration(&globalThreadSystemKey, cast(OnAttachThisFunction)&onAttach,
+                cast(OnDetachThisFunction)&onDetach, cast(IsThreadRegisteredFunction)&isRegistered);
     }
 
     pragma(crt_destructor) extern (C) void register_sidero_threads_deregister() {
@@ -33,10 +37,12 @@ version (D_BetterC) {
     }
 
     static this() {
-        attachThisThread;
+        Thread self = Thread.self;
+        self.externalAttach;
     }
 
     static ~this() {
-        detachThisThread;
+        Thread self = Thread.self;
+        self.externalDetach;
     }
 }

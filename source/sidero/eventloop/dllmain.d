@@ -3,16 +3,20 @@ export:
 
 version (DynamicSideroEventLoop) {
     version (Windows) {
-        version (D_BetterC) {
-            import core.sys.windows.windef : HINSTANCE, BOOL, DWORD, LPVOID;
+        import core.sys.windows.windef : HINSTANCE, BOOL, DWORD, LPVOID;
 
-            extern (Windows) BOOL DllMain(HINSTANCE hInstance, DWORD ulReason, LPVOID reserved) {
-                return true;
+        extern (Windows) BOOL DllMain(HINSTANCE hInstance, DWORD ulReason, LPVOID reserved) {
+            import sidero.eventloop.threads.osthread;
+            import core.sys.windows.winnt : DLL_THREAD_ATTACH, DLL_THREAD_DETACH;
+
+            if (ulReason == DLL_THREAD_ATTACH) {
+                Thread self = Thread.self;
+                self.externalAttach;
+            } else if (ulReason == DLL_THREAD_DETACH) {
+                Thread self = Thread.self;
+                self.externalDetach;
             }
-        } else {
-            import core.sys.windows.dll;
-
-            mixin SimpleDllMain;
+            return true;
         }
     }
 }
