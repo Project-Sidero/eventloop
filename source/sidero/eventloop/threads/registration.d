@@ -74,7 +74,9 @@ void deregisterThreadRegistration(void* key) {
 package(sidero.eventloop.threads):
 
 struct ExternalThreadRegistration {
-    private ptrdiff_t attachCount;
+    private{
+        ptrdiff_t attachCount;
+    }
 
     // called outside this module once our representation is done for
     void doneWithThread() {
