@@ -8,6 +8,8 @@ import sidero.base.datetime.duration;
 
 alias ThreadEntryFunction = void function() nothrow;
 
+enum ThreadHandleIdentifier = SystemHandleType.from("thread");
+
 struct Thread {
     private {
         import core.atomic : atomicOp;
@@ -34,7 +36,14 @@ export @safe nothrow @nogc:
             allThreads.remove(state.handle.handle);
 
             if (state.owns) {
-                // TODO: destroy handle
+                // destroy handle (not needed with pthreads)
+
+                version(Windows) {
+                    import core.sys.windows.winbase : CloseHandle;
+                    import core.sys.windows.basetsd : HANDLE;
+
+                    auto success = CloseHandle(cast(HANDLE)state.handle.handle);
+                }
             }
 
             threadAllocator.deallocate((cast(void*)state)[0 .. State.sizeof]);
@@ -62,6 +71,9 @@ export @safe nothrow @nogc:
         // pthread_create
         // CreateThread
 
+        // for pthreads use our own entry function to wrap the actual one.
+        // use pthread_cleanup_push and pthread_cleanup_pop to detach externally
+
         //allThreads[cast(void*)handle] = ret.state;
         //externalAttach
         assert(0);
@@ -82,10 +94,49 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Thread self() {
-        // pthread_self
-        // GetCurrentThread
-        assert(0);
+    static Thread self() @trusted {
+        rwlock.pureReadLock;
+
+        version(Windows) {
+            import core.sys.windows.winbase : GetCurrentThread;
+            import core.sys.windows.basetsd : HANDLE;
+            HANDLE handle = GetCurrentThread();
+        } else version(Posix) {
+            import core.sys.posix.pthread : pthread_self, pthread_t;
+            pthread_t handle = pthread_self();
+        }
+
+        {
+            auto ifExists = allThreads.get(cast(void*)handle, null);
+
+            if (ifExists) {
+                Thread ret;
+                ret.state = ifExists.get;
+                ret.__ctor(ret);
+
+                rwlock.pureReadUnlock;
+                return ret;
+            }
+        }
+
+        {
+            rwlock.pureConvertReadToWrite;
+
+            void[] memory = threadAllocator.allocate(Thread.State.sizeof);
+            assert(memory.length == Thread.State.sizeof);
+
+            Thread.State* state = cast(Thread.State*)(memory.ptr);
+            *state = Thread.State.init;
+
+            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+
+            Thread ret;
+            ret.state = state;
+            ret.__ctor(ret);
+
+            rwlock.writeUnlock;
+            return ret;
+        }
     }
 
     ///
