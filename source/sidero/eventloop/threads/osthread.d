@@ -9,6 +9,7 @@ import sidero.base.datetime.duration;
 ///
 enum ThreadHandleIdentifier = SystemHandleType.from("thread");
 
+///
 enum {
     ///
     EarlyThreadReturnException = ErrorMessage("ETRE", "Thread result returned early"),
@@ -157,18 +158,58 @@ export @safe nothrow @nogc:
         return ret;
     }
 
-    ///
-    static void yield() {
-        // sched_yield
-        // SwitchToThread
-        assert(0);
+    /// Tells the kernel that this thread can wait before continuing its work
+    static void yield() @trusted {
+        version (Windows) {
+            import core.sys.windows.windows : SwitchToThread;
+
+            SwitchToThread();
+        } else version (Posix) {
+            import core.sys.posix.sched : sched_yield;
+
+            sched_yield();
+        }
     }
 
     ///
-    static void sleep(Duration minimum) {
-        // nanosleep
-        // SleepEx
-        assert(0);
+    static ErrorResult sleep(Duration timeout) @trusted {
+        if (timeout <= Duration.init)
+            return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
+
+        version (Windows) {
+            import core.sys.windows.windows : SleepEx, WAIT_IO_COMPLETION;
+
+            auto result = SleepEx(cast(uint)timeout.totalMilliSeconds(), true);
+
+            if (result == WAIT_IO_COMPLETION)
+                return ErrorResult(EarlyThreadReturnException("Thread sleep completed early due APC IO execution"));
+        } else version (Posix) {
+            import core.sys.posix.time : clock_gettime, CLOCK_REALTIME, nanosleep;
+            import core.stdc.time : timespec;
+            import core.stdc.errno : EINTR, errno;
+
+            long secs = timeout.totalSeconds();
+            long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
+
+            timespec ts;
+            if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
+
+            ts.tv_sec += secs;
+            ts.tv_nsec += nsecs;
+
+            errno = 0;
+            auto result = nanosleep(ts, null);
+
+            if (result != 0) {
+                if (errno == EINTR)
+                    return ErrorResult(EarlyThreadReturnException("Thread sleep completed early due signal execution"));
+                else
+                    return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+            }
+        }
+
+        return ErrorResult.init;
     }
 
     ///
