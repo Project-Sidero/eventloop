@@ -93,6 +93,10 @@ export @safe nothrow @nogc:
         *state = Thread.State.init;
         state.entry = cast(void*)entryFunction;
 
+        Thread ret;
+        ret.state = state;
+        ret.__ctor(ret);
+
         EntryFunctionArgs!Args* efa;
         void[] efaMemory;
 
@@ -108,6 +112,8 @@ export @safe nothrow @nogc:
         void cleanup() {
             efa.destroy;
             state.destroy;
+
+            ret.state = null;
 
             threadAllocator.deallocate(memory);
             threadAllocator.deallocate(efaMemory);
@@ -149,12 +155,8 @@ export @safe nothrow @nogc:
             }
         }
 
-        state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-        state.setupCleanup;
-
-        Thread ret;
-        ret.state = state;
-        ret.__ctor(ret);
+        mutex.pureLock;
+        mutex.unlock;
         return ret;
     }
 
@@ -217,10 +219,11 @@ export @safe nothrow @nogc:
         mutex.pureLock;
 
         version (Windows) {
-            import core.sys.windows.winbase : GetCurrentThread;
-            import core.sys.windows.basetsd : HANDLE;
+            import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
+                HANDLE, GetCurrentThread, DuplicateHandle;
 
             HANDLE handle = GetCurrentThread();
+            DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
         } else version (Posix) {
             import core.sys.posix.pthread : pthread_self, pthread_t;
 
@@ -249,7 +252,6 @@ export @safe nothrow @nogc:
             *state = Thread.State.init;
 
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-            state.setupCleanup;
 
             Thread ret;
             ret.state = state;
@@ -340,22 +342,6 @@ private:
         shared(bool) isRunning;
 
         void* entry, args;
-
-    nothrow @nogc:
-
-        void setupCleanup() scope @trusted {
-            version (Posix) {
-                import core.sys.posix.pthread : pthread_cleanup_push;
-                import core.atomic : atomicStore;
-
-                static void cleanup(State* state) {
-                    atomicStore(state.isRunning, false);
-                }
-
-                atomicStore(state.isRunning, true);
-                pthread_cleanup_push(&cleanup, cast(void*)&this);
-            }
-        }
     }
 }
 
@@ -379,13 +365,20 @@ version (Windows) {
     import core.sys.windows.windows : DWORD;
 
     extern (Windows) DWORD start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state) {
+        import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
+            HANDLE, GetCurrentThread, DuplicateHandle;
+
+        HANDLE handle = GetCurrentThread();
+        DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
+
         Thread self;
         self.state = cast(Thread.State*)state;
         self.__ctor(self);
 
         EFA efa = *cast(EFA*)self.state.args;
-        allThreads[self.state.handle.handle] = self.state;
 
+        self.state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+        allThreads[self.state.handle.handle] = self.state;
         mutex.unlock;
 
         self.externalAttach;
@@ -393,16 +386,31 @@ version (Windows) {
         return 0;
     }
 } else version (Posix) {
-    // our start routine
-    extern (C) void* start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state) {
-        assert(state !is null);
+    static extern (C) void cleanupPosixRunning(void* state) {
+        import core.atomic : atomicStore;
+
         Thread self;
-        self.state = state;
+        self.state = cast(Thread.State*)state;
         self.__ctor(self);
 
-        EFA efa = *cast(EFA*)self.state.args;
-        allThreads[self.state.handle.handle] = self.state;
+        atomicStore(state.isRunning, false);
+    }
 
+    extern (C) void* start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state_) {
+        import core.sys.posix.pthread : pthread_cleanup_push, pthread_self, pthread_t;
+        import core.atomic : atomicStore;
+
+        assert(state_ !is null);
+        pthread_t handle = pthread_self();
+        Thread.State* state = state_;
+
+        EFA efa = *cast(EFA*)state.args;
+
+        atomicStore(state.isRunning, true);
+        pthread_cleanup_push(&cleanupPosixRunning, cast(void*)state);
+
+        state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+        allThreads[state.handle.handle] = state;
         mutex.unlock;
 
         self.externalAttach;
