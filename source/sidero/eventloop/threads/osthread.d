@@ -121,7 +121,7 @@ export @safe nothrow @nogc:
         }
 
         version (Windows) {
-            import core.sys.windows.windows : CreateThread;
+            import core.sys.windows.windows : CreateThread, CloseHandle;
 
             auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, 0, null);
             if (handle is null) {
@@ -156,6 +156,10 @@ export @safe nothrow @nogc:
         }
 
         mutex.pureLock;
+        version (Windows) {
+            // on Windows the handle gets duplicated during startup, so gotta make win32 reference count zero
+            CloseHandle(handle);
+        }
         mutex.unlock;
         return ret;
     }
