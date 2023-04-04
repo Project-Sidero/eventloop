@@ -6,10 +6,15 @@ import sidero.base.datetime.duration;
 // https://idea.popcount.org/2017-02-20-epoll-is-fundamentally-broken-12/ EPOLLONESHOT EPOLLEXCLUSIVE
 // https://idea.popcount.org/2017-03-20-epoll-is-fundamentally-broken-22/
 
-alias ThreadEntryFunction = void function() nothrow;
-
+///
 enum ThreadHandleIdentifier = SystemHandleType.from("thread");
 
+enum {
+    ///
+    EarlyThreadReturnException = ErrorMessage("ETRE", "Thread result returned early"),
+}
+
+///
 struct Thread {
     private {
         import core.atomic : atomicOp;
@@ -23,22 +28,22 @@ export @safe nothrow @nogc:
     this(scope ref Thread other) scope @trusted {
         this.tupleof = other.tupleof;
 
-       if (this.state !is null)
+        if (this.state !is null)
             atomicOp!"+="(state.refCount, 1);
     }
 
     ///
     ~this() scope @trusted {
         if (this.state !is null && atomicOp!"-="(state.refCount, 1) == 0 && !this.isRunning) {
-            rwlock.pureWriteLock;
             externalDetach;
 
+            mutex.pureLock;
             allThreads.remove(state.handle.handle);
 
             if (state.owns) {
                 // destroy handle (not needed with pthreads)
 
-                version(Windows) {
+                version (Windows) {
                     import core.sys.windows.winbase : CloseHandle;
                     import core.sys.windows.basetsd : HANDLE;
 
@@ -47,7 +52,7 @@ export @safe nothrow @nogc:
             }
 
             threadAllocator.deallocate((cast(void*)state)[0 .. State.sizeof]);
-            rwlock.writeUnlock;
+            mutex.unlock;
         }
     }
 
@@ -57,26 +62,98 @@ export @safe nothrow @nogc:
     }
 
     ///
-    bool isRunning() scope const {
+    bool isRunning() scope const @trusted {
         if (isNull)
             return false;
 
-        // pthread_tryjoin_np
-        // GetExitCodeThread
-        assert(0);
+        version(Windows) {
+            import core.sys.windows.windows : HANDLE, GetExitCodeThread, STILL_ACTIVE;
+            uint result;
+            if (GetExitCodeThread(cast(HANDLE)state.handle.handle, &result) == STILL_ACTIVE)
+                return true;
+        } else version(Posix) {
+            import core.sys.posix.pthread : pthread_tryjoin_np, pthread_t;
+            // ok this is almost certainly wrong... sigh
+            if (pthread_tryjoin_np(cast(pthread_t)state.handle.handle, null) == 0)
+                return true;
+        }
+
+        return false;
     }
 
     ///
-    static Result!Thread create(ThreadEntryFunction entryFunction, size_t stackSize = 0) {
-        // pthread_create
-        // CreateThread
+    static Result!Thread create(Args...)(size_t stackSize, void function(Args) nothrow entryFunction, Args args) @trusted {
+        mutex.pureLock;
 
-        // for pthreads use our own entry function to wrap the actual one.
-        // use pthread_cleanup_push and pthread_cleanup_pop to detach externally
+        void[] memory = threadAllocator.allocate(Thread.State.sizeof);
+        assert(memory.length == Thread.State.sizeof);
 
-        //allThreads[cast(void*)handle] = ret.state;
-        //externalAttach
-        assert(0);
+        Thread.State* state = cast(Thread.State*)(memory.ptr);
+        *state = Thread.State.init;
+        state.entry = cast(void*)entryFunction;
+
+        EntryFunctionArgs!Args* efa;
+        void[] efaMemory;
+
+        {
+            efaMemory = threadAllocator.allocate(EntryFunctionArgs!Args.sizeof);
+            assert(efaMemory.length == EntryFunctionArgs!Args.sizeof);
+            state.args = efaMemory.ptr;
+
+            efa = cast(EntryFunctionArgs!Args*)state.args;
+            efa.args = args;
+        }
+
+        void cleanup() {
+            efa.destroy;
+            state.destroy;
+
+            threadAllocator.deallocate(memory);
+            threadAllocator.deallocate(efaMemory);
+            mutex.unlock;
+        }
+
+        version (Windows) {
+            import core.sys.windows.windows : CreateThread;
+
+            auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, 0, null);
+            if (handle is null) {
+                cleanup;
+                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+            }
+        } else version (Posix) {
+            import core.sys.posix.pthread : pthread_create, pthread_t, pthread_attr_t, pthread_attr_init,
+                pthread_attr_destroy, pthread_attr_setstacksize;
+
+            int s;
+            pthread_attr_t attr;
+
+            s = pthread_attr_init(&attr);
+            if (s != 0) {
+                cleanup;
+                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+            }
+            s = pthread_attr_setstacksize(&attr, stackSize);
+            if (s != 0) {
+                cleanup;
+                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+            }
+
+            pthread_t handle;
+            s = pthread_create(&handle, attr, &start_routine!(EntryFunctionArgs!Args), cast(void*)state);
+            s |= pthread_attr_destroy(&attr);
+            if (s != 0) {
+                cleanup;
+                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+            }
+        }
+
+        state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+
+        Thread ret;
+        ret.state = state;
+        ret.__ctor(ret);
+        return ret;
     }
 
     ///
@@ -95,16 +172,19 @@ export @safe nothrow @nogc:
 
     ///
     static Thread self() @trusted {
-        rwlock.pureReadLock;
+        mutex.pureLock;
 
-        version(Windows) {
+        version (Windows) {
             import core.sys.windows.winbase : GetCurrentThread;
             import core.sys.windows.basetsd : HANDLE;
+
             HANDLE handle = GetCurrentThread();
-        } else version(Posix) {
+        } else version (Posix) {
             import core.sys.posix.pthread : pthread_self, pthread_t;
+
             pthread_t handle = pthread_self();
-        }
+        } else
+            static assert(0, "Unimplemented platform");
 
         {
             auto ifExists = allThreads.get(cast(void*)handle, null);
@@ -114,14 +194,12 @@ export @safe nothrow @nogc:
                 ret.state = ifExists.get;
                 ret.__ctor(ret);
 
-                rwlock.pureReadUnlock;
+                mutex.unlock;
                 return ret;
             }
         }
 
         {
-            rwlock.pureConvertReadToWrite;
-
             void[] memory = threadAllocator.allocate(Thread.State.sizeof);
             assert(memory.length == Thread.State.sizeof);
 
@@ -134,16 +212,59 @@ export @safe nothrow @nogc:
             ret.state = state;
             ret.__ctor(ret);
 
-            rwlock.writeUnlock;
+            mutex.unlock;
             return ret;
         }
     }
 
     ///
-    Result!size_t wait(Duration timeout = Duration.max) scope const {
-        // WaitForSingleObjectEx
-        // pthread_timedjoin_np
-        assert(0);
+    ErrorResult join(Duration timeout = Duration.max) scope const @trusted {
+        if (isNull)
+            return ErrorResult(NullPointerException);
+        else if (timeout <= Duration.init)
+            return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
+
+        version (Windows) {
+            import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
+                WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED;
+
+            auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, cast(uint)timeout.totalMilliSeconds(), true);
+
+            switch (result) {
+            case WAIT_OBJECT_0:
+                return ErrorResult.init;
+
+            case WAIT_IO_COMPLETION:
+                return ErrorResult(EarlyThreadReturnException("Thread join completed early due APC IO execution"));
+            case WAIT_TIMEOUT:
+                return ErrorResult(EarlyThreadReturnException("Thread join completed early due to timeout"));
+
+            default:
+            case WAIT_ABANDONED:
+            case WAIT_FAILED:
+
+                return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+            }
+        } else version (Posix) {
+            import core.sys.posix.pthread : pthread_timedjoin_np;
+            import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
+            import core.stdc.time : timespec;
+
+            long secs = timeout.totalSeconds();
+            long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
+
+            timespec ts;
+            if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
+
+            ts.tv_sec += secs;
+            ts.tv_nsec += nsecs;
+
+            int s = pthread_timedjoin_np(state.handle.handle, null, ts);
+            if (s != 0)
+                return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+        } else
+            static assert(0, "Platform not implemented");
     }
 
     /// Attaching and detaching of this thread to pin it for other thread systems
@@ -173,17 +294,90 @@ private:
         shared(ptrdiff_t) refCount, attachCount;
         SystemHandle handle;
         bool owns;
+
+        void* entry, args;
     }
 }
 
 private:
 import sidero.eventloop.threads.registration;
 import sidero.base.allocators.predefined;
-import sidero.base.parallelism.rwmutex;
+import sidero.base.parallelism.mutualexclusion;
 import sidero.base.containers.map.hashmap;
 
 __gshared {
-    ReaderWriterLockInline rwlock;
+    TestTestSetLockInline mutex;
     HashMap!(void*, Thread.State*) allThreads;
     HouseKeepingAllocator!() threadAllocator;
+}
+
+struct EntryFunctionArgs(Args...) {
+    Args args;
+}
+
+version (Windows) {
+    import core.sys.windows.windows : DWORD;
+
+    extern (Windows) DWORD start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state) {
+        Thread self;
+        self.state = cast(Thread.State*)state;
+        self.__ctor(self);
+
+        EFA efa = *cast(EFA*)self.state.args;
+        allThreads[self.state.handle.handle] = self.state;
+
+        mutex.unlock;
+
+        self.externalAttach;
+        (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
+        return 0;
+    }
+} else version (Posix) {
+    // our start routine
+    extern (C) void* start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state) {
+        assert(state !is null);
+        Thread self;
+        self.state = state;
+        self.__ctor(self);
+
+        EFA efa = *cast(EFA*)self.state.args;
+        allThreads[self.state.handle.handle] = self.state;
+
+        mutex.unlock;
+
+        self.externalAttach;
+        (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
+        return null;
+    }
+}
+
+unittest {
+    import core.atomic;
+
+    shared(int) counter;
+    shared(bool) goForIt;
+
+    Thread[10] threads;
+
+    static void handleIt(shared(int)* counter, shared(bool)* goForIt) nothrow {
+        while (!atomicLoad(goForIt)) {
+            pause;
+        }
+
+        atomicOp!"+="(*counter, 1);
+    }
+
+    foreach (ref thread; threads) {
+        auto got = Thread.create(0, &handleIt, &counter, &goForIt);
+        assert(got);
+        thread = got.get;
+    }
+
+    atomicStore(goForIt, true);
+
+    foreach (ref thread; threads) {
+        thread.join;
+    }
+
+    assert(atomicLoad(counter) == 10);
 }
