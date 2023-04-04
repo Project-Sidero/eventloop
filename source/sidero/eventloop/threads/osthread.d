@@ -66,19 +66,19 @@ export @safe nothrow @nogc:
         if (isNull)
             return false;
 
-        version(Windows) {
+        version (Windows) {
             import core.sys.windows.windows : HANDLE, GetExitCodeThread, STILL_ACTIVE;
+
             uint result;
             if (GetExitCodeThread(cast(HANDLE)state.handle.handle, &result) == STILL_ACTIVE)
                 return true;
-        } else version(Posix) {
-            import core.sys.posix.pthread : pthread_tryjoin_np, pthread_t;
-            // ok this is almost certainly wrong... sigh
-            if (pthread_tryjoin_np(cast(pthread_t)state.handle.handle, null) == 0)
-                return true;
-        }
+            return false;
+        } else version (Posix) {
+            import core.atomic : atomicLoad;
 
-        return false;
+            return atomicLoad(state.isRunning);
+        } else
+            static assert(0, "Unimplemented platform");
     }
 
     ///
@@ -149,6 +149,7 @@ export @safe nothrow @nogc:
         }
 
         state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+        state.setupCleanup;
 
         Thread ret;
         ret.state = state;
@@ -207,6 +208,7 @@ export @safe nothrow @nogc:
             *state = Thread.State.init;
 
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            state.setupCleanup;
 
             Thread ret;
             ret.state = state;
@@ -294,15 +296,32 @@ private:
         shared(ptrdiff_t) refCount, attachCount;
         SystemHandle handle;
         bool owns;
+        shared(bool) isRunning;
 
         void* entry, args;
+
+    nothrow @nogc:
+
+        void setupCleanup() scope @trusted {
+            version (Posix) {
+                import core.sys.posix.pthread : pthread_cleanup_push;
+                import core.atomic : atomicStore;
+
+                static void cleanup(State* state) {
+                    atomicStore(state.isRunning, false);
+                }
+
+                atomicStore(state.isRunning, true);
+                pthread_cleanup_push(&cleanup, cast(void*)&this);
+            }
+        }
     }
 }
 
 private:
 import sidero.eventloop.threads.registration;
 import sidero.base.allocators.predefined;
-import sidero.base.parallelism.mutualexclusion;
+import sidero.base.synchronization.mutualexclusion;
 import sidero.base.containers.map.hashmap;
 
 __gshared {
@@ -369,8 +388,7 @@ unittest {
 
     foreach (ref thread; threads) {
         auto got = Thread.create(0, &handleIt, &counter, &goForIt);
-        assert(got);
-        thread = got.get;
+        thread = got.assumeOkay;
     }
 
     atomicStore(goForIt, true);

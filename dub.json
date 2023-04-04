@@ -11,6 +11,10 @@
         "sidero_base": "*"
     },
     "dflags-dmd": ["-allinst"],
+    "injectSourceFiles": [
+        "source/sidero/eventloop/threads/hook.d"
+    ],
+    "libs-posix": ["pthread"],
     "configurations": [
         {
             "name": "library",
