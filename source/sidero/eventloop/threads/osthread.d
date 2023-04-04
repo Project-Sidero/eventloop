@@ -84,83 +84,94 @@ export @safe nothrow @nogc:
 
     ///
     static Result!Thread create(Args...)(size_t stackSize, void function(Args) nothrow entryFunction, Args args) @trusted {
-        mutex.pureLock;
+        Result!Thread ret;
 
-        void[] memory = threadAllocator.allocate(Thread.State.sizeof);
-        assert(memory.length == Thread.State.sizeof);
+        accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
+            mutex.pureLock;
 
-        Thread.State* state = cast(Thread.State*)(memory.ptr);
-        *state = Thread.State.init;
-        state.entry = cast(void*)entryFunction;
+            void[] memory = threadAllocator.allocate(Thread.State.sizeof);
+            assert(memory.length == Thread.State.sizeof);
 
-        Thread ret;
-        ret.state = state;
-        ret.__ctor(ret);
+            Thread.State* state = cast(Thread.State*)(memory.ptr);
+            *state = Thread.State.init;
+            state.entry = cast(void*)entryFunction;
 
-        EntryFunctionArgs!Args* efa;
-        void[] efaMemory;
+            Thread retThread;
+            retThread.state = state;
+            retThread.__ctor(retThread);
 
-        {
-            efaMemory = threadAllocator.allocate(EntryFunctionArgs!Args.sizeof);
-            assert(efaMemory.length == EntryFunctionArgs!Args.sizeof);
-            state.args = efaMemory.ptr;
+            EntryFunctionArgs!Args* efa;
+            void[] efaMemory;
 
-            efa = cast(EntryFunctionArgs!Args*)state.args;
-            efa.args = args;
-        }
+            {
+                efaMemory = threadAllocator.allocate(EntryFunctionArgs!Args.sizeof);
+                assert(efaMemory.length == EntryFunctionArgs!Args.sizeof);
+                state.args = efaMemory.ptr;
 
-        void cleanup() {
-            efa.destroy;
-            state.destroy;
+                efa = cast(EntryFunctionArgs!Args*)state.args;
+                efa.args = args;
+            }
 
-            ret.state = null;
+            void cleanup() {
+                efa.destroy;
+                state.destroy;
 
-            threadAllocator.deallocate(memory);
-            threadAllocator.deallocate(efaMemory);
+                retThread.state = null;
+
+                threadAllocator.deallocate(memory);
+                threadAllocator.deallocate(efaMemory);
+                mutex.unlock;
+            }
+
+            version (Windows) {
+                import core.sys.windows.windows : CreateThread, CloseHandle;
+
+                auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, 0, null);
+                if (handle is null) {
+                    cleanup;
+                    ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+                    return;
+                }
+            } else version (Posix) {
+                import core.sys.posix.pthread : pthread_create, pthread_t, pthread_attr_t, pthread_attr_init,
+                    pthread_attr_destroy, pthread_attr_setstacksize;
+
+                int s;
+                pthread_attr_t attr;
+
+                s = pthread_attr_init(&attr);
+                if (s != 0) {
+                    cleanup;
+                    ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+                    return;
+                }
+                s = pthread_attr_setstacksize(&attr, stackSize);
+                if (s != 0) {
+                    cleanup;
+                    ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+                    return;
+                }
+
+                pthread_t handle;
+                s = pthread_create(&handle, attr, &start_routine!(EntryFunctionArgs!Args), cast(void*)state);
+                s |= pthread_attr_destroy(&attr);
+                if (s != 0) {
+                    cleanup;
+                    ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
+                    return;
+                }
+            }
+
+            mutex.pureLock;
+            version (Windows) {
+                // on Windows the handle gets duplicated during startup, so gotta make win32 reference count zero
+                CloseHandle(handle);
+            }
             mutex.unlock;
-        }
 
-        version (Windows) {
-            import core.sys.windows.windows : CreateThread, CloseHandle;
+            ret = Result!Thread(retThread);
+        });
 
-            auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, 0, null);
-            if (handle is null) {
-                cleanup;
-                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
-            }
-        } else version (Posix) {
-            import core.sys.posix.pthread : pthread_create, pthread_t, pthread_attr_t, pthread_attr_init,
-                pthread_attr_destroy, pthread_attr_setstacksize;
-
-            int s;
-            pthread_attr_t attr;
-
-            s = pthread_attr_init(&attr);
-            if (s != 0) {
-                cleanup;
-                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
-            }
-            s = pthread_attr_setstacksize(&attr, stackSize);
-            if (s != 0) {
-                cleanup;
-                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
-            }
-
-            pthread_t handle;
-            s = pthread_create(&handle, attr, &start_routine!(EntryFunctionArgs!Args), cast(void*)state);
-            s |= pthread_attr_destroy(&attr);
-            if (s != 0) {
-                cleanup;
-                return typeof(return)(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
-            }
-        }
-
-        mutex.pureLock;
-        version (Windows) {
-            // on Windows the handle gets duplicated during startup, so gotta make win32 reference count zero
-            CloseHandle(handle);
-        }
-        mutex.unlock;
         return ret;
     }
 
@@ -361,6 +372,11 @@ __gshared {
     HouseKeepingAllocator!() threadAllocator;
 }
 
+export void accessGlobals(scope void delegate(ref TestTestSetLockInline mutex, ref HashMap!(void*,
+        Thread.State*) allThreads, ref HouseKeepingAllocator!() threadAllocator) nothrow @nogc del) nothrow @nogc {
+    del(mutex, allThreads, threadAllocator);
+}
+
 struct EntryFunctionArgs(Args...) {
     Args args;
 }
@@ -372,18 +388,22 @@ version (Windows) {
         import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
             HANDLE, GetCurrentThread, DuplicateHandle;
 
-        HANDLE handle = GetCurrentThread();
-        DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
-
         Thread self;
-        self.state = cast(Thread.State*)state;
-        self.__ctor(self);
+        EFA efa;
 
-        EFA efa = *cast(EFA*)self.state.args;
+        accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
+            HANDLE handle = GetCurrentThread();
+            DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
 
-        self.state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-        allThreads[self.state.handle.handle] = self.state;
-        mutex.unlock;
+            self.state = cast(Thread.State*)state;
+            self.__ctor(self);
+
+            efa = *cast(EFA*)self.state.args;
+
+            self.state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            allThreads[self.state.handle.handle] = self.state;
+            mutex.unlock;
+        });
 
         self.externalAttach;
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
@@ -404,18 +424,26 @@ version (Windows) {
         import core.sys.posix.pthread : pthread_cleanup_push, pthread_self, pthread_t;
         import core.atomic : atomicStore;
 
-        assert(state_ !is null);
-        pthread_t handle = pthread_self();
-        Thread.State* state = state_;
+        Thread self;
+        EFA efa;
 
-        EFA efa = *cast(EFA*)state.args;
+        accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
+            assert(state_ !is null);
+            pthread_t handle = pthread_self();
 
-        atomicStore(state.isRunning, true);
-        pthread_cleanup_push(&cleanupPosixRunning, cast(void*)state);
+            Thread.State* state = state_;
+            self.state = state;
+            self.__ctor(self);
 
-        state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-        allThreads[state.handle.handle] = state;
-        mutex.unlock;
+            efa = *cast(EFA*)state.args;
+
+            atomicStore(state.isRunning, true);
+            pthread_cleanup_push(&cleanupPosixRunning, cast(void*)state);
+
+            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            allThreads[state.handle.handle] = state;
+            mutex.unlock;
+        });
 
         self.externalAttach;
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
