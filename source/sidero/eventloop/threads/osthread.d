@@ -62,7 +62,14 @@ export @safe nothrow @nogc:
         return state is null;
     }
 
-    ///
+    /// Warning: unsafe, you must handle reference counting and keeping this instance alive
+    SystemHandle unsafeGetHandle() @system {
+        if (isNull)
+            return SystemHandle.init;
+        return this.state.handle;
+    }
+
+    /// Warning: this only really works right on Windows. On Posix this only will give the right results if it was created by this abstraction.
     bool isRunning() scope const @trusted {
         if (isNull)
             return false;
@@ -286,9 +293,9 @@ export @safe nothrow @nogc:
 
         version (Windows) {
             import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
-                WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED;
+                WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
 
-            auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, cast(uint)timeout.totalMilliSeconds(), true);
+            auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, timeout < Duration.max ? cast(uint)timeout.totalMilliSeconds() : INFINITE, true);
 
             switch (result) {
             case WAIT_OBJECT_0:
