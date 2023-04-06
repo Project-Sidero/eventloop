@@ -6,11 +6,12 @@
 	"description": "Event loop & threads for -betterC and beyond.",
 	"license": "Artistic-2.0",
 	"name": "sidero_eventloop",
-    "dflags": ["-preview=dip1000", "-preview=dip25"],
+    "dflags": ["-preview=dip1000"],
     "dependencies": {
         "sidero_base": "*"
     },
     "dflags-dmd": ["-allinst"],
+    "dflags-ldc2": ["-preview=dip25"],
     "injectSourceFiles": [
         "source/sidero/eventloop/threads/hook.d"
     ],

@@ -164,7 +164,7 @@ enum {
     }
 
     void lock() {
-        import core.atomic : pause, atomicStore, atomicLoad;
+        import core.atomic : atomicStore, atomicLoad;
 
         immutable ThreadID tid = Thread.getThis.id;
         size_t offset, offsetNeg;
@@ -183,12 +183,8 @@ enum {
             if (atomicLoad(turn) != tid) {
                 atomicStore(flags[offset], false);
 
-                if (atomicLoad(turn) != tid) {
-                    pause();
-
-                    while (atomicLoad(turn) != tid) {
-                        Thread.yield;
-                    }
+                while (atomicLoad(turn) != tid) {
+                    Thread.yield;
                 }
 
                 atomicStore(flags[offset], true);
@@ -330,7 +326,7 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult lock() scope {
-        import core.atomic : pause, atomicStore, atomicLoad;
+        import core.atomic : atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         size_t offset, offsetNeg;
@@ -345,11 +341,6 @@ export @safe nothrow @nogc:
 
         atomicStore(flags[offset], true);
         atomicStore(currentThreadId, self.toHash());
-
-        // if we are the current thread and the other thread has already locked, we wait
-        if (atomicLoad(flags[offsetNeg]) && atomicLoad(currentThreadId) == self.toHash()) {
-            pause();
-        }
 
         // if we are the current thread and the other thread has already locked, we wait
         while (atomicLoad(flags[offsetNeg]) && atomicLoad(currentThreadId) == self.toHash()) {
@@ -444,7 +435,7 @@ struct PetersonFilterLockInline {
     ///
     ErrorResult lock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : pause, atomicStore, atomicLoad;
+        import core.atomic : atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
@@ -474,9 +465,6 @@ struct PetersonFilterLockInline {
                 if (wait) {
                     if (nWait)
                         Thread.yield;
-                    else
-                        pause();
-
                     nWait = true;
                 }
             }
@@ -489,7 +477,7 @@ struct PetersonFilterLockInline {
     ///
     Result!bool tryLock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : pause, atomicStore, atomicLoad;
+        import core.atomic : atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
@@ -541,12 +529,7 @@ export @safe nothrow @nogc:
 
     /// Non-pure will yield the thread lock
     void lock() scope {
-        import core.atomic : cas, pause, atomicLoad;
-
-        if (cas(&state, false, true))
-            return;
-        else
-            pause();
+        import core.atomic : cas, atomicLoad;
 
         while (!cas(&state, false, true)) {
             Thread.yield;
@@ -594,15 +577,11 @@ export @safe nothrow @nogc:
 
     /// Non-pure will yield the thread lock
     void lock() shared {
-        import core.atomic : cas, pause, atomicLoad;
+        import core.atomic : cas, atomicLoad;
 
         for (;;) {
-            if (atomicLoad(state)) {
-                pause();
-
-                while (atomicLoad(state)) {
-                    Thread.yield;
-                }
+            while (atomicLoad(state)) {
+                Thread.yield;
             }
 
             if (cas(&state, false, true))
