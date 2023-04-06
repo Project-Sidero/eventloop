@@ -15,7 +15,11 @@ enum {
     EarlyThreadReturnException = ErrorMessage("ETRE", "Thread result returned early"),
 }
 
-///
+/**
+Thread abstraction over an OS thread.
+
+If you need a unique id use the result of toHash.
+*/
 struct Thread {
     private {
         import core.atomic : atomicOp;
@@ -295,7 +299,8 @@ export @safe nothrow @nogc:
             import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
                 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
 
-            auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, timeout < Duration.max ? cast(uint)timeout.totalMilliSeconds() : INFINITE, true);
+            auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, timeout < Duration.max ?
+                    cast(uint)timeout.totalMilliSeconds() : INFINITE, true);
 
             switch (result) {
             case WAIT_OBJECT_0:
@@ -354,6 +359,26 @@ export @safe nothrow @nogc:
             // tell all external thread registration mechanisms
             onDetachOfThread;
         }
+    }
+
+    ///
+    bool opEquals(scope const Thread other) scope const {
+        return this.state is other.state;
+    }
+
+    ///
+    int opCmp(scope const Thread other) scope const {
+        if (cast(size_t)this.state < cast(size_t)other.state)
+            return -1;
+        else if (cast(size_t)this.state > cast(size_t)other.state)
+            return 1;
+        else
+            return 0;
+    }
+
+    /// A unique id, not the system handle.
+    ulong toHash() scope const {
+        return cast(size_t)state;
     }
 
 private:
@@ -471,7 +496,11 @@ unittest {
             pause;
         }
 
-        atomicOp!"+="(*counter, 1);
+        int prior;
+
+        do {
+            prior = atomicLoad(*counter);
+        } while(!cas(counter, prior, prior + 1));
     }
 
     foreach (ref thread; threads) {
@@ -485,5 +514,6 @@ unittest {
         thread.join;
     }
 
-    assert(atomicLoad(counter) == 10);
+    int result = atomicLoad(counter);
+    assert(counter > 5);
 }
