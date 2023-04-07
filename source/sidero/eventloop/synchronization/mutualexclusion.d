@@ -25,7 +25,7 @@ struct DekkerLockInline {
 
     @disable this(this);
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     this(Thread threadOne, Thread threadTwo) scope {
@@ -149,7 +149,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-     ~this() scope @trusted {
+    ~this() scope @trusted {
         if (!allocator.isNull) {
             allocator.dispose(threads);
             allocator.dispose(cast(Label[])labels);
@@ -584,7 +584,7 @@ struct TestTestSetLockInline {
 export @safe nothrow @nogc:
 
     /// Non-pure will yield the thread lock
-    void lock() shared {
+    void lock() scope {
         import core.atomic : cas, atomicLoad;
 
         for (;;) {
@@ -600,7 +600,7 @@ export @safe nothrow @nogc:
 pure:
 
     /// A much more limited lock method, that is pure.
-    void pureLock() {
+    void pureLock() scope {
         import core.atomic : cas, atomicFence, atomicLoad;
 
         for (;;) {
@@ -613,14 +613,14 @@ pure:
     }
 
     ///
-    bool tryLock() {
+    bool tryLock() scope {
         import core.atomic : cas;
 
         return cas(&state, false, true);
     }
 
     ///
-    void unlock() {
+    void unlock() scope {
         import core.atomic : atomicStore;
 
         atomicStore(state, false);
