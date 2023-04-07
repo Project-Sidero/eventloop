@@ -15,51 +15,163 @@ enum {
     UnknownThreadException = ErrorMessage("UTE", "Unknown thread exception"),
 }
 
-/+final class BakerLock : Object.Monitor {
-    private {
-        RCISharedAllocator allocator;
+///
+struct DekkerLockInline {
+    private @PrettyPrintIgnore {
+        Thread[2] threads;
+        shared(bool)[2] flags;
+        shared(ulong) turn;
+    }
+
+    @disable this(this);
+
+    export @safe nothrow @nogc:
+
+    ///
+    this(Thread threadOne, Thread threadTwo) scope {
+        assert(!threadOne.isNull);
+        assert(!threadTwo.isNull);
+
+        threads[0] = threadOne;
+        threads[1] = threadTwo;
+    }
+
+    ///
+    bool isNull() scope const {
+        return threads[0].isNull() || threads[1].isNull();
+    }
+
+    ///
+    ErrorResult lock() scope {
+        import core.atomic : atomicStore, atomicLoad;
+
+        Thread self = Thread.self;
+        size_t offset, offsetNeg;
+
+        if (threads[0] == self) {
+            offsetNeg = 1;
+        } else if (threads[1] == self) {
+            offset = 1;
+        } else {
+            return ErrorResult(UnknownThreadException);
+        }
+
+        atomicStore(flags[offset], true);
+
+        while (atomicLoad(flags[offsetNeg])) {
+            if (atomicLoad(turn) != self.toHash()) {
+                atomicStore(flags[offset], false);
+
+                while (atomicLoad(turn) != self.toHash()) {
+                    Thread.yield;
+                }
+
+                atomicStore(flags[offset], true);
+            }
+        }
+
+        return ErrorResult.init;
+    }
+
+    ///
+    Result!bool tryLock() scope {
+        import core.atomic : atomicStore, atomicLoad;
+
+        Thread self = Thread.self;
+        size_t offset, offsetNeg;
+
+        if (threads[0] == self) {
+            offsetNeg = 1;
+        } else if (threads[1] == self) {
+            offset = 1;
+        } else {
+            return typeof(return)(UnknownThreadException);
+        }
+
+        atomicStore(flags[offset], true);
+
+        if (atomicLoad(flags[offsetNeg])) {
+            atomicStore(flags[offset], false);
+            return typeof(return)(false);
+        }
+
+        return typeof(return)(true);
+    }
+
+    ///
+    ErrorResult unlock() scope {
+        import core.atomic : atomicStore;
+
+        Thread self = Thread.self;
+        size_t offset, offsetNeg;
+
+        if (threads[0] == self) {
+            offsetNeg = 1;
+        } else if (threads[1] == self) {
+            offset = 1;
+        } else {
+            return ErrorResult(UnknownThreadException);
+        }
+
+        atomicStore(turn, threads[offsetNeg].toHash());
+        atomicStore(flags[offset], false);
+
+        return ErrorResult.init;
+    }
+}
+
+///
+struct BakerLockInline {
+    private @PrettyPrintIgnore {
+        RCAllocator allocator;
+        Thread[] threads;
 
         shared {
-            ThreadID[] threadIds;
             Label[] labels;
             bool[] flags;
         }
     }
 
-    this(RCISharedAllocator allocator, ThreadID[] threads...) {
+    @disable this(this);
+
+export @safe nothrow @nogc:
+
+    ///
+    this(RCAllocator allocator, scope Thread[] threads...) scope {
         this.allocator = allocator;
 
-        threadIds = allocator.makeArray!(shared(ThreadID))(threads);
-        labels = allocator.makeArray!(shared(Label))(threads.length);
-        flags = allocator.makeArray!(shared(bool))(threads.length);
-    }
-
-    this(RCISharedAllocator allocator, Thread[] threads...) {
-        this.allocator = allocator;
-
-        threadIds = allocator.makeArray!(shared(ThreadID))(threads.length);
+        threads = allocator.makeArray!Thread(threads.length);
         labels = allocator.makeArray!(shared(Label))(threads.length);
         flags = allocator.makeArray!(shared(bool))(threads.length);
 
         foreach (i, thread; threads)
-            threadIds[i] = thread.id;
+            threads[i] = thread;
     }
 
-    ~this() {
-        allocator.dispose(cast(ThreadID[])threadIds);
-        allocator.dispose(cast(Label[])labels);
-        allocator.dispose(cast(size_t[])flags);
+    ///
+     ~this() scope @trusted {
+        if (!allocator.isNull) {
+            allocator.dispose(threads);
+            allocator.dispose(cast(Label[])labels);
+            allocator.dispose(cast(size_t[])flags);
+        }
     }
 
-    void lock() {
+    ///
+    bool isNull() scope const {
+        return allocator.isNull || threads.length == 0;
+    }
+
+    ///
+    ErrorResult lock() scope {
         import std.algorithm : countUntil;
         import core.atomic : atomicFence, atomicStore, atomicLoad;
 
-        immutable ThreadID tid = Thread.getThis.id;
+        Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threadIds.countUntil(tid)) < 0)
-            throw new UnknownCurrentThreadException("Unknown thread");
+        if ((offset = threads.countUntil(self)) < 0)
+            return ErrorResult(UnknownThreadException);
 
         atomicStore(flags[offset], true);
 
@@ -75,7 +187,7 @@ enum {
         labels[offset] = maxLabel;
         atomicStore(flags[offset], false);
 
-        foreach (i; 0 .. threadIds.length) {
+        foreach (i; 0 .. threads.length) {
             if (i == offset)
                 continue;
 
@@ -87,17 +199,20 @@ enum {
                 Thread.yield;
             }
         }
+
+        return ErrorResult.init;
     }
 
-    bool tryLock() {
+    ///
+    Result!bool tryLock() scope {
         import std.algorithm : countUntil;
         import core.atomic : atomicFence, atomicStore, atomicLoad;
 
-        immutable ThreadID tid = Thread.getThis.id;
+        Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threadIds.countUntil(tid)) < 0)
-            throw new UnknownCurrentThreadException("Unknown thread");
+        if ((offset = threads.countUntil(self)) < 0)
+            return typeof(return)(UnknownThreadException);
 
         atomicStore(flags[offset], true);
 
@@ -113,152 +228,45 @@ enum {
         labels[offset] = maxLabel;
         atomicStore(flags[offset], false);
 
-        foreach (i; 0 .. threadIds.length) {
+        foreach (i; 0 .. threads.length) {
             if (i == offset)
                 continue;
 
             if (atomicLoad(flags[i])) {
-                return false;
+                return typeof(return)(false);
             }
 
             if (labels[i] != Label.init && (labels[i] < labels[offset] || (labels[i] == labels[offset] && i < offset))) {
-                return false;
+                return typeof(return)(false);
             }
         }
 
-        return true;
+        return typeof(return)(true);
     }
 
-    void unlock() {
+    ///
+    ErrorResult unlock() scope {
         import std.algorithm : countUntil;
         import core.atomic : atomicStore;
 
-        immutable ThreadID tid = Thread.getThis.id;
+        Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threadIds.countUntil(tid)) < 0)
-            throw new UnknownCurrentThreadException("Unknown thread");
+        if ((offset = threads.countUntil(self)) < 0)
+            return ErrorResult(UnknownThreadException);
 
         atomicStore(flags[offset], false);
-    }
-}+/
-
-/+final class DekkerLock : Object.Monitor {
-    private shared {
-        ThreadID[2] threadIds;
-        bool[2] flags;
-        ThreadID turn;
+        return ErrorResult.init;
     }
 
-    this(ThreadID threadOne, ThreadID threadTwo) {
-        threadIds[0] = threadOne;
-        threadIds[1] = threadTwo;
-    }
-
-    this(Thread threadOne, Thread threadTwo) {
-        assert(threadOne !is null);
-        assert(threadTwo !is null);
-
-        threadIds[0] = threadOne.id;
-        threadIds[1] = threadTwo.id;
-    }
-
-    void lock() {
-        import core.atomic : atomicStore, atomicLoad;
-
-        immutable ThreadID tid = Thread.getThis.id;
-        size_t offset, offsetNeg;
-
-        if (threadIds[0] == tid) {
-            offsetNeg = 1;
-        } else if (threadIds[1] == tid) {
-            offset = 1;
-        } else {
-            throw new UnknownCurrentThreadException("Unknown thread");
-        }
-
-        atomicStore(flags[offset], true);
-
-        while (atomicLoad(flags[offsetNeg])) {
-            if (atomicLoad(turn) != tid) {
-                atomicStore(flags[offset], false);
-
-                while (atomicLoad(turn) != tid) {
-                    Thread.yield;
-                }
-
-                atomicStore(flags[offset], true);
-            }
-        }
-    }
-
-    bool tryLock() {
-        import core.atomic : atomicStore, atomicLoad;
-
-        immutable ThreadID tid = Thread.getThis.id;
-        size_t offset, offsetNeg;
-
-        if (threadIds[0] == tid) {
-            offsetNeg = 1;
-        } else if (threadIds[1] == tid) {
-            offset = 1;
-        } else {
-            throw new UnknownCurrentThreadException("Unknown thread");
-        }
-
-        atomicStore(flags[offset], true);
-
-        if (atomicLoad(flags[offsetNeg])) {
-            atomicStore(flags[offset], false);
-            return false;
-        }
-
-        return true;
-    }
-
-    void unlock() {
-        import core.atomic : atomicStore;
-
-        immutable ThreadID tid = Thread.getThis.id;
-        size_t offset, offsetNeg;
-
-        if (threadIds[0] == tid) {
-            offsetNeg = 1;
-        } else if (threadIds[1] == tid) {
-            offset = 1;
-        } else {
-            throw new UnknownCurrentThreadException("Unknown thread");
-        }
-
-        atomicStore(turn, threadIds[offsetNeg]);
-        atomicStore(flags[offset], false);
-    }
-}+/
-
-///
-struct BakerLockInline {
-    private @PrettyPrintIgnore {
-        RCAllocator allocator;
-
-        shared {
-            Thread[] threads;
-            Label[] labels;
-            bool[] flags;
-        }
-    }
-
-    @disable this(this);
-
-    export @safe nothrow @nogc:
-
-    private:
+private:
     static struct Label {
         import sidero.base.datetime : accurateDateTime;
 
-        shared(long[2]) timeOffset;
+        long[2] timeOffset;
         int value;
 
-        export @safe nothrow @nogc:
+    export @safe nothrow @nogc:
 
         void opAssign(const Label other) scope shared {
             import core.atomic : atomicLoad, atomicStore;
@@ -267,7 +275,7 @@ struct BakerLockInline {
             atomicStore(value, atomicLoad(other.value));
         }
 
-        void opUnary(string op)() scope if (op == "++") {
+        void opUnary(string op)() scope shared if (op == "++") {
             import core.atomic : atomicOp, atomicLoad, atomicStore;
 
             if (atomicLoad(value) < 0) {
@@ -406,7 +414,7 @@ struct PetersonFilterLockInline {
 
     @disable this(this);
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     this(return scope RCAllocator allocator, scope Thread[] threads...) scope {
