@@ -1,14 +1,15 @@
-module sidero.eventloop.synchronization.systemlock;
+module sidero.eventloop.synchronization.system.lock;
 import sidero.eventloop.handles;
 import sidero.base.datetime.duration;
 import sidero.base.errors;
+import sidero.base.attributes;
 
 ///
 enum MutexHandleIdentifier = SystemHandleType.from("mutex");
 
 /// Recursive mutex
 struct SystemLock {
-    private {
+    private @PrettyPrintIgnore {
         import sidero.base.synchronization.mutualexclusion : TestTestSetLockInline;
 
         TestTestSetLockInline protectMutex;
@@ -64,12 +65,6 @@ struct SystemLock {
 export @safe nothrow @nogc:
     @disable this(this);
 
-    /// Warning: unsafe, you must handle reference counting and keeping this instance alive
-    SystemHandle unsafeGetHandle() @system {
-        setup;
-        return SystemHandle(mutex, MutexHandleIdentifier);
-    }
-
     ///
     ~this() scope @trusted {
         if (initialized) {
@@ -80,6 +75,12 @@ export @safe nothrow @nogc:
             } else
                 static assert(0, "Unimplemented platform");
         }
+    }
+
+    /// Warning: unsafe, you must handle reference counting and keeping this instance alive
+    SystemHandle unsafeGetHandle() @system {
+        setup;
+        return SystemHandle(mutex, MutexHandleIdentifier);
     }
 
     ///
@@ -134,6 +135,9 @@ export @safe nothrow @nogc:
 
             case EINVAL:
                 return ErrorResult(MalformedInputException("Timeout duration out of range"));
+
+            case ETIMEDOUT:
+                return ErrorResult(UnknownPlatformBehaviorException("Could not lock the mutex due to timeout"));
 
             case EAGAIN:
             case ENOTRECOVERABLE:
