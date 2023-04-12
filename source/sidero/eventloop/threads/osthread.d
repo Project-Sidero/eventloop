@@ -277,7 +277,7 @@ export @safe nothrow @nogc:
             Thread.State* state = cast(Thread.State*)(memory.ptr);
             *state = Thread.State.init;
 
-            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
 
             Thread ret;
             ret.state = state;
@@ -299,42 +299,52 @@ export @safe nothrow @nogc:
             import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
                 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
 
-            auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, timeout < Duration.max ?
-                    cast(uint)timeout.totalMilliSeconds() : INFINITE, true);
+            if (timeout < Duration.max) {
+                auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, timeout < Duration.max ?
+                        cast(uint)timeout.totalMilliSeconds() : INFINITE, true);
 
-            switch (result) {
-            case WAIT_OBJECT_0:
-                return ErrorResult.init;
+                switch (result) {
+                case WAIT_OBJECT_0:
+                    return ErrorResult.init;
 
-            case WAIT_IO_COMPLETION:
-                return ErrorResult(EarlyThreadReturnException("Thread join completed early due APC IO execution"));
-            case WAIT_TIMEOUT:
-                return ErrorResult(EarlyThreadReturnException("Thread join completed early due to timeout"));
+                case WAIT_IO_COMPLETION:
+                    return ErrorResult(EarlyThreadReturnException("Thread join completed early due APC IO execution"));
+                case WAIT_TIMEOUT:
+                    return ErrorResult(EarlyThreadReturnException("Thread join completed early due to timeout"));
 
-            default:
-            case WAIT_ABANDONED:
-            case WAIT_FAILED:
+                default:
+                case WAIT_ABANDONED:
+                case WAIT_FAILED:
 
-                return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+                    return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+                }
+            } else {
+                return waitForJoin(cast(void*)state.handle.handle);
             }
         } else version (Posix) {
-            import core.sys.posix.pthread : pthread_timedjoin_np;
+            import core.sys.posix.pthread : pthread_timedjoin_np, pthread_join;
             import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
             import core.stdc.time : timespec;
 
-            long secs = timeout.totalSeconds();
-            long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
+            if (timeout < Duration.max) {
+                long secs = timeout.totalSeconds();
+                long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
-            timespec ts;
-            if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
-                return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
+                timespec ts;
+                if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                    return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
 
-            ts.tv_sec += secs;
-            ts.tv_nsec += nsecs;
+                ts.tv_sec += secs;
+                ts.tv_nsec += nsecs;
 
-            int s = pthread_timedjoin_np(state.handle.handle, null, ts);
-            if (s != 0)
-                return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+                int s = pthread_timedjoin_np(cast(void*)state.handle.handle, null, ts);
+                if (s != 0)
+                    return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+            } else {
+                return waitForJoin(cast(void*)state.handle.handle);
+            }
+
+            return ErrorResult.init;
         } else
             static assert(0, "Platform not implemented");
     }
@@ -432,7 +442,7 @@ version (Windows) {
 
             efa = *cast(EFA*)self.state.args;
 
-            self.state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            self.state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
             allThreads[self.state.handle.handle] = self.state;
             mutex.unlock;
         });
@@ -440,6 +450,29 @@ version (Windows) {
         self.externalAttach;
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return 0;
+    }
+
+    ErrorResult waitForJoin(scope void* handle) @trusted nothrow @nogc {
+        import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
+            WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
+
+        auto result = WaitForSingleObjectEx(cast(HANDLE)handle, INFINITE, true);
+
+        switch (result) {
+        case WAIT_OBJECT_0:
+            return ErrorResult.init;
+
+        case WAIT_IO_COMPLETION:
+            return ErrorResult(EarlyThreadReturnException("Thread join completed early due APC IO execution"));
+        case WAIT_TIMEOUT:
+            return ErrorResult(EarlyThreadReturnException("Thread join completed early due to timeout"));
+
+        default:
+        case WAIT_ABANDONED:
+        case WAIT_FAILED:
+
+            return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+        }
     }
 } else version (Posix) {
     static extern (C) void cleanupPosixRunning(void* state) {
@@ -472,7 +505,7 @@ version (Windows) {
             atomicStore(state.isRunning, true);
             pthread_cleanup_push(&cleanupPosixRunning, cast(void*)state);
 
-            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
             allThreads[state.handle.handle] = state;
             mutex.unlock;
         });
@@ -480,6 +513,13 @@ version (Windows) {
         self.externalAttach;
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return null;
+    }
+
+    ErrorResult waitForJoin(scope void* handle) @trusted nothrow @nogc {
+        int s = pthread_join(handle, null);
+        if (s != 0)
+            return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
+        return ErrorResult.init;
     }
 }
 
@@ -500,7 +540,8 @@ unittest {
 
         do {
             prior = atomicLoad(*counter);
-        } while(!cas(counter, prior, prior + 1));
+        }
+        while (!cas(counter, prior, prior + 1));
     }
 
     foreach (ref thread; threads) {

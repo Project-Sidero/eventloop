@@ -77,25 +77,29 @@ export @safe nothrow @nogc:
             return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
 
         version (Windows) {
-            auto result = WaitForSingleObject(semaphore, timeout < Duration.max ? cast(uint)timeout.totalMilliSeconds() : INFINITE);
+            if (timeout < Duration.max) {
+                auto result = WaitForSingleObject(semaphore, cast(uint)timeout.totalMilliSeconds());
 
-            switch (result) {
-            case WAIT_OBJECT_0:
-            case WAIT_ABANDONED:
-                return ErrorResult.init;
+                switch (result) {
+                case WAIT_OBJECT_0:
+                case WAIT_ABANDONED:
+                    return ErrorResult.init;
 
-            case WAIT_FAILED:
-            default:
-                return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
+                case WAIT_FAILED:
+                default:
+                    return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
+                }
+            } else {
+                return waitForLock(semaphore);
             }
         } else version (Posix) {
             import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
             import core.stdc.time : timespec;
             import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN, EINTR;
 
-            int result;
-
             if (timeout < Duration.max) {
+                int result;
+
                 long secs = timeout.totalSeconds();
                 long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
@@ -107,24 +111,24 @@ export @safe nothrow @nogc:
                 ts.tv_nsec += nsecs;
 
                 result = sem_timedwait(&semaphore, ts);
+
+                switch (result) {
+                case 0:
+                    return ErrorResult.init;
+
+                case EINVAL:
+                    return ErrorResult(UnknownPlatformBehaviorException("Could not lock the mutex due to timeout"));
+
+                case ETIMEDOUT:
+                    return ErrorResult(MalformedInputException("Timeout duration out of range"));
+
+                case EAGAIN:
+                case EINTR:
+                default:
+                    return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
+                }
             } else {
-                result = sem_wait(&semaphore);
-            }
-
-            switch (result) {
-            case 0:
-                return ErrorResult.init;
-
-            case EINVAL:
-                return ErrorResult(UnknownPlatformBehaviorException("Could not lock the mutex due to timeout"));
-
-            case ETIMEDOUT:
-                return ErrorResult(MalformedInputException("Timeout duration out of range"));
-
-            case EAGAIN:
-            case EINTR:
-            default:
-                return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
+                return waitForLock(semaphore);
             }
         } else
             static assert(0, "Unimplemented platform");
@@ -184,5 +188,50 @@ export @safe nothrow @nogc:
             static assert(0, "Unimplemented platform");
 
         return ErrorResult.init;
+    }
+}
+
+private:
+
+ErrorResult waitForLock(scope void* handle) @trusted nothrow @nogc {
+    version (Windows) {
+        import core.sys.windows.windows : WaitForSingleObject, INFINITE, WAIT_OBJECT_0, WAIT_ABANDONED, WAIT_FAILED;
+
+        auto result = WaitForSingleObject(handle, INFINITE);
+
+        switch (result) {
+        case WAIT_OBJECT_0:
+        case WAIT_ABANDONED:
+            return ErrorResult.init;
+
+        case WAIT_FAILED:
+        default:
+            return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
+        }
+    } else version (Posix) {
+        import core.sys.posix.semaphore : sem_wait;
+        import core.sys.posix.pthread : EOWNERDEAD, ENOTRECOVERABLE, EBUSY;
+        import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN;
+
+        int result = sem_wait(handle);
+
+        switch (result) {
+        case 0:
+            return ErrorResult.init;
+
+        case EOWNERDEAD:
+            return ErrorResult.init;
+
+        case EINVAL:
+            return ErrorResult(MalformedInputException("Timeout duration out of range"));
+
+        case ETIMEDOUT:
+            return ErrorResult(UnknownPlatformBehaviorException("Could not lock the mutex due to timeout"));
+
+        case EAGAIN:
+        case ENOTRECOVERABLE:
+        default:
+            return ErrorResult(UnknownPlatformBehaviorException("Could not lock mutex"));
+        }
     }
 }

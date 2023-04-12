@@ -1,12 +1,20 @@
 module sidero.eventloop.handles;
 import sidero.base.text;
+import sidero.base.errors;
 
+///
 struct SystemHandle {
+    alias WaitForEventFunction = ErrorResult function(scope void* handle) @safe nothrow @nogc;
+
+    ///
     void* handle;
+    ///
     SystemHandleType type;
+    ///
+    WaitForEventFunction waitForEvent;
 
 export @safe nothrow @nogc:
-    bool isNull() scope {
+    bool isNull() scope const {
         return handle is null || type.isNone;
     }
 }
