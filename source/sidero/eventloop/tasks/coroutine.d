@@ -210,7 +210,7 @@ export @safe nothrow @nogc:
 struct CoroutineCondition {
     private {
         SystemHandle systemHandle;
-        CoroutineAPair coroutine;
+        GenericCoroutine coroutine;
     }
 
 export @safe nothrow @nogc:
@@ -257,6 +257,7 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
         foreach (Name; __traits(allMembers, Stages)) {
             if (__traits(getMember, Stages, Name) > lastValue + 1)
                 return false;
+            lastValue = __traits(getMember, Stages, Name);
         }
 
         return true;
@@ -441,6 +442,133 @@ unittest {
     assert(result == 14);
 }
 
+///
+unittest {
+    static InstantiableCoroutine!(int, int) createCo1() {
+        static struct State {
+            int value;
+
+        @safe nothrow @nogc:
+
+            this(int value) {
+                this.value = value;
+            }
+        }
+
+        enum Stages {
+            Multiply,
+            Add,
+        }
+
+        CoroutineBuilder!(State, Stages, int, int) builder;
+
+        builder[Stages.Multiply] = (scope ref state) {
+            state.value *= 3;
+            // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
+            return typeof(builder).nextStage(Stages.Add);
+        };
+
+        builder[Stages.Add] = (scope ref state) {
+            state.value += 2;
+            // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
+            return typeof(builder).complete(state.value);
+        };
+
+        auto got = builder.build();
+        assert(got);
+        return got.get;
+    }
+
+    static InstantiableCoroutine!(int, int) createCo2() {
+        import sidero.eventloop.synchronization.system.lock;
+
+        static struct State {
+            SystemLock lock;
+            int value;
+
+            Future!int worker;
+
+        @safe nothrow @nogc:
+
+            this(int value) {
+                this.value = value;
+            }
+        }
+
+        enum Stages {
+            INeedLock,
+            INeedCoroutine,
+            Done,
+        }
+
+        CoroutineBuilder!(State, Stages, int, int) builder;
+
+        builder[Stages.INeedLock] = (scope ref state) @trusted {
+            auto handle = state.lock.unsafeGetHandle();
+            // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
+            return typeof(builder).nextStage(Stages.INeedCoroutine).after(handle);
+        };
+
+        builder[Stages.INeedCoroutine] = (scope ref state) @trusted {
+            state.lock.unlock;
+
+            auto worker = createCo1();
+            state.worker = worker.makeInstance(RCAllocator.init, state.value).asFuture;
+            assert(!state.worker.isNull);
+
+            // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
+            return typeof(builder).nextStage(Stages.Done).after(state.worker);
+        };
+
+        builder[Stages.Done] = (scope ref state) @trusted {
+            // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
+            return typeof(builder).complete(state.worker.result.assumeOkay + 8);
+        };
+
+        auto got = builder.build();
+        assert(got);
+        return got.get;
+    }
+
+    auto co = createCo2();
+    assert(co.canInstance);
+
+    auto coI = co.makeInstance(RCAllocator.init, 4);
+    assert(!coI.isNull);
+    assert(coI.isInstantiated);
+
+    while (!coI.isComplete) {
+        final switch (coI.condition.waitingOn) {
+        case CoroutineCondition.WaitingOn.Nothing:
+            break;
+        case CoroutineCondition.WaitingOn.SystemHandle:
+            assert(!coI.condition.systemHandle.isNull);
+            assert(coI.condition.systemHandle.waitForEvent !is null);
+
+            auto result = coI.condition.systemHandle.waitForEvent(coI.condition.systemHandle.handle);
+            assert(result);
+            break;
+        case CoroutineCondition.WaitingOn.Coroutine:
+            auto coI2 = coI.condition.coroutine;
+
+            while (!coI2.isComplete) {
+                assert(coI2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
+
+                ErrorResult er = coI2.resume();
+                assert(er);
+            }
+            break;
+        }
+
+        ErrorResult er = coI.resume();
+        assert(er);
+    }
+
+    auto result = coI.result();
+    assert(result);
+    assert(result == 22);
+}
+
 //
 struct CoroutineResult(Stages, ResultType = void) {
     private {
@@ -475,15 +603,19 @@ export @safe nothrow @nogc:
     }
 
     ///
-    CoroutineResult after(ResultType)(CoroutineCondition waitingOn) scope return {
+    CoroutineResult after(ResultType)(Future!ResultType waitingOn) scope return @trusted {
+        return this.after(waitingOn.asGeneric());
+    }
+
+    ///
+    CoroutineResult after(ResultType, Args...)(InstantiableCoroutine!(ResultType, Args) waitingOn) scope return @trusted {
+        return this.after(waitingOn.asGeneric());
+    }
+
+    ///
+    CoroutineResult after(GenericCoroutine waitingOn) scope return @trusted {
         assert(tag == Tag.Stage);
-
-        if (waitingOn.isNull)
-            this.condition.coroutine = CoroutineAPair.init;
-        else {
-            this.condition.coroutine = CoroutineAPair(waitingOn.pair.descriptor, waitingOn.pair.state);
-        }
-
+        this.condition.coroutine = waitingOn;
         return this;
     }
 }
