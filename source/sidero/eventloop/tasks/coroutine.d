@@ -334,18 +334,20 @@ export @safe nothrow @nogc:
                 CoroutineDescriptor!ResultType* actualDescriptor = cast(CoroutineDescriptor!ResultType*)descriptor;
                 CoroutineState2* actualState = cast(CoroutineState2*)state;
 
+                actualState.base.conditionToContinue = CoroutineCondition.init;
+
                 FunctionPrototype actualFunction = cast(FunctionPrototype)actualDescriptor.base.userFunctions[offset];
                 CoroutineResultType result = actualFunction(actualState.userState);
 
                 final switch (result.tag) {
                 case CoroutineResultType.Tag.Value:
                     actualState.result = Result!ResultType(result.resultValue);
-                    actualState.base.isComplete = true;
+                    atomicStore(actualState.base.isComplete, true);
                     actualState.base.nextFunctionTag = -1;
                     break;
                 case CoroutineResultType.Tag.Error:
                     actualState.result = Result!ResultType(result.error);
-                    actualState.base.isComplete = true;
+                    atomicStore(actualState.base.isComplete, true);
                     actualState.base.nextFunctionTag = -2;
                     break;
                 case CoroutineResultType.Tag.Stage:
@@ -621,6 +623,7 @@ export @safe nothrow @nogc:
 }
 
 private:
+import core.atomic : atomicLoad, atomicStore;
 
 struct CoroutinePair(ResultType) {
     private {
@@ -662,7 +665,7 @@ export @safe nothrow @nogc:
     }
 
     bool isComplete() scope const {
-        return this.isNull() || state.base.isComplete;
+        return this.isNull() || atomicLoad(state.base.isComplete);
     }
 
     bool canInstance() scope const {
@@ -730,7 +733,7 @@ export @safe nothrow @nogc:
     }
 
     bool isComplete() scope {
-        return this.isNull() || state.isComplete;
+        return this.isNull() || atomicLoad(state.isComplete);
     }
 
     bool canInstance() scope {
@@ -768,7 +771,7 @@ struct CoroutineAllocatorMemoryState {
     ptrdiff_t nextFunctionTag;
     CoroutineCondition conditionToContinue;
 
-    bool isComplete;
+    shared(bool) isComplete;
 }
 
 struct CoroutineAllocatorMemory {

@@ -94,6 +94,12 @@ export @safe nothrow @nogc:
     }
 
     ///
+    static Result!Thread create(Args...)(void function(Args) nothrow entryFunction, Args args) @trusted {
+        // 8mb stack is a very good size regardless of platform, very unlikely to cause problems with code
+        return Thread.create(8 * 1024 * 1024, entryFunction, args);
+    }
+
+    ///
     static Result!Thread create(Args...)(size_t stackSize, void function(Args) nothrow entryFunction, Args args) @trusted {
         Result!Thread ret;
 
@@ -552,7 +558,7 @@ unittest {
     atomicStore(goForIt, true);
 
     foreach (ref thread; threads) {
-        thread.join;
+        cast(void)thread.join;
     }
 
     int result = atomicLoad(counter);
