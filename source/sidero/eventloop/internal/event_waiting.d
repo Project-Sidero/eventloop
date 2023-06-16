@@ -3,13 +3,13 @@ import sidero.eventloop.synchronization.system.lock;
 import sidero.eventloop.threads;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.map.hashmap;
-import sidero.base.containers.list.concurrentlinkedlist; // FIXME: don't need it to be concurrent
+import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.attributes;
 import sidero.base.logger;
 import sidero.base.text;
 
 version (Windows) {
-    //TODO: import sidero.eventloop.internal.windows.event_waiting;
+    import sidero.eventloop.internal.windows.event_waiting;
 } else
     static assert(0, "Unimplemented");
 
@@ -22,7 +22,8 @@ struct UserEventHandler {
     void* user;
 }
 
-version (all) {
+// minimal demonstration of what is required
+version (none) {
     struct EventWaiterThread {
         Thread thread;
 
@@ -53,7 +54,7 @@ version (all) {
 }
 
 package(sidero.eventloop.internal) __gshared {
-    HashMap!(Thread, EventWaiterThread) eventWaiterThreads;
+    ConcurrentHashMap!(Thread, EventWaiterThread) eventWaiterThreads;
     SystemLock eventWaiterMutex;
 
     HashMap!(void*, UserEventHandler) allEventHandles;
@@ -150,7 +151,7 @@ void updateEventWaiterThreads() @trusted {
         while (tempHandles.length > 0) {
             auto gotThread = Thread.create(&threadStartProc);
             if (!gotThread) {
-                logger.trace("Thread failed to be created, stopping event waiting updating", gotThread.getError());
+                logger.error("Thread failed to be created, stopping event waiting updating", gotThread.getError());
                 break;
             }
 
@@ -186,7 +187,7 @@ void threadStartProc() @trusted {
     auto threadState = eventWaiterThreads[Thread.self()];
 
     if (!threadState) {
-        logger.trace("Could not start event waiter thread, missing thread information");
+        logger.error("Could not start event waiter thread, missing thread information");
         eventWaiterMutex.unlock;
         return;
     }

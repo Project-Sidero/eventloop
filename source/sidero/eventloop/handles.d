@@ -36,7 +36,9 @@ export @safe nothrow @nogc:
     }
     do {
         ubyte[8] rstr = cast(ubyte)' ';
-        rstr[0 .. from.length] = cast(ubyte[])from[];
+
+        foreach (i; 0 .. from.length)
+            rstr[i] = cast(ubyte)from[i];
 
         return SystemHandleType(rstr[0] | (rstr[1] << (1 * 8)) | (rstr[2] << (2 * 8)) | (rstr[3] << (3 * 8)) | (
                 cast(long)rstr[4] << (4 * 8)) | (cast(long)rstr[5] << (5 * 8)) | (cast(long)rstr[6] << (6 * 8)) | (
@@ -73,8 +75,6 @@ export @safe nothrow @nogc:
 
     ///
     bool opEquals(const SystemHandleType other) const scope @trusted {
-        import std.algorithm : countUntil;
-
         String_UTF8 first = String_UTF8(text_), second = String_UTF8(other.text_);
         const i = first.indexOf(" "), j = second.indexOf(" ");
 
