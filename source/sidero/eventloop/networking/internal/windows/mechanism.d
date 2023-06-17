@@ -114,7 +114,6 @@ version (Windows) {
 
         bool triggerRead(SocketState* socketState) scope @trusted {
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, GetLastError;
-            import std.stdio : writeln;
 
             if (socketState.reading.tryFulfillRequest(socketState))
                 return true;
@@ -160,7 +159,6 @@ version (Windows) {
         }
 
         bool triggerWrite(scope SocketState* state) scope @trusted {
-            import std.stdio : writeln;
             import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
 
             return state.writing.protect(() @trusted nothrow  @nogc {

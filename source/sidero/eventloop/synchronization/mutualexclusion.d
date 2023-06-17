@@ -153,7 +153,7 @@ export @safe nothrow @nogc:
         if (!allocator.isNull) {
             allocator.dispose(threads);
             allocator.dispose(cast(Label[])labels);
-            allocator.dispose(cast(size_t[])flags);
+            allocator.dispose(cast(bool[])flags);
         }
     }
 

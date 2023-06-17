@@ -13,8 +13,6 @@ version (Windows) {
     import sidero.eventloop.internal.windows.bindings;
 
     bool listenOnAddress(ListenSocketState* listenSocketState, bool reuseAddr, bool keepAlive) @trusted {
-        import std.stdio : writeln;
-
         if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
             auto resolved = listenSocketState.address.resolve();
 
