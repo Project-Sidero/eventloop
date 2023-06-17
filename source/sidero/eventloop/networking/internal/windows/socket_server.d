@@ -40,7 +40,7 @@ version (Windows) {
     }
 
     private bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, bool keepAlive) @trusted {
-        import std.bitmanip : swapEndian;
+        import sidero.base.bitmanip : swapEndian;
         import core.atomic : atomicStore;
         import core.sys.windows.windows : AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM, INVALID_SOCKET, WSAGetLastError,
             sockaddr_in, sockaddr_in6, INADDR_ANY, IN6ADDR_ANY, bind, SOCKET_ERROR, closesocket, listen, sockaddr,
@@ -209,7 +209,7 @@ version (Windows) {
 
     void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
         import sidero.eventloop.internal.windows.iocp;
-        import std.bitmanip : bigEndianToNative, nativeToBigEndian;
+        import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
         import core.sys.windows.windows : GetLastError, socket, INVALID_SOCKET, closesocket, AF_INET, AF_INET6,
         SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP, sockaddr_in, sockaddr_in6, WSAGetLastError, ERROR_IO_PENDING, SOCKET_ERROR;
 

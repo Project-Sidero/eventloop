@@ -11,7 +11,7 @@ version (D_BetterC) {
     extern (C) void rt_moduleTlsDtor();
     private __gshared int globalThreadSystemKey;
 
-    pragma(crt_constructor) extern (C) void register_sidero_threads_register() {
+    shared static this() {
         static extern (C) void onAttach() {
             thread_attachThis;
             rt_moduleTlsCtor;
@@ -32,7 +32,7 @@ version (D_BetterC) {
                 cast(OnDetachThisFunction)&onDetach, cast(IsThreadRegisteredFunction)&isRegistered);
     }
 
-    pragma(crt_destructor) extern (C) void register_sidero_threads_deregister() {
+    shared static ~this() {
         deregisterThreadRegistration(&globalThreadSystemKey);
     }
 

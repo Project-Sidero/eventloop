@@ -13,6 +13,7 @@
     "injectSourceFiles": [
         "source/sidero/eventloop/threads/hook.d"
     ],
+    "libs-windows": ["Mswsock"],
     "libs-posix": ["pthread"],
     "configurations": [
         {
