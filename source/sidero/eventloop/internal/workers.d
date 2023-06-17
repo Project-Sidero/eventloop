@@ -33,13 +33,11 @@ private __gshared {
 bool startWorkers(size_t workerMultiplier) @trusted {
     import sidero.base.containers.dynamicarray;
 
-    auto gotLogger = Logger.forName(String_UTF8(__MODULE__));
-    if (gotLogger)
-        logger = gotLogger.get;
-    else
+    logger = Logger.forName(String_UTF8(__MODULE__));
+    if (!logger)
         return false;
 
-    const count = workerMultiplier * cpuCount();
+    const count = workerMultiplier /+ * cpuCount()+/ ;
 
     DynamicArray!Thread tempPool;
     tempPool.reserve(count);
@@ -68,7 +66,14 @@ void shutdownWorkers() {
 
 void waitForWorkersToJoin() @trusted {
     foreach (thread; threadPool) {
-        cast(void)thread.join;
+        for (;;) {
+            auto got = thread.join();
+            if (got)
+                break;
+        }
+
+        assert(!thread.isNull);
+        assert(!thread.isRunning);
     }
 
     threadPool = typeof(threadPool).init;

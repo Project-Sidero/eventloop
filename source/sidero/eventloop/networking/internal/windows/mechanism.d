@@ -18,9 +18,9 @@ version (Windows) {
         import core.sys.windows.windows : MAKEWORD, GetLastError, NO_ERROR;
         import core.sys.windows.winsock2;
 
-        auto gotLogger = Logger.forName(String_UTF8(__MODULE__));
-        if (gotLogger)
-            logger = gotLogger.get;
+        logger = Logger.forName(String_UTF8(__MODULE__));
+        if (!logger)
+            return false;
 
         enum WSAVersion = MAKEWORD(2, 2);
 

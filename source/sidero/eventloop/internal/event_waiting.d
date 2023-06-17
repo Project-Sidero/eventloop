@@ -54,7 +54,7 @@ version (none) {
 }
 
 package(sidero.eventloop.internal) __gshared {
-    ConcurrentHashMap!(Thread, EventWaiterThread) eventWaiterThreads;
+    ConcurrentHashMap!(ulong, EventWaiterThread) eventWaiterThreads;
     SystemLock eventWaiterMutex;
 
     HashMap!(void*, UserEventHandler) allEventHandles;
@@ -70,6 +70,7 @@ void addEventWaiterHandle(void* handleToWaitOn, UserEventProc proc, void* user) 
     }
 
     eventWaiterMutex.unlock;
+    updateEventWaiterThreads;
 }
 
 void removeEventWaiterHandle(scope void* handleToNotWaitOn) @trusted {
@@ -79,7 +80,7 @@ void removeEventWaiterHandle(scope void* handleToNotWaitOn) @trusted {
     allEventHandles.remove(handleToNotWaitOn);
 
     eventWaiterMutex.unlock;
-    updateEventWaiterThreads();
+    updateEventWaiterThreads;
 }
 
 void shutdownEventWaiterThreads() {
@@ -96,8 +97,11 @@ void updateEventWaiterThreads() @trusted {
     auto lockError = eventWaiterMutex.lock;
     assert(lockError);
 
-    if (logger.isNull)
+    if (!logger || logger.isNull) {
         logger = Logger.forName(String_UTF8(__MODULE__));
+        if (!logger)
+            return;
+    }
 
     logger.trace("Updating event waiter thread handles");
     const oldThreadCount = eventWaiterThreads.length;
@@ -106,7 +110,7 @@ void updateEventWaiterThreads() @trusted {
         // step one: cleanup old threads that are no longer alive
         foreach (threadState; eventWaiterThreads) {
             if (atomicLoad(threadState.isAlive))
-                eventWaiterThreads.remove(threadState.thread);
+                eventWaiterThreads.remove(threadState.thread.toHash());
         }
     }
 
@@ -120,8 +124,8 @@ void updateEventWaiterThreads() @trusted {
 
         size_t offset;
         foreach (handle, proc; allEventHandles) {
-            tempHandles[offset] = handle;
-            tempProcs[offset] = proc;
+            tempHandles[offset] = handle.assumeOkay;
+            tempProcs[offset] = proc.assumeOkay;
             offset++;
         }
     }
@@ -155,9 +159,11 @@ void updateEventWaiterThreads() @trusted {
                 break;
             }
 
-            eventWaiterThreads[gotThread.get] = EventWaiterThread.init;
+            const key = gotThread.get().toHash();
+            eventWaiterThreads[key] = EventWaiterThread.init;
 
-            auto threadState = eventWaiterThreads[gotThread.get];
+            auto threadState = eventWaiterThreads[key];
+            assert(threadState);
             threadState.thread = gotThread.get;
 
             if (tempHandles.length > maxEventHandles) {
@@ -184,7 +190,8 @@ void threadStartProc() @trusted {
     auto lockError = eventWaiterMutex.lock;
     assert(lockError);
 
-    auto threadState = eventWaiterThreads[Thread.self()];
+    const key = Thread.self().toHash();
+    auto threadState = eventWaiterThreads[key];
 
     if (!threadState) {
         logger.error("Could not start event waiter thread, missing thread information");

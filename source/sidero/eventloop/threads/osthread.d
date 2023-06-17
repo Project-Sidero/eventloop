@@ -79,12 +79,8 @@ export @safe nothrow @nogc:
             return false;
 
         version (Windows) {
-            import core.sys.windows.windows : HANDLE, GetExitCodeThread, STILL_ACTIVE;
-
-            uint result;
-            if (GetExitCodeThread(cast(HANDLE)state.handle.handle, &result) == STILL_ACTIVE)
-                return true;
-            return false;
+            import core.sys.windows.windows : HANDLE, WaitForSingleObject, WAIT_OBJECT_0;
+            return WaitForSingleObject(cast(HANDLE)state.handle.handle, 0) != WAIT_OBJECT_0;
         } else version (Posix) {
             import core.atomic : atomicLoad;
 
@@ -141,14 +137,18 @@ export @safe nothrow @nogc:
             }
 
             version (Windows) {
-                import core.sys.windows.windows : CreateThread, CloseHandle;
+                import core.sys.windows.windows : CreateThread, CloseHandle, CREATE_SUSPENDED, ResumeThread, GetThreadId;
 
-                auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, 0, null);
+                auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, CREATE_SUSPENDED, null);
                 if (handle is null) {
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
                 }
+
+                state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
+                allThreads[cast(void*)GetThreadId(handle)] = state;
+                ResumeThread(handle);
             } else version (Posix) {
                 import core.sys.posix.pthread : pthread_create, pthread_t, pthread_attr_t, pthread_attr_init,
                     pthread_attr_destroy, pthread_attr_setstacksize;
@@ -252,19 +252,22 @@ export @safe nothrow @nogc:
 
         version (Windows) {
             import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
-                HANDLE, GetCurrentThread, DuplicateHandle;
+                HANDLE, GetCurrentThread, DuplicateHandle, GetCurrentThreadId;
 
             HANDLE handle = GetCurrentThread();
             DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
+
+            auto lookupKey = GetCurrentThreadId();
         } else version (Posix) {
             import core.sys.posix.pthread : pthread_self, pthread_t;
 
             pthread_t handle = pthread_self();
+            auto lookupKey = handle;
         } else
             static assert(0, "Unimplemented platform");
 
         {
-            auto ifExists = allThreads.get(cast(void*)handle, null);
+            auto ifExists = allThreads.get(cast(void*)lookupKey, null);
 
             if (ifExists) {
                 Thread ret;
@@ -301,6 +304,9 @@ export @safe nothrow @nogc:
         else if (timeout <= Duration.init)
             return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
 
+        if (!isRunning)
+            return ErrorResult.init;
+
         version (Windows) {
             import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
                 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
@@ -321,7 +327,6 @@ export @safe nothrow @nogc:
                 default:
                 case WAIT_ABANDONED:
                 case WAIT_FAILED:
-
                     return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
                 }
             } else {
@@ -440,16 +445,10 @@ version (Windows) {
         EFA efa;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
-            HANDLE handle = GetCurrentThread();
-            DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
-
             self.state = cast(Thread.State*)state;
             self.__ctor(self);
 
             efa = *cast(EFA*)self.state.args;
-
-            self.state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
-            allThreads[self.state.handle.handle] = self.state;
             mutex.unlock;
         });
 
@@ -476,7 +475,6 @@ version (Windows) {
         default:
         case WAIT_ABANDONED:
         case WAIT_FAILED:
-
             return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
         }
     }

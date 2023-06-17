@@ -41,14 +41,18 @@ package(sidero.eventloop):
             if (refCount == 0) {
                 if (atomicLoad(isAlive)) {
                     foreach (pls; platformSockets) {
-                        if (atomicLoad(pls.isAlive))
-                            pls.forceClose;
+                        if (pls) {
+                            if (atomicLoad(pls.isAlive))
+                                pls.forceClose;
+                        }
                     }
                 }
 
                 foreach (pls; platformSockets) {
-                    if (atomicLoad(pls.isAlive))
-                        pls.cleanup;
+                    if (pls) {
+                        if (atomicLoad(pls.isAlive))
+                            pls.cleanup;
+                    }
                 }
 
                 RCAllocator allocator = this.allocator;
@@ -56,8 +60,10 @@ package(sidero.eventloop):
             } else if (refCount == 1 && atomicLoad(isAlive) > 0) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
                 foreach (pls; platformSockets) {
-                    if (atomicLoad(pls.isAlive))
-                        pls.shutdown;
+                    if (pls) {
+                        if (atomicLoad(pls.isAlive))
+                            pls.shutdown;
+                    }
                 }
             }
         }

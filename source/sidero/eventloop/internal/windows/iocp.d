@@ -29,9 +29,9 @@ version (Windows) {
     bool initializeWorkerMechanism(size_t numberOfWorkers) @trusted {
         import core.sys.windows.windows : CreateIoCompletionPort, INVALID_HANDLE_VALUE, GetLastError;
 
-        auto gotLogger = Logger.forName(String_UTF8(__MODULE__));
-        if (gotLogger)
-            logger = gotLogger.get;
+        logger = Logger.forName(String_UTF8(__MODULE__));
+        if (!logger || logger.isNull)
+            return false;
 
         requiredWorkers = cast(uint)numberOfWorkers;
         completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, null, 0, requiredWorkers);

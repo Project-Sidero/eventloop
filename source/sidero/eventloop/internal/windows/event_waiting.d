@@ -25,6 +25,7 @@ version (Windows) {
         assert(lockError);
 
         foreach (threadState; eventWaiterThreads) {
+            assert(threadState);
             atomicStore(threadState.isAlive, false);
 
             if (QueueUserAPC(&stopAcceptingProc, threadState.threadHandle, 0) == 0) {
@@ -35,6 +36,7 @@ version (Windows) {
         }
 
         foreach (threadState; eventWaiterThreads) {
+            assert(threadState);
             cast(void)threadState.thread.join;
         }
 
@@ -64,6 +66,7 @@ version (Windows) {
 
         // step five: wake up threads and set the handles to the new ones
         foreach (threadState; eventWaiterThreads) {
+            assert(threadState);
             if (threadState.nextEventHandles.isNull)
                 continue;
 
