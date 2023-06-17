@@ -4,6 +4,7 @@ import sidero.base.synchronization.mutualexclusion;
 import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.readonlyslice;
+import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.path.networking;
 import sidero.base.allocators;
 
@@ -20,15 +21,13 @@ package(sidero.eventloop):
 
     RCAllocator allocator;
     shared(ptrdiff_t) refCount = 1;
-    shared(bool) isAlive;
+    shared(ptrdiff_t) isAlive;
 
     NetworkAddress address;
     Socket.Protocol protocol;
 
     ListenSocketOnAccept onAcceptHandler;
-
-    PlatformListenSocket platform;
-    alias platform this;
+    ConcurrentHashMap!(PlatformListenSocketKey, PlatformListenSocket) platformSockets;
 
 @safe nothrow @nogc:
     void rc(bool addRef) scope @trusted {
@@ -40,38 +39,48 @@ package(sidero.eventloop):
             ptrdiff_t refCount = atomicOp!"-="(this.refCount, 1);
 
             if (refCount == 0) {
-                if (atomicLoad(isAlive))
-                    platform.forceClose;
+                if (atomicLoad(isAlive)) {
+                    foreach (pls; platformSockets) {
+                        if (atomicLoad(pls.isAlive))
+                            pls.forceClose;
+                    }
+                }
 
-                platform.cleanup;
+                foreach (pls; platformSockets) {
+                    if (atomicLoad(pls.isAlive))
+                        pls.cleanup;
+                }
 
                 RCAllocator allocator = this.allocator;
                 allocator.dispose(&this);
-            } else if (refCount == 1 && atomicLoad(isAlive)) {
+            } else if (refCount == 1 && atomicLoad(isAlive) > 0) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
-                platform.shutdown;
+                foreach (pls; platformSockets) {
+                    if (atomicLoad(pls.isAlive))
+                        pls.shutdown;
+                }
             }
         }
     }
 
-    void pin() scope {
+    void pin(ptrdiff_t amount) scope {
         import core.atomic : atomicLoad, atomicStore;
 
-        if (atomicLoad(isAlive))
+        if (atomicLoad(isAlive) > 0)
             assert(0, "Pinned");
 
         rc(true);
-        atomicStore(isAlive, true);
+        atomicStore(isAlive, amount);
     }
 
     void unpin() scope {
-        import core.atomic : atomicLoad, atomicStore;
+        import core.atomic : atomicLoad, atomicOp;
 
-        if (!atomicLoad(isAlive))
+        if (atomicLoad(isAlive) == 0)
             assert(0, "Not pinned");
 
-        atomicStore(isAlive, false);
-        rc(false);
+        if (atomicOp!"-="(isAlive, 1) == 0)
+            rc(false);
     }
 
     bool startUp(bool reuseAddr = true, bool keepAlive = true) scope @trusted {

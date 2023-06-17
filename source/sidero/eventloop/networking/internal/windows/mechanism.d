@@ -1,6 +1,8 @@
 module sidero.eventloop.networking.internal.windows.mechanism;
+import sidero.eventloop.networking.internal.state;
 import sidero.base.text;
 import sidero.base.logger;
+import sidero.base.path.networking;
 
 @safe nothrow @nogc:
 
@@ -8,7 +10,7 @@ version (Windows) {
     import sidero.eventloop.internal.windows.bindings;
     import sidero.eventloop.internal.windows.iocp;
 
-    private __gshared {
+    package(sidero.eventloop.networking.internal.windows) __gshared {
         LoggerReference logger;
     }
 
@@ -41,12 +43,20 @@ version (Windows) {
         WSACleanup;
     }
 
+    alias PlatformListenSocketKey = WSAEVENT;
+
     struct PlatformListenSocket {
-    package(sidero.eventloop):
         SOCKET handle;
         WSAEVENT eventHandle;
 
+        NetworkAddress address;
+        shared(bool) isAlive;
+
     @safe nothrow @nogc:
+        this(return scope ref PlatformListenSocket other) scope {
+            this.tupleof = other.tupleof;
+        }
+
         void forceClose() scope {
             import core.sys.windows.windows : closesocket;
 
@@ -67,22 +77,131 @@ version (Windows) {
     }
 
     struct PlatformSocket {
+        SOCKET handle;
+        WSAEVENT onCloseEvent;
+        OVERLAPPED readOverlapped, writeOverlapped;
+        IOCPwork iocpWork;
+
+        shared(bool) isShutdown;
+
     @safe nothrow @nogc:
 
-        void forceClose() {
+        void forceClose() scope {
+            import core.sys.windows.windows : closesocket;
 
+            closesocket(handle);
         }
 
-        void cleanup() {
+        void cleanup() scope {
+            import core.sys.windows.windows : shutdown, SD_RECEIVE;
+            import core.atomic : atomicStore;
 
+            shutdown(handle, SD_RECEIVE);
+            atomicStore(isShutdown, true);
         }
 
-        void shutdown() {
+        void shutdown() scope @trusted {
+            import core.sys.windows.windows : CloseHandle;
 
+            CloseHandle(onCloseEvent);
         }
 
-        void unregister() {
+        void unregister() scope {
+            import sidero.eventloop.internal.event_waiting;
 
+            removeEventWaiterHandle(onCloseEvent);
+        }
+
+        bool triggerRead(SocketState* socketState) scope @trusted {
+            import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, GetLastError;
+            import std.stdio : writeln;
+
+            if (socketState.reading.tryFulfillRequest(socketState))
+                return true;
+
+            const uint bufferNeeded = socketState.reading.wantedAmount > 0 ? cast(uint)socketState.reading.wantedAmount : 4096;
+            uint bufferLength = bufferNeeded;
+            if (socketState.reading.bufferToReadInto.length > bufferNeeded)
+                bufferLength = cast(uint)socketState.reading.bufferToReadInto.length;
+            else if (socketState.reading.bufferToReadInto.length < bufferNeeded)
+                socketState.reading.bufferToReadInto.length = bufferNeeded;
+
+            WSABUF[1] buffers;
+
+            buffers[0].len = bufferLength;
+            buffers[0].buf = socketState.reading.bufferToReadInto.ptr;
+
+            DWORD received, flags;
+
+            // ok we actually do want to use a completion routine (last parameter).
+            // as a result we can pass in the hEvent field of OVERLAPPED to the socket state
+
+            this.readOverlapped = OVERLAPPED.init;
+            auto result = WSARecv(handle, &buffers[0], 1, &received, &flags, &this.readOverlapped, null);
+
+            if (result == 0) {
+                // ok, we have data DANGIT, this isn't supposed to happen!
+                return true;
+            } else if (result == SOCKET_ERROR) {
+                auto error = GetLastError();
+
+                if (error == ERROR_IO_PENDING) {
+                    logger.trace("Triggering read with delay in IOCP", handle);
+                    // ok all good, this is what is expected (callback).
+                    return true;
+                } else {
+                    logger.error("Error failed to read on socket with error code", error, handle);
+                }
+            } else {
+                logger.error("Error failed to read on socket with code", result, handle);
+            }
+
+            return false;
+        }
+
+        bool triggerWrite(scope SocketState* state) scope @trusted {
+            import std.stdio : writeln;
+            import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
+
+            return state.writing.protect(() @trusted nothrow  @nogc {
+                bool didSomething;
+
+                while (state.writing.toSend.length == 1) {
+                    // ok we can send this
+                    WSABUF[1] buffers;
+                    buffers[0].buf = cast(ubyte*)state.writing.toSend[0].ptr;
+
+                    if (state.writing.toSend[0].length > uint.max)
+                        buffers[0].len = uint.max;
+                    else
+                        buffers[0].len = cast(uint)state.writing.toSend[0].length;
+
+                    DWORD amountSent, flags;
+                    state.writeOverlapped = OVERLAPPED.init;
+
+                    auto result = WSASend(state.handle, &buffers[0], 1, &amountSent, flags, &state.writeOverlapped, null);
+
+                    if (result == 0) {
+                        // ok sent
+                        logger.trace("Socket has had data written to it", handle);
+                        state.writing.complete(amountSent);
+                        didSomething = true;
+                    } else {
+                        auto error = GetLastError();
+
+                        if (error == ERROR_IO_PENDING) {
+                            // ok
+                            logger.trace("Waiting for data written to complete via IOCP", handle);
+                            return true;
+                        } else {
+                            logger.error("Failed to write data to socket with error code", error, handle);
+                            return false;
+                        }
+                    }
+                }
+
+                return didSomething;
+            });
         }
     }
 }

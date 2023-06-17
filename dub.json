@@ -10,8 +10,6 @@
     "dependencies": {
         "sidero_base": "*"
     },
-    "dflags-dmd": ["-allinst"],
-    "dflags-ldc2": ["-preview=dip25"],
     "injectSourceFiles": [
         "source/sidero/eventloop/threads/hook.d"
     ],

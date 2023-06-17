@@ -72,7 +72,7 @@ void addEventWaiterHandle(void* handleToWaitOn, UserEventProc proc, void* user) 
     eventWaiterMutex.unlock;
 }
 
-void removeEventWaiterHandle(void* handleToNotWaitOn) @trusted {
+void removeEventWaiterHandle(scope void* handleToNotWaitOn) @trusted {
     auto lockError = eventWaiterMutex.lock;
     assert(lockError);
 
