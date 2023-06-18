@@ -223,7 +223,9 @@ struct ReadingState {
         if (amount > bufferToReadInto.length)
             amount = bufferToReadInto.length;
 
-        availableData = bufferToReadInto[0 .. amount];
+        auto sliced = bufferToReadInto[0 .. amount];
+        assert(sliced);
+        availableData = sliced;
     }
 
     bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
@@ -241,7 +243,7 @@ struct ReadingState {
             return first.get == second.get;
         }
 
-        void subsetFromAvailable(size_t amount) {
+        void subsetFromAvailable(ptrdiff_t amount) {
             auto sliced1 = availableData[0 .. amount];
             assert(sliced1);
 
@@ -289,7 +291,7 @@ struct ReadingState {
                 ptrdiff_t index = availableData.indexOf(stopArray);
 
                 if (index < 0) {
-                    subsetFromAvailable(size_t.max);
+                    subsetFromAvailable(ptrdiff_t.max);
                 } else {
                     subsetFromAvailable(index + stopArray.length);
                     stopArray = typeof(stopArray).init;
@@ -346,13 +348,19 @@ struct WritingState {
         // already protected by mutex
 
         while (toSend.length > 0 && amount > 0) {
-            size_t canDo = toSend[0].length;
+            auto firstItem = toSend[0];
+            assert(firstItem);
+
+            size_t canDo = firstItem.length;
 
             if (canDo > amount) {
-                toSend[0] = toSend[0][amount .. $];
+                auto sliced = firstItem[amount .. $];
+                assert(sliced);
+
+                firstItem = sliced;
                 amount = 0;
             } else {
-                amount -= toSend[0].length;
+                amount -= firstItem.length;
                 toSend.remove(0, 1);
             }
         }

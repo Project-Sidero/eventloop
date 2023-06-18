@@ -211,6 +211,7 @@ version (Windows) {
         import core.sys.windows.windows : GetLastError, socket, INVALID_SOCKET, closesocket, AF_INET, AF_INET6,
         SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP, sockaddr_in, sockaddr_in6, WSAGetLastError, ERROR_IO_PENDING, SOCKET_ERROR;
 
+        assert(perSockState);
         short addressFamily, socketType, socketProtocol;
 
         {

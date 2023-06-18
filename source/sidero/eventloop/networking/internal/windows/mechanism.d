@@ -165,14 +165,17 @@ version (Windows) {
                 bool didSomething;
 
                 while (state.writing.toSend.length == 1) {
+                    auto firstItem = state.writing.toSend[0];
+                    assert(firstItem);
+
                     // ok we can send this
                     WSABUF[1] buffers;
-                    buffers[0].buf = cast(ubyte*)state.writing.toSend[0].ptr;
+                    buffers[0].buf = cast(ubyte*)firstItem.ptr;
 
-                    if (state.writing.toSend[0].length > uint.max)
+                    if (firstItem.length > uint.max)
                         buffers[0].len = uint.max;
                     else
-                        buffers[0].len = cast(uint)state.writing.toSend[0].length;
+                        buffers[0].len = cast(uint)firstItem.length;
 
                     DWORD amountSent, flags;
                     state.writeOverlapped = OVERLAPPED.init;

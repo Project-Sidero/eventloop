@@ -99,8 +99,10 @@ void updateEventWaiterThreads() @trusted {
 
     if (!logger || logger.isNull) {
         logger = Logger.forName(String_UTF8(__MODULE__));
-        if (!logger)
+        if (!logger) {
+            eventWaiterMutex.unlock;
             return;
+        }
     }
 
     logger.trace("Updating event waiter thread handles");
@@ -109,6 +111,7 @@ void updateEventWaiterThreads() @trusted {
     {
         // step one: cleanup old threads that are no longer alive
         foreach (threadState; eventWaiterThreads) {
+            assert(threadState);
             if (atomicLoad(threadState.isAlive))
                 eventWaiterThreads.remove(threadState.thread.toHash());
         }
@@ -124,6 +127,9 @@ void updateEventWaiterThreads() @trusted {
 
         size_t offset;
         foreach (handle, proc; allEventHandles) {
+            assert(handle);
+            assert(proc);
+
             tempHandles[offset] = handle.assumeOkay;
             tempProcs[offset] = proc.assumeOkay;
             offset++;
@@ -133,6 +139,8 @@ void updateEventWaiterThreads() @trusted {
     {
         // step three: give each waiter thread its new handles
         foreach (threadState; eventWaiterThreads) {
+            assert(threadState);
+
             if (tempHandles.length > maxEventHandles) {
                 threadState.nextEventHandles = tempHandles[0 .. maxEventHandles];
                 threadState.nextEventProcs = tempProcs[0 .. maxEventHandles];

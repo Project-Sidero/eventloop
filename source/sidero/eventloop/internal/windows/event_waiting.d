@@ -153,10 +153,21 @@ version (Windows) {
                     case WAIT_OBJECT_0: .. case WAIT_OBJECT_0 + MAXIMUM_WAIT_OBJECTS:
                         auto handleIndex = result - WAIT_OBJECT_0;
 
-                        logger.trace("Got event for event handle", thread, handleIndex, eventHandles[handleIndex],
-                                eventProcs[handleIndex]);
+                        auto gotHandle = eventHandles[handleIndex];
+                        if (!gotHandle) {
+                            logger.error("Failed to get event handle data", thread, handleIndex, gotHandle);
+                            return;
+                        }
 
-                        eventProcs[handleIndex].proc(eventHandles[handleIndex], eventProcs[handleIndex].user);
+                        auto gotUserProc = eventProcs[handleIndex];
+                        if (!gotUserProc) {
+                            logger.error("Failed to get event user proc data", thread, handleIndex, gotUserProc);
+                            return;
+                        }
+
+                        logger.trace("Got event for event handle", thread, handleIndex, gotHandle, gotUserProc);
+
+                        gotUserProc.proc(gotHandle, gotUserProc.user);
                         break;
                     default:
                         logger.trace("Got unknown event from wait", thread, result);
