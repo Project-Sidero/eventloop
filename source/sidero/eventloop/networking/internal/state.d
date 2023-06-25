@@ -147,8 +147,6 @@ package(sidero.eventloop):
     void unpin() scope @trusted {
         import core.atomic : atomicLoad, atomicStore;
 
-        platform.unregister;
-
         if (!atomicLoad(isAlive))
             return;
 
@@ -246,14 +244,15 @@ struct ReadingState {
         void subsetFromAvailable(ptrdiff_t amount) {
             auto sliced1 = availableData[0 .. amount];
             assert(sliced1);
+            auto sliced1G = sliced1.get;
 
             auto sliced2 = availableData[amount .. $];
             assert(sliced2);
 
             if (appendingArray.length == 0)
-                appendingArray = sliced1.get.dup;
+                appendingArray = sliced1G.dup;
             else
-                appendingArray ~= sliced1.get;
+                appendingArray ~= sliced1G;
 
             availableData = sliced2.get;
         }

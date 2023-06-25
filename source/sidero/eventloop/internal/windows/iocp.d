@@ -37,7 +37,7 @@ version (Windows) {
         completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, null, 0, requiredWorkers);
 
         if (completionPort is null) {
-            logger.error("Error occured while creating IOCP", GetLastError());
+            logger.error("Error occured while creating IOCP ", GetLastError());
             return false;
         } else {
             logger.trace("IOCP initialized successfully");
@@ -60,7 +60,7 @@ version (Windows) {
             auto result = PostQueuedCompletionStatus(completionPort, 0, shutdownKey, null);
 
             if (result == 0) {
-                logger.error("PostQueuedCompletionStatus failed", GetLastError());
+                logger.error("PostQueuedCompletionStatus failed ", GetLastError());
             }
 
             Thread.yield;
@@ -79,7 +79,7 @@ version (Windows) {
                 cast(size_t)&socket.state.iocpWork, 0);
 
         if (completionPort2 !is completionPort) {
-            logger.error("Error could not associate socket with IOCP with code", WSAGetLastError());
+            logger.error("Error could not associate socket with IOCP with code ", WSAGetLastError());
             return false;
         }
 
@@ -105,19 +105,19 @@ version (Windows) {
             OVERLAPPED* overlapped;
             auto result = GetQueuedCompletionStatus(completionPort, &numberOfBytesTransferred, &completionKey, &overlapped, INFINITE);
 
-            logger.trace("IOCP worker thread got", result, Thread.self);
+            logger.trace("IOCP worker thread got ", result, " ", Thread.self);
 
             if (!result) {
                 if (GetLastError() == WAIT_TIMEOUT) {
                 } else {
-                    logger.error("IOCP worker GetQueuedCompletionStatus failed", GetLastError(), Thread.self());
+                    logger.error("IOCP worker GetQueuedCompletionStatus failed ", GetLastError(), " ", Thread.self());
                     return;
                 }
             } else if (overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
-                logger.trace("Stopping a IOCP worker procedure cleanly", Thread.self());
+                logger.trace("Stopping a IOCP worker procedure cleanly ", Thread.self());
                 return;
             } else {
-                logger.trace("Got IOCP work", numberOfBytesTransferred, completionKey, result, Thread.self());
+                logger.trace("Got IOCP work ", numberOfBytesTransferred, " ", completionKey, " ", result, " ", Thread.self());
 
                 IOCPwork* work = cast(IOCPwork*)completionKey;
 
@@ -150,14 +150,14 @@ version (Windows) {
             auto error = GetLastError();
             if (error == WSA_IO_INCOMPLETE) {
                 // no data?
-                logger.trace("WSA received no data", socket, Thread.self());
+                logger.trace("WSA received no data ", socket, " ", Thread.self());
                 return;
             } else {
-                logger.error("Error unknown read socket error with code", error, socket, Thread.self());
+                logger.error("Error unknown read socket error with code ", error, " ", socket, " ", Thread.self());
                 return;
             }
         } else {
-            logger.trace("Read from socket", transferredBytes, flags, socket, Thread.self());
+            logger.trace("Read from socket ", transferredBytes, flags, socket, Thread.self());
             socket.state.reading.makeAvailable(transferredBytes);
             socket.state.reading.tryFulfillRequest(socket.state);
         }
@@ -173,14 +173,14 @@ version (Windows) {
             auto error = GetLastError();
             if (error == WSA_IO_INCOMPLETE) {
                 // no data?
-                logger.trace("WSA wrote no data", socket, Thread.self());
+                logger.trace("WSA wrote no data ", socket, " ", Thread.self());
                 return;
             } else {
-                logger.error("Error unknown write socket error with code", error, socket, Thread.self());
+                logger.error("Error unknown write socket error with code ", error, " ", socket, " ", Thread.self());
                 return;
             }
         } else {
-            logger.trace("Written from socket", transferredBytes, flags, socket, Thread.self());
+            logger.trace("Written from socket ", transferredBytes, " ", flags, " ", socket, " ", Thread.self());
 
             socket.state.writing.protect(() {
                 socket.state.writing.complete(transferredBytes);

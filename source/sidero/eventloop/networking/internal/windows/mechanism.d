@@ -101,15 +101,14 @@ version (Windows) {
         }
 
         void shutdown() scope @trusted {
+            import sidero.eventloop.internal.event_waiting;
             import core.sys.windows.windows : CloseHandle;
 
-            CloseHandle(onCloseEvent);
-        }
-
-        void unregister() scope {
-            import sidero.eventloop.internal.event_waiting;
-
-            removeEventWaiterHandle(onCloseEvent);
+            if (onCloseEvent !is null) {
+                removeEventWaiterHandle(onCloseEvent);
+                CloseHandle(onCloseEvent);
+                onCloseEvent = null;
+            }
         }
 
         bool triggerRead(SocketState* socketState) scope @trusted {
@@ -161,7 +160,7 @@ version (Windows) {
         bool triggerWrite(scope SocketState* state) scope @trusted {
             import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
 
-            return state.writing.protect(() @trusted nothrow  @nogc {
+            return state.writing.protect(() @trusted nothrow @nogc {
                 bool didSomething;
 
                 while (state.writing.toSend.length == 1) {

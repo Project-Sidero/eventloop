@@ -40,8 +40,6 @@ export @safe nothrow @nogc:
     ///
     ~this() scope @trusted {
         if (this.state !is null && atomicOp!"-="(state.refCount, 1) == 0 && !this.isRunning) {
-            externalDetach;
-
             mutex.pureLock;
             allThreads.remove(state.handle.handle);
 
@@ -79,8 +77,10 @@ export @safe nothrow @nogc:
             return false;
 
         version (Windows) {
-            import core.sys.windows.windows : HANDLE, WaitForSingleObject, WAIT_OBJECT_0;
-            return WaitForSingleObject(cast(HANDLE)state.handle.handle, 0) != WAIT_OBJECT_0;
+            import core.sys.windows.windows : HANDLE, STILL_ACTIVE, GetExitCodeThread;
+
+            DWORD exitCode;
+            return GetExitCodeThread(cast(HANDLE)state.handle.handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
         } else version (Posix) {
             import core.atomic : atomicLoad;
 
@@ -137,7 +137,7 @@ export @safe nothrow @nogc:
             }
 
             version (Windows) {
-                import core.sys.windows.windows : CreateThread, CloseHandle, CREATE_SUSPENDED, ResumeThread, GetThreadId;
+                import core.sys.windows.windows : CreateThread, CREATE_SUSPENDED, ResumeThread, GetThreadId;
 
                 auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, CREATE_SUSPENDED, null);
                 if (handle is null) {
@@ -158,7 +158,7 @@ export @safe nothrow @nogc:
 
                 s = pthread_attr_init(&attr);
                 if (s != 0) {
-                    cleanup;
+                    cleanup; 
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
                 }
@@ -178,13 +178,6 @@ export @safe nothrow @nogc:
                     return;
                 }
             }
-
-            mutex.pureLock;
-            version (Windows) {
-                // on Windows the handle gets duplicated during startup, so gotta make win32 reference count zero
-                CloseHandle(handle);
-            }
-            mutex.unlock;
 
             ret = Result!Thread(retThread);
         });
@@ -298,46 +291,44 @@ export @safe nothrow @nogc:
     }
 
     ///
-    ErrorResult join(Duration timeout = Duration.max) scope const @trusted {
+    ErrorResult join(Duration timeout = Duration.min) scope const @trusted {
         if (isNull)
             return ErrorResult(NullPointerException);
-        else if (timeout <= Duration.init)
-            return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
 
         if (!isRunning)
             return ErrorResult.init;
 
+        const block = timeout < Duration.zero;
+
         version (Windows) {
-            import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
+            import core.sys.windows.windows : HANDLE, WaitForMultipleObjectsEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
                 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
 
-            if (timeout < Duration.max) {
-                auto result = WaitForSingleObjectEx(cast(HANDLE)state.handle.handle, timeout < Duration.max ?
-                        cast(uint)timeout.totalMilliSeconds() : INFINITE, true);
+            DWORD dwTimeout = block ? INFINITE : cast(uint)timeout.totalMilliSeconds();
 
-                switch (result) {
-                case WAIT_OBJECT_0:
-                    return ErrorResult.init;
+            HANDLE handles = cast(HANDLE)state.handle.handle;
+            auto result = WaitForMultipleObjectsEx(1, &handles, false, dwTimeout, true);
 
-                case WAIT_IO_COMPLETION:
-                    return ErrorResult(EarlyThreadReturnException("Thread join completed early due APC IO execution"));
-                case WAIT_TIMEOUT:
-                    return ErrorResult(EarlyThreadReturnException("Thread join completed early due to timeout"));
+            switch (result) {
+            case WAIT_OBJECT_0:
+                return ErrorResult.init;
 
-                default:
-                case WAIT_ABANDONED:
-                case WAIT_FAILED:
-                    return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
-                }
-            } else {
-                return waitForJoin(cast(void*)state.handle.handle);
+            case WAIT_IO_COMPLETION:
+                return ErrorResult(EarlyThreadReturnException("Thread join completed early due APC IO execution"));
+            case WAIT_TIMEOUT:
+                return ErrorResult(EarlyThreadReturnException("Thread join completed early due to timeout"));
+
+            default:
+            case WAIT_ABANDONED:
+            case WAIT_FAILED:
+                return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
             }
         } else version (Posix) {
             import core.sys.posix.pthread : pthread_timedjoin_np, pthread_join;
             import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
             import core.stdc.time : timespec;
 
-            if (timeout < Duration.max) {
+            if (timeout >= Duration.zero) {
                 long secs = timeout.totalSeconds();
                 long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
@@ -453,15 +444,34 @@ version (Windows) {
         });
 
         self.externalAttach;
+        scope (exit)
+            self.externalDetach;
+
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return 0;
     }
 
     ErrorResult waitForJoin(scope void* handle) @trusted nothrow @nogc {
-        import core.sys.windows.windows : HANDLE, WaitForSingleObjectEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
-            WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
+        import core.sys.windows.windows : HANDLE, WaitForMultipleObjectsEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
+            WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE, LARGE_INTEGER;
 
-        auto result = WaitForSingleObjectEx(cast(HANDLE)handle, INFINITE, true);
+        Thread self;
+
+        accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
+            mutex.pureLock;
+            auto got = allThreads[handle];
+            if (got && got !is null) {
+                self.state = got;
+                self.__ctor(self);
+            }
+            mutex.unlock;
+        });
+
+        if (self.isNull || self.state.handle.handle is null)
+            return ErrorResult.init;
+
+        assert(handle !is null);
+        auto result = WaitForMultipleObjectsEx(1, &cast(HANDLE)handle, false, INFINITE, true);
 
         switch (result) {
         case WAIT_OBJECT_0:
@@ -487,6 +497,7 @@ version (Windows) {
         self.__ctor(self);
 
         atomicStore(state.isRunning, false);
+        self.externalDetach;
     }
 
     extern (C) void* start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state_) {
@@ -515,6 +526,7 @@ version (Windows) {
         });
 
         self.externalAttach;
+
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return null;
     }
