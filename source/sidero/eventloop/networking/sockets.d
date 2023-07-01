@@ -6,6 +6,9 @@ import sidero.base.allocators;
 import sidero.base.attributes;
 import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
+import sidero.base.errors;
+
+export @safe nothrow @nogc:
 
 ///
 alias ListenSocketOnAccept = void function(Socket) @safe nothrow @nogc;
@@ -54,10 +57,13 @@ export @safe nothrow @nogc:
     }
 
     /// Listen on port
-    static ListenSocket from(ListenSocketOnAccept handler, NetworkAddress address, Socket.Protocol protocol,
+    static Result!ListenSocket from(ListenSocketOnAccept handler, NetworkAddress address, Socket.Protocol protocol,
             bool reuseAddr = true, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
+
+        if (!ensureItIsSetup)
+            return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         ListenSocket ret;
         ret.state = allocator.make!ListenSocketState;
@@ -68,9 +74,9 @@ export @safe nothrow @nogc:
         ret.state.protocol = protocol;
 
         if (!ret.state.startUp(reuseAddr, keepAlive))
-            return ListenSocket.init;
+            return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
 
-        return ret;
+        return typeof(return)(ret);
     }
 }
 
@@ -184,19 +190,19 @@ export @safe nothrow @nogc:
     }
 }
 
-bool startUpNetworking() @trusted  {
+ErrorResult startUpNetworking() @trusted  {
     mutex.pureLock;
     scope (exit)
         mutex.unlock;
 
     if (isInitialized)
-        return true;
+        return ErrorResult.init;
 
     if (!startUpNetworkingMechanism)
-        return false;
+        return ErrorResult(UnknownPlatformBehaviorException("Could not start networking"));
 
     isInitialized = true;
-    return true;
+    return ErrorResult.init;
 }
 
 void shutdownNetworking() @trusted {
@@ -220,4 +226,15 @@ import sidero.base.synchronization.mutualexclusion;
 __gshared {
     TestTestSetLockInline mutex;
     bool isInitialized;
+}
+
+bool ensureItIsSetup() {
+    import sidero.eventloop.tasks.workers;
+
+    if (!startUpNetworking)
+        return false;
+    else if (!startWorkers(1))
+        return false;
+
+    return true;
 }
