@@ -158,7 +158,7 @@ export @safe nothrow @nogc:
 
                 s = pthread_attr_init(&attr);
                 if (s != 0) {
-                    cleanup; 
+                    cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
                 }

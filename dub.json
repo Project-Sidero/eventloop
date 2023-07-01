@@ -3,24 +3,36 @@
         "Richard (Rikki) Andrew Cattermole"
     ],
     "copyright": "Copyright © 2022-2023, Richard Cattermole",
-	"description": "Event loop & threads for -betterC and beyond.",
-	"license": "Artistic-2.0",
-	"name": "sidero_eventloop",
-    "dflags": ["-preview=dip1000"],
+    "description": "Event loop & threads for -betterC and beyond.",
+    "license": "Artistic-2.0",
+    "name": "sidero_eventloop",
+    "dflags": [
+        "-preview=dip1000"
+    ],
     "dependencies": {
         "sidero_base": "*"
     },
     "injectSourceFiles": [
         "source/sidero/eventloop/threads/hook.d"
     ],
-    "libs-windows": ["Mswsock"],
-    "libs-posix": ["pthread"],
+    "libs-windows": [
+        "Mswsock",
+        "Crypt32"
+    ],
+    "libs-posix": [
+        "pthread"
+    ],
+    "mainSourceFile": "source/app.d",
     "configurations": [
         {
             "name": "library",
             "targetType": "dynamicLibrary",
-            "versions": ["DynamicSideroEventLoop"],
-            "dflags-windows-ldc": ["--fvisibility=public"],
+            "versions": [
+                "DynamicSideroEventLoop"
+            ],
+            "dflags-windows-ldc": [
+                "--fvisibility=public"
+            ],
             "buildOptions": [
                 "betterC"
             ]
@@ -34,6 +46,10 @@
         },
         {
             "name": "unittest"
+        },
+        {
+            "name": "executable",
+            "targetType": "executable"
         }
     ]
 }
