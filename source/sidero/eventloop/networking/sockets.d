@@ -18,7 +18,7 @@ struct ListenSocket {
         ListenSocketState* state;
     }
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     this(return scope ref ListenSocket other) scope {
@@ -55,7 +55,7 @@ struct ListenSocket {
 
     /// Listen on port
     static ListenSocket from(ListenSocketOnAccept handler, NetworkAddress address, Socket.Protocol protocol,
-        bool reuseAddr = true, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+            bool reuseAddr = true, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
 
@@ -184,10 +184,40 @@ export @safe nothrow @nogc:
     }
 }
 
-bool startUpNetworking() {
-    return startUpNetworkingMechanism;
+bool startUpNetworking() @trusted  {
+    mutex.pureLock;
+    scope (exit)
+        mutex.unlock;
+
+    if (isInitialized)
+        return true;
+
+    if (!startUpNetworkingMechanism)
+        return false;
+
+    isInitialized = true;
+    return true;
 }
 
-void shutdownNetworking() {
+void shutdownNetworking() @trusted {
+    import sidero.eventloop.internal.event_waiting;
+
+    mutex.pureLock;
+    scope (exit)
+        mutex.unlock;
+
+    if (!isInitialized)
+        return;
+
+    shutdownEventWaiterThreads;
     shutdownNetworkingMechanism;
+    isInitialized = false;
+}
+
+private:
+import sidero.base.synchronization.mutualexclusion;
+
+__gshared {
+    TestTestSetLockInline mutex;
+    bool isInitialized;
 }

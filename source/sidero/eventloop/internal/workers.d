@@ -1,9 +1,10 @@
 module sidero.eventloop.internal.workers;
 import sidero.eventloop.threads;
 import sidero.base.system : cpuCount;
-import sidero.base.containers.readonlyslice;
+import sidero.base.containers.dynamicarray;
 import sidero.base.logger;
 import sidero.base.text;
+import sidero.base.synchronization.mutualexclusion;
 
 version (Windows) {
     import sidero.eventloop.internal.windows.iocp;
@@ -26,45 +27,57 @@ version (none) {
 }
 
 private __gshared {
-    Slice!Thread threadPool;
+    TestTestSetLockInline mutex;
+    bool isInitialized;
+
+    DynamicArray!Thread threadPool;
     LoggerReference logger;
 }
 
 bool startWorkers(size_t workerMultiplier) @trusted {
-    import sidero.base.containers.dynamicarray;
+    mutex.pureLock;
+    scope (exit)
+        mutex.unlock;
 
     logger = Logger.forName(String_UTF8(__MODULE__));
     if (!logger)
         return false;
 
-    const count = workerMultiplier /+ * cpuCount()+/ ;
+    const count = workerMultiplier * cpuCount();
+    if (threadPool.length >= count)
+        return true;
 
-    DynamicArray!Thread tempPool;
-    tempPool.reserve(count);
+    auto oldCount = threadPool.length;
 
+    threadPool.reserve(count - oldCount);
     if (!initializeWorkerMechanism(count))
         return false;
 
-    foreach (i; 0 .. count) {
+    foreach (i; oldCount .. count) {
         auto thread = Thread.create(&workerProc);
 
         if (thread)
-            tempPool ~= thread.get;
+            threadPool ~= thread.get;
         else {
             logger.error("Could not create thread", thread.getError());
             break;
         }
     }
 
-    threadPool = tempPool.asReadOnly();
+    isInitialized = true;
     return true;
 }
 
-void shutdownWorkers() {
-    shutdownWorkerMechanism;
-}
+void shutdownWorkers() @trusted {
+    mutex.pureLock;
+    scope (exit)
+        mutex.unlock;
 
-void waitForWorkersToJoin() @trusted {
+    if (!isInitialized)
+        return;
+
+    shutdownWorkerMechanism;
+
     foreach (thread; threadPool) {
         for (;;) {
             auto got = thread.join();
@@ -77,4 +90,5 @@ void waitForWorkersToJoin() @trusted {
     }
 
     threadPool = typeof(threadPool).init;
+    isInitialized = false;
 }

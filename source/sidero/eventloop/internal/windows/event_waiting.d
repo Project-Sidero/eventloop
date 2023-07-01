@@ -74,8 +74,8 @@ version (Windows) {
             if (QueueUserAPC(&updateHandlesProc, threadState.threadHandle, cast(size_t)&threadState.get()) == 0) {
                 logger.error("Error failed to send stop waiting APC with code ", threadState.get, " ", GetLastError());
             } else {
-                logger.trace("Triggered update handles APC ", threadState.get, " ", threadState.nextEventHandles.length, " ",
-                        threadState.nextEventProcs.length);
+                logger.trace("Triggered update handles APC ", threadState.get, " ",
+                        threadState.nextEventHandles.length, " ", threadState.nextEventProcs.length);
             }
         }
     }
