@@ -111,50 +111,54 @@ version (Windows) {
             }
         }
 
-        bool triggerRead(SocketState* socketState) scope @trusted {
+        bool triggerRead(SocketState* socketState, bool tryToFulfill = true) scope @trusted {
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, GetLastError;
 
-            if (socketState.reading.tryFulfillRequest(socketState))
+            if (tryToFulfill && socketState.readingState.tryFulfillRequest(socketState))
                 return true;
 
-            const uint bufferNeeded = socketState.reading.wantedAmount > 0 ? cast(uint)socketState.reading.wantedAmount : 4096;
-            uint bufferLength = bufferNeeded;
-            if (socketState.reading.bufferToReadInto.length > bufferNeeded)
-                bufferLength = cast(uint)socketState.reading.bufferToReadInto.length;
-            else if (socketState.reading.bufferToReadInto.length < bufferNeeded)
-                socketState.reading.bufferToReadInto.length = bufferNeeded;
+            return socketState.rawReadingState.protectTriggeringOfRead(() @trusted {
+                const uint bufferNeeded = cast(uint)socketState.encryptionState.amountNeedToBeRead(socketState);
+                socketState.rawReadingState.prepareBufferFor(bufferNeeded);
 
-            WSABUF[1] buffers;
+                uint bufferLength = bufferNeeded;
+                if (socketState.rawReadingState.bufferToReadInto.length > bufferNeeded)
+                    bufferLength = cast(uint)socketState.rawReadingState.bufferToReadInto.length;
 
-            buffers[0].len = bufferLength;
-            buffers[0].buf = socketState.reading.bufferToReadInto.ptr;
+                WSABUF[1] buffers;
 
-            DWORD received, flags;
+                buffers[0].len = bufferLength;
+                buffers[0].buf = socketState.rawReadingState.bufferToReadInto.ptr +
+                    socketState.rawReadingState.currentlyAvailableData.length;
 
-            // ok we actually do want to use a completion routine (last parameter).
-            // as a result we can pass in the hEvent field of OVERLAPPED to the socket state
+                DWORD received, flags;
 
-            this.readOverlapped = OVERLAPPED.init;
-            auto result = WSARecv(handle, &buffers[0], 1, &received, &flags, &this.readOverlapped, null);
+                // the read action goes through the IOCP handler
 
-            if (result == 0) {
-                // ok, we have data DANGIT, this isn't supposed to happen!
-                return true;
-            } else if (result == SOCKET_ERROR) {
-                auto error = GetLastError();
+                this.readOverlapped = OVERLAPPED.init;
+                auto result = WSARecv(handle, &buffers[0], 1, &received, &flags, &this.readOverlapped, null);
 
-                if (error == ERROR_IO_PENDING) {
-                    logger.trace("Triggering read with delay in IOCP", handle);
-                    // ok all good, this is what is expected (callback).
+                if (result == 0) {
+                    // ok, we have data DANGIT, this isn't supposed to happen!
+                    // it should however still go through IOCP so don't worry about handling it
+                    logger.trace("Triggering read without delay ", handle);
                     return true;
-                } else {
-                    logger.error("Error failed to read on socket with error code", error, handle);
-                }
-            } else {
-                logger.error("Error failed to read on socket with code", result, handle);
-            }
+                } else if (result == SOCKET_ERROR) {
+                    auto error = GetLastError();
 
-            return false;
+                    if (error == ERROR_IO_PENDING) {
+                        logger.trace("Triggering read with delay in IOCP ", handle);
+                        // ok all good, this is what is expected (callback).
+                        return true;
+                    } else {
+                        logger.error("Error failed to read on socket with error code ", error, " ", handle);
+                    }
+                } else {
+                    logger.error("Error failed to read on socket with code ", result, " ", handle);
+                }
+
+                return false;
+            });
         }
 
         bool triggerWrite(scope SocketState* state) scope @trusted {

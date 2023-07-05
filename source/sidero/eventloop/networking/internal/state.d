@@ -1,5 +1,7 @@
 module sidero.eventloop.networking.internal.state;
+import sidero.eventloop.networking.internal.encryption;
 import sidero.eventloop.networking.sockets;
+import sidero.eventloop.certificates;
 import sidero.base.synchronization.mutualexclusion;
 import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.containers.dynamicarray;
@@ -25,6 +27,9 @@ package(sidero.eventloop):
 
     NetworkAddress address;
     Socket.Protocol protocol;
+
+    Certificate certificate;
+    Socket.EncryptionProtocol encryption;
 
     ListenSocketOnAccept onAcceptHandler;
     ConcurrentHashMap!(PlatformListenSocketKey, PlatformListenSocket) platformSockets;
@@ -106,7 +111,10 @@ package(sidero.eventloop):
     PlatformSocket platform;
     alias platform this;
 
-    ReadingState reading;
+    EncryptionState encryptionState;
+
+    ReadingState readingState;
+    RawReadingState rawReadingState;
     WritingState writing;
 
 @safe nothrow @nogc:
@@ -123,6 +131,7 @@ package(sidero.eventloop):
                 if (atomicLoad(isAlive))
                     platform.forceClose;
 
+                encryptionState.cleanup;
                 platform.cleanup;
 
                 RCAllocator allocator = this.allocator;
@@ -157,7 +166,7 @@ package(sidero.eventloop):
     void close(bool gracefully) scope @trusted {
         platform.shutdown();
 
-        if (!gracefully || writing.protect(() { return !writing.haveData; }) && !reading.inProgress) {
+        if (!gracefully || writing.protect(() { return !writing.haveData; }) && !readingState.inProgress) {
             platform.forceClose();
             unpin;
         }
@@ -166,31 +175,43 @@ package(sidero.eventloop):
 
 struct ReadingState {
     TestTestSetLockInline mutex;
-    DynamicArray!ubyte bufferToReadInto, availableData;
-
     size_t wantedAmount;
     Slice!ubyte stopArray;
     SocketReadCallback toCall;
 
     // only needed if it takes multiple read responses to complete
     DynamicArray!ubyte appendingArray;
-
 @safe nothrow @nogc:
 
     bool inProgress() scope {
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
+
         return toCall !is null;
     }
 
-    bool perform(size_t amount, SocketReadCallback callback) scope {
-        assert(amount > 0);
-        assert(callback !is null);
+    size_t getWantedAmount() {
+        if (!inProgress)
+            return 0;
 
         mutex.pureLock;
         scope (exit)
             mutex.unlock;
 
+        return wantedAmount > 0 ? wantedAmount : size_t.max;
+    }
+
+    bool requestFromUser(size_t amount, SocketReadCallback callback) scope {
+        assert(amount > 0);
+        assert(callback !is null);
+
         if (inProgress)
             return false;
+
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
 
         toCall = callback;
         wantedAmount = amount;
@@ -198,16 +219,16 @@ struct ReadingState {
         return true;
     }
 
-    bool perform(Slice!ubyte stopCondition, SocketReadCallback callback) scope {
+    bool requestFromUser(Slice!ubyte stopCondition, SocketReadCallback callback) scope {
         assert(stopCondition.length > 0);
         assert(callback !is null);
+
+        if (inProgress)
+            return false;
 
         mutex.pureLock;
         scope (exit)
             mutex.unlock;
-
-        if (inProgress)
-            return false;
 
         toCall = callback;
         stopArray = stopCondition;
@@ -216,106 +237,190 @@ struct ReadingState {
         return true;
     }
 
-    void makeAvailable(size_t amount) scope @trusted {
-        amount += availableData.length;
+    bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
+        // ok what is the source of our buffers?
+        // we work through the encryption API, so it can figure it out if we are reading directly or not
+
+        bool success;
+        SocketReadCallback calling;
+        DynamicArray!ubyte dataToCallWith;
+
+        socketState.encryptionState.protectRead(socketState, (DynamicArray!ubyte availableData) @trusted {
+            size_t tryingToConsume;
+
+            bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) {
+                auto first = appendingArray[start1 .. end1];
+                if (!first)
+                    return false;
+
+                auto second = stopArray[start2 .. end2];
+                if (!second)
+                    return false;
+
+                return first.get == second.get;
+            }
+
+            void subsetFromAvailable(ptrdiff_t amount) {
+                auto sliced = availableData[0 .. amount];
+                assert(sliced);
+                auto slicedG = sliced.get;
+
+                if (appendingArray.length == 0)
+                    appendingArray = slicedG.dup;
+                else
+                    appendingArray ~= slicedG;
+
+                tryingToConsume = slicedG.length;
+            }
+
+            if (wantedAmount > 0 && availableData.length > 0) {
+                const canDo = wantedAmount > availableData.length ? availableData.length : wantedAmount;
+
+                subsetFromAvailable(canDo);
+                wantedAmount -= canDo;
+                success = wantedAmount == 0;
+            } else if (wantedAmount == 0) {
+                // ok stop condition is a little more complicated...
+
+                assert(stopArray.length > 0);
+                size_t maxInFirst = stopArray.length - 1;
+                if (maxInFirst > appendingArray.length)
+                    maxInFirst = appendingArray.length;
+
+                foreach (i; appendingArray.length - maxInFirst .. appendingArray.length) {
+                    const amountToCheck = appendingArray.length - i;
+
+                    if (checkIfStop(i, ptrdiff_t.max, 0, amountToCheck)) {
+                        // ok existing in buffer ok, next up gotta check what has already been read
+                        const inSecond = stopArray.length - amountToCheck;
+
+                        if (inSecond <= availableData.length && checkIfStop(0, inSecond, amountToCheck, ptrdiff_t.max)) {
+                            subsetFromAvailable(inSecond);
+                            stopArray = typeof(stopArray).init;
+                            success = true;
+                        }
+                    }
+                }
+
+                if (!success) {
+                    ptrdiff_t index = availableData.indexOf(stopArray);
+
+                    if (index < 0) {
+                        subsetFromAvailable(ptrdiff_t.max);
+                    } else {
+                        subsetFromAvailable(index + stopArray.length);
+                        stopArray = typeof(stopArray).init;
+                        success = true;
+                    }
+                }
+            }
+
+            if (success) {
+                calling = toCall;
+                dataToCallWith = appendingArray;
+
+                toCall = null;
+                appendingArray = typeof(appendingArray).init;
+
+                return tryingToConsume;
+            } else
+                return 0;
+        });
+
+        if (success && calling !is null) {
+            Socket socket;
+            socket.state = socketState;
+            socket.state.rc(true);
+
+            calling(socket, dataToCallWith);
+        } else {
+            if (!socketState.rawReadingState.protectTriggeringOfRead(() {
+                    return socketState.rawReadingState.currentlyTriggered;
+                })) {
+                socketState.triggerRead(socketState, false);
+            }
+        }
+
+        return success;
+    }
+}
+
+struct RawReadingState {
+    TestTestSetLockInline mutex;
+    DynamicArray!ubyte bufferToReadInto, currentlyAvailableData;
+    bool currentlyTriggered;
+
+@safe nothrow @nogc:
+
+    void prepareBufferFor(size_t amount) scope @trusted {
+        auto fullArray = bufferToReadInto.unsafeGetLiteral();
+        auto sliced = currentlyAvailableData.unsafeGetLiteral();
+
+        if (sliced !is null && sliced.ptr !is fullArray.ptr) {
+            foreach (i, b; sliced) {
+                fullArray[i] = b;
+            }
+
+            auto sliced2 = bufferToReadInto[0 .. sliced.length];
+            assert(sliced2);
+            currentlyAvailableData = sliced2.get;
+        }
+
+        const have = fullArray.length - sliced.length;
+        const diff = amount - have;
+
+        if (have < amount) {
+            bufferToReadInto.length = diff + fullArray.length;
+        }
+    }
+
+    void dataWasReceived(size_t amount) scope @trusted {
+        mutex.pureLock;
+
+        amount += currentlyAvailableData.length;
         if (amount > bufferToReadInto.length)
             amount = bufferToReadInto.length;
 
         auto sliced = bufferToReadInto[0 .. amount];
         assert(sliced);
-        availableData = sliced;
+        currentlyAvailableData = sliced;
+
+        currentlyTriggered = false;
+        mutex.unlock;
     }
 
-    bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
-        bool trigger;
+    void protectReadForEncryption(scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
 
-        bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) {
-            auto first = appendingArray[start1 .. end1];
-            if (!first)
-                return false;
+        if (currentlyAvailableData.length == 0)
+            return;
 
-            auto second = stopArray[start2 .. end2];
-            if (!second)
-                return false;
+        size_t consumed = del(currentlyAvailableData);
+        if (consumed > currentlyAvailableData.length)
+            consumed = currentlyAvailableData.length;
 
-            return first.get == second.get;
+        if (consumed > 0) {
+            auto sliced = currentlyAvailableData[consumed .. $];
+            assert(sliced);
+            currentlyAvailableData = sliced.get;
         }
+    }
 
-        void subsetFromAvailable(ptrdiff_t amount) {
-            auto sliced1 = availableData[0 .. amount];
-            assert(sliced1);
-            auto sliced1G = sliced1.get;
+    bool protectTriggeringOfRead(scope bool delegate() @safe nothrow @nogc del) scope @trusted {
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
 
-            auto sliced2 = availableData[amount .. $];
-            assert(sliced2);
+        if (this.currentlyTriggered)
+            return false;
 
-            if (appendingArray.length == 0)
-                appendingArray = sliced1G.dup;
-            else
-                appendingArray ~= sliced1G;
+        bool result = del();
+        if (result)
+            this.currentlyTriggered = true;
 
-            availableData = sliced2.get;
-        }
-
-        if (wantedAmount > 0 && availableData.length > 0) {
-            const canDo = wantedAmount > availableData.length ? availableData.length : wantedAmount;
-
-            subsetFromAvailable(canDo);
-            wantedAmount -= canDo;
-            trigger = wantedAmount == 0;
-        } else if (wantedAmount == 0) {
-            // ok stop condition is a little more complicated...
-
-            assert(stopArray.length > 0);
-            size_t maxInFirst = stopArray.length - 1;
-            if (maxInFirst > appendingArray.length)
-                maxInFirst = appendingArray.length;
-
-            foreach (i; appendingArray.length - maxInFirst .. appendingArray.length) {
-                const amountToCheck = appendingArray.length - i;
-
-                if (checkIfStop(i, ptrdiff_t.max, 0, amountToCheck)) {
-                    // ok existing in buffer ok, next up gotta check what has already been read
-                    const inSecond = stopArray.length - amountToCheck;
-
-                    if (inSecond <= availableData.length && checkIfStop(0, inSecond, amountToCheck, ptrdiff_t.max)) {
-                        subsetFromAvailable(inSecond);
-                        stopArray = typeof(stopArray).init;
-                        trigger = true;
-                    }
-                }
-            }
-
-            if (!trigger) {
-                ptrdiff_t index = availableData.indexOf(stopArray);
-
-                if (index < 0) {
-                    subsetFromAvailable(ptrdiff_t.max);
-                } else {
-                    subsetFromAvailable(index + stopArray.length);
-                    stopArray = typeof(stopArray).init;
-                    trigger = true;
-                }
-            }
-        }
-
-        if (trigger) {
-            Socket socket;
-            socket.state = socketState;
-            socket.state.rc(true);
-
-            auto calling = toCall;
-            toCall = null;
-            auto data = appendingArray;
-            appendingArray = typeof(appendingArray).init;
-
-            calling(socket, data);
-            return true;
-        } else {
-            assert(availableData.length == 0);
-        }
-
-        return false;
+        return result;
     }
 }
 

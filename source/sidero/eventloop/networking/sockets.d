@@ -1,5 +1,6 @@
 module sidero.eventloop.networking.sockets;
 import sidero.eventloop.networking.internal.state;
+import sidero.eventloop.certificates;
 import sidero.base.containers.dynamicarray;
 import sidero.base.path.networking;
 import sidero.base.allocators;
@@ -58,6 +59,7 @@ export @safe nothrow @nogc:
 
     /// Listen on port
     static Result!ListenSocket from(ListenSocketOnAccept handler, NetworkAddress address, Socket.Protocol protocol,
+            Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate certificate = Certificate.init,
             bool reuseAddr = true, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
@@ -72,6 +74,8 @@ export @safe nothrow @nogc:
         ret.state.onAcceptHandler = handler;
         ret.state.address = address;
         ret.state.protocol = protocol;
+        ret.state.encryption = encryption;
+        ret.state.certificate = certificate;
 
         if (!ret.state.startUp(reuseAddr, keepAlive))
             return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
@@ -116,7 +120,7 @@ export @safe nothrow @nogc:
 
     ///
     bool isReadInProgress() scope {
-        return isAlive() && state.reading.inProgress;
+        return isAlive() && state.readingState.inProgress;
     }
 
     /// Stop sending & receiving of data
@@ -131,7 +135,7 @@ export @safe nothrow @nogc:
         if (isReadInProgress)
             return false;
 
-        if (!state.reading.perform(amount, onRecieve))
+        if (!state.readingState.requestFromUser(amount, onRecieve))
             return false;
 
         return state.triggerRead(state);
@@ -144,10 +148,10 @@ export @safe nothrow @nogc:
 
     ///
     bool readUntil(scope return Slice!ubyte endCondition, scope return SocketReadCallback onRecieve) scope @trusted {
-        if (isReadInProgress)
+        if (!isAlive || isReadInProgress)
             return false;
 
-        if (!state.reading.perform(endCondition, onRecieve))
+        if (!state.readingState.requestFromUser(endCondition, onRecieve))
             return false;
 
         return state.triggerRead(state);
@@ -160,9 +164,32 @@ export @safe nothrow @nogc:
 
     ///
     bool write(scope return Slice!ubyte data) scope @trusted {
+        if (!isAlive())
+            return false;
+
         state.writing.perform(data);
         state.triggerWrite(state);
         return true;
+    }
+
+    ///
+    ErrorResult configureEncryption(EncryptionProtocol encryption) scope {
+        if (!isAlive())
+            return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
+
+        if (!state.encryptionState.reinitializeEncryption(this.state, encryption))
+            return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
+        return ErrorResult.init;
+    }
+
+    ///
+    ErrorResult configureEncryption(Certificate certificate, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS) scope {
+        if (!isAlive())
+            return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
+
+        if (!state.encryptionState.reinitializeEncryption(this.state, certificate, encryption))
+            return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
+        return ErrorResult.init;
     }
 
     ///
@@ -171,6 +198,22 @@ export @safe nothrow @nogc:
         TCP,
         ///
         UDP,
+    }
+
+    ///
+    enum EncryptionProtocol {
+        ///
+        None,
+        ///
+        TLS_1_0,
+        ///
+        TLS_1_1,
+        ///
+        TLS_1_2,
+        ///
+        TLS_1_3,
+        ///
+        Best_TLS,
     }
 
     package(sidero.eventloop) static Socket fromListen(Protocol protocol, NetworkAddress localAddress,
@@ -190,7 +233,8 @@ export @safe nothrow @nogc:
     }
 }
 
-ErrorResult startUpNetworking() @trusted  {
+///
+ErrorResult startUpNetworking() @trusted {
     mutex.pureLock;
     scope (exit)
         mutex.unlock;
@@ -205,6 +249,7 @@ ErrorResult startUpNetworking() @trusted  {
     return ErrorResult.init;
 }
 
+///
 void shutdownNetworking() @trusted {
     import sidero.eventloop.internal.event_waiting;
 

@@ -209,7 +209,7 @@ version (Windows) {
         import sidero.eventloop.internal.windows.iocp;
         import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
         import core.sys.windows.windows : GetLastError, socket, INVALID_SOCKET, closesocket, AF_INET, AF_INET6,
-        SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP, sockaddr_in, sockaddr_in6, WSAGetLastError, ERROR_IO_PENDING, SOCKET_ERROR;
+            SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP, sockaddr_in, sockaddr_in6, WSAGetLastError, ERROR_IO_PENDING, SOCKET_ERROR;
 
         assert(perSockState);
         short addressFamily, socketType, socketProtocol;
@@ -244,14 +244,14 @@ version (Windows) {
         }
 
         final switch (listenSocketState.protocol) {
-            case Socket.Protocol.TCP:
-                socketType = SOCK_STREAM;
-                socketProtocol = IPPROTO_TCP;
-                break;
-            case Socket.Protocol.UDP:
-                socketType = SOCK_DGRAM;
-                socketProtocol = IPPROTO_UDP;
-                break;
+        case Socket.Protocol.TCP:
+            socketType = SOCK_STREAM;
+            socketProtocol = IPPROTO_TCP;
+            break;
+        case Socket.Protocol.UDP:
+            socketType = SOCK_DGRAM;
+            socketProtocol = IPPROTO_UDP;
+            break;
         }
 
         SOCKET acceptedSocket = WSASocketA(addressFamily, socketType, socketProtocol, null, 0, WSA_FLAG_OVERLAPPED);
@@ -268,7 +268,7 @@ version (Windows) {
             OVERLAPPED overlapped;
 
             auto result = AcceptEx(perSockState.handle, acceptedSocket, buffer.ptr, 0, SockAddressMaxSize + 16,
-            SockAddressMaxSize + 16, &received, &overlapped);
+                    SockAddressMaxSize + 16, &received, &overlapped);
 
             if (result != 0 && result != ERROR_IO_PENDING) {
                 logger.error("Error could not accept socket with error", perSockState.handle, WSAGetLastError());
@@ -278,7 +278,7 @@ version (Windows) {
                 logger.trace("Accepted a socket", acceptedSocket, perSockState.handle);
 
                 sockaddr_in* localAddressPtr = cast(sockaddr_in*)buffer.ptr,
-                remoteAddressPtr = cast(sockaddr_in*)&buffer[SockAddressMaxSize + 16];
+                    remoteAddressPtr = cast(sockaddr_in*)&buffer[SockAddressMaxSize + 16];
                 NetworkAddress localAddress, remoteAddress;
 
                 {
@@ -337,7 +337,8 @@ version (Windows) {
                     });
 
                     if (notRecognized) {
-                        logger.error("Did not recognize an IP address for accepted socket", localAddress, remoteAddress, acceptedSocket, perSockState.handle);
+                        logger.error("Did not recognize an IP address for accepted socket", localAddress,
+                                remoteAddress, acceptedSocket, perSockState.handle);
                         closesocket(acceptedSocket);
                         return;
                     } else {
@@ -350,14 +351,16 @@ version (Windows) {
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
 
                 if (acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {
-                    logger.error("Error occured while creating the on close event with code", acceptedSocket, perSockState.handle, GetLastError());
+                    logger.error("Error occured while creating the on close event with code", acceptedSocket,
+                            perSockState.handle, GetLastError());
                     return;
                 } else {
                     logger.trace("WSA on close event created", acceptedSocket, perSockState.handle);
                 }
 
                 if (WSAEventSelect(acceptedSocket, acquiredSocket.state.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
-                    logger.error("Error could not associated on close event with accepted socket", acceptedSocket, perSockState.handle, GetLastError());
+                    logger.error("Error could not associated on close event with accepted socket", acceptedSocket,
+                            perSockState.handle, GetLastError());
                     closesocket(acceptedSocket);
                     return;
                 } else {
@@ -369,6 +372,15 @@ version (Windows) {
                     return;
                 } else {
                     logger.trace("Associated connection with IOCP", acceptedSocket, perSockState.handle);
+                }
+
+                if (!listenSocketState.certificate.isNull) {
+                    if (!acquiredSocket.state.encryptionState.reinitializeEncryption(acquiredSocket.state,
+                            listenSocketState.certificate, listenSocketState.encryption)) {
+                        logger.error("Error could not initialize encryption on socket ", acceptedSocket, perSockState.handle);
+                        closesocket(acceptedSocket);
+                        return;
+                    }
                 }
 
                 addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);

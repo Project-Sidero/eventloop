@@ -41,6 +41,14 @@ export @safe nothrow @nogc:
     }
 
     ///
+    Type type() scope const {
+        if (isNull)
+            return Type.None;
+
+        return state.type;
+    }
+
+    ///
     Slice!ubyte publicKey(scope return RCAllocator allocator = RCAllocator.init) scope return @trusted {
         if (isNull)
             return typeof(return).init;

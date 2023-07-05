@@ -133,7 +133,7 @@ version (Windows) {
 
                     if (atomicLoad(socket.state.isShutdown) && socket.state.writing.protect(() {
                             return !socket.state.writing.haveData;
-                        }) && !socket.state.reading.inProgress)
+                        }) && !socket.state.readingState.inProgress)
                         socket.state.platform.forceClose();
                 }
             }
@@ -158,8 +158,8 @@ version (Windows) {
             }
         } else {
             logger.trace("Read from socket ", transferredBytes, flags, socket, Thread.self());
-            socket.state.reading.makeAvailable(transferredBytes);
-            socket.state.reading.tryFulfillRequest(socket.state);
+            socket.state.rawReadingState.dataWasReceived(transferredBytes);
+            socket.state.readingState.tryFulfillRequest(socket.state);
         }
     }
 

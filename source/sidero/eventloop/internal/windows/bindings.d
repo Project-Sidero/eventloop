@@ -5,6 +5,8 @@ version (Windows) {
         WAIT_TIMEOUT, OVERLAPPED, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV;
+    public import core.sys.windows.sspi : SecPkgInfoW;
+    public import core.sys.windows.security : SECURITY_STATUS;
     import core.stdc.config : c_long;
 
     alias WSAEVENT = HANDLE;
@@ -36,7 +38,8 @@ version (Windows) {
         HCERTSTORE CertOpenSystemStoreW(HCRYPTPROV, LPCWSTR);
         BOOL CertCloseStore(HCERTSTORE, DWORD);
         PCCERT_CONTEXT CertFindCertificateInStore(HCERTSTORE, DWORD, DWORD, DWORD, const(void)*, PCCERT_CONTEXT);
-
+        SECURITY_STATUS QuerySecurityPackageInfoW(wchar*, SecPkgInfoW**);
+        SECURITY_STATUS FreeContextBuffer(void*);
     }
 
     enum {
