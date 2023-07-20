@@ -14,7 +14,7 @@ export @safe nothrow @nogc:
 ///
 alias ListenSocketOnAccept = void function(Socket) @safe nothrow @nogc;
 ///
-alias SocketReadCallback = void function(Socket socket, DynamicArray!ubyte data) @safe nothrow @nogc;
+alias SocketReadCallback = void function(Socket socket, Slice!ubyte data) @safe nothrow @nogc;
 
 ///
 struct ListenSocket {
@@ -158,36 +158,27 @@ export @safe nothrow @nogc:
     }
 
     ///
-    bool write(scope return DynamicArray!ubyte data) scope {
+    Expected write(scope return DynamicArray!ubyte data) scope {
         return this.write(data.asReadOnly());
     }
 
     ///
-    bool write(scope return Slice!ubyte data) scope @trusted {
+    Expected write(scope return Slice!ubyte data) scope @trusted {
         if (!isAlive())
-            return false;
+            return Expected(data.length, 0);
 
-        state.writing.perform(data);
-        state.triggerWrite(state);
-        return true;
+        auto expected = state.encryptionState.writeData(state, data);
+        if (expected)
+            state.triggerWrite(state);
+        return expected;
     }
 
     ///
-    ErrorResult configureEncryption(EncryptionProtocol encryption) scope {
+    ErrorResult addEncryption(Certificate certificate, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS) scope {
         if (!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if (!state.encryptionState.reinitializeEncryption(this.state, encryption))
-            return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
-        return ErrorResult.init;
-    }
-
-    ///
-    ErrorResult configureEncryption(Certificate certificate, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS) scope {
-        if (!isAlive())
-            return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
-
-        if (!state.encryptionState.reinitializeEncryption(this.state, certificate, encryption))
+        if (!state.encryptionState.addEncryption(this.state, certificate, encryption))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }

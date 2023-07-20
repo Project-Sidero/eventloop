@@ -17,7 +17,8 @@
     ],
     "libs-windows": [
         "Mswsock",
-        "Crypt32"
+        "Crypt32",
+        "Secur32"
     ],
     "libs-posix": [
         "pthread"
@@ -31,7 +32,8 @@
                 "DynamicSideroEventLoop"
             ],
             "dflags-windows-ldc": [
-                "--fvisibility=public"
+                "--fvisibility=public",
+                "-dllimport=all"
             ],
             "buildOptions": [
                 "betterC"

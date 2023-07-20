@@ -15,11 +15,14 @@ version (Windows) {
     }
 
     bool startUpNetworkingMechanism() @trusted {
+        import sidero.eventloop.networking.internal.windows.encryption;
         import core.sys.windows.windows : MAKEWORD, GetLastError, NO_ERROR;
         import core.sys.windows.winsock2;
 
         logger = Logger.forName(String_UTF8(__MODULE__));
         if (!logger)
+            return false;
+        else if (!setupWinCryptEncryption)
             return false;
 
         enum WSAVersion = MAKEWORD(2, 2);
@@ -164,11 +167,11 @@ version (Windows) {
         bool triggerWrite(scope SocketState* state) scope @trusted {
             import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
 
-            return state.writing.protect(() @trusted nothrow @nogc {
+            return state.rawWritingState.protect(() @trusted nothrow @nogc {
                 bool didSomething;
 
-                while (state.writing.toSend.length == 1) {
-                    auto firstItem = state.writing.toSend[0];
+                while (state.rawWritingState.toSend.length >= 1) {
+                    auto firstItem = state.rawWritingState.toSend[0];
                     assert(firstItem);
 
                     // ok we can send this
@@ -188,7 +191,7 @@ version (Windows) {
                     if (result == 0) {
                         // ok sent
                         logger.trace("Socket has had data written to it", handle);
-                        state.writing.complete(amountSent);
+                        state.rawWritingState.complete(amountSent);
                         didSomething = true;
                     } else {
                         auto error = GetLastError();

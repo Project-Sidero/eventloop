@@ -105,6 +105,8 @@ package(sidero.eventloop):
     shared(ptrdiff_t) refCount = 1;
     shared(bool) isAlive;
 
+    bool cameFromServer;
+
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
 
@@ -115,7 +117,7 @@ package(sidero.eventloop):
 
     ReadingState readingState;
     RawReadingState rawReadingState;
-    WritingState writing;
+    RawWritingState rawWritingState;
 
 @safe nothrow @nogc:
 
@@ -166,7 +168,7 @@ package(sidero.eventloop):
     void close(bool gracefully) scope @trusted {
         platform.shutdown();
 
-        if (!gracefully || writing.protect(() { return !writing.haveData; }) && !readingState.inProgress) {
+        if (!gracefully || rawWritingState.protect(() { return !rawWritingState.haveData; }) && !readingState.inProgress) {
             platform.forceClose();
             unpin;
         }
@@ -238,14 +240,15 @@ struct ReadingState {
     }
 
     bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
+        import core.atomic : atomicLoad;
         // ok what is the source of our buffers?
         // we work through the encryption API, so it can figure it out if we are reading directly or not
 
         bool success;
         SocketReadCallback calling;
-        DynamicArray!ubyte dataToCallWith;
+        Slice!ubyte dataToCallWith;
 
-        socketState.encryptionState.protectRead(socketState, (DynamicArray!ubyte availableData) @trusted {
+        socketState.encryptionState.readData(socketState, (DynamicArray!ubyte availableData) @trusted {
             size_t tryingToConsume;
 
             bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) {
@@ -317,7 +320,7 @@ struct ReadingState {
 
             if (success) {
                 calling = toCall;
-                dataToCallWith = appendingArray;
+                dataToCallWith = appendingArray.asReadOnly();
 
                 toCall = null;
                 appendingArray = typeof(appendingArray).init;
@@ -336,7 +339,7 @@ struct ReadingState {
         } else {
             if (!socketState.rawReadingState.protectTriggeringOfRead(() {
                     return socketState.rawReadingState.currentlyTriggered;
-                })) {
+                }) && atomicLoad(socketState.isAlive)) {
                 socketState.triggerRead(socketState, false);
             }
         }
@@ -351,6 +354,14 @@ struct RawReadingState {
     bool currentlyTriggered;
 
 @safe nothrow @nogc:
+
+    bool haveDataToRead() scope {
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
+
+        return currentlyAvailableData.length > 0;
+    }
 
     void prepareBufferFor(size_t amount) scope @trusted {
         auto fullArray = bufferToReadInto.unsafeGetLiteral();
@@ -424,13 +435,13 @@ struct RawReadingState {
     }
 }
 
-struct WritingState {
+struct RawWritingState {
     TestTestSetLockInline mutex;
     ConcurrentLinkedList!(Slice!ubyte) toSend;
 
 @safe nothrow @nogc:
 
-    void perform(return scope Slice!ubyte data) scope {
+    void dataToSend(return scope Slice!ubyte data) scope {
         mutex.pureLock;
         toSend ~= data;
         mutex.unlock;

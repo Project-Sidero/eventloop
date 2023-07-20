@@ -126,13 +126,15 @@ version (Windows) {
                     socket.state = cast(SocketState*)work.ptr;
                     socket.state.rc(true);
 
-                    if (overlapped is &socket.state.writeOverlapped)
-                        handleSocketWrite(socket);
-                    if (overlapped is &socket.state.readOverlapped)
-                        handleSocketRead(socket);
+                    if (numberOfBytesTransferred > 0) {
+                        if (overlapped is &socket.state.writeOverlapped)
+                            handleSocketWrite(socket);
+                        if (overlapped is &socket.state.readOverlapped)
+                            handleSocketRead(socket);
+                    }
 
-                    if (atomicLoad(socket.state.isShutdown) && socket.state.writing.protect(() {
-                            return !socket.state.writing.haveData;
+                    if (atomicLoad(socket.state.isShutdown) && socket.state.rawWritingState.protect(() {
+                            return !socket.state.rawWritingState.haveData;
                         }) && !socket.state.readingState.inProgress)
                         socket.state.platform.forceClose();
                 }
@@ -142,6 +144,7 @@ version (Windows) {
 
     void handleSocketRead(Socket socket) @trusted {
         import core.sys.windows.windows : DWORD, GetLastError;
+        import core.atomic : atomicLoad;
 
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.readOverlapped, &transferredBytes, false, &flags);
@@ -159,12 +162,14 @@ version (Windows) {
         } else {
             logger.trace("Read from socket ", transferredBytes, flags, socket, Thread.self());
             socket.state.rawReadingState.dataWasReceived(transferredBytes);
-            socket.state.readingState.tryFulfillRequest(socket.state);
+            if (atomicLoad(socket.state.isAlive))
+                socket.state.readingState.tryFulfillRequest(socket.state);
         }
     }
 
     void handleSocketWrite(Socket socket) @trusted {
         import core.sys.windows.windows : DWORD, GetLastError;
+        import core.atomic : atomicLoad;
 
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.writeOverlapped, &transferredBytes, false, &flags);
@@ -182,9 +187,9 @@ version (Windows) {
         } else {
             logger.trace("Written from socket ", transferredBytes, " ", flags, " ", socket, " ", Thread.self());
 
-            socket.state.writing.protect(() {
-                socket.state.writing.complete(transferredBytes);
-                if (socket.state.writing.haveData)
+            socket.state.rawWritingState.protect(() {
+                socket.state.rawWritingState.complete(transferredBytes);
+                if (socket.state.rawWritingState.haveData && atomicLoad(socket.state.isAlive))
                     socket.state.triggerWrite(socket.state);
                 return true;
             });

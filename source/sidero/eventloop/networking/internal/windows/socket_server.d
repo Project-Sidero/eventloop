@@ -349,6 +349,7 @@ version (Windows) {
                 Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
                 acquiredSocket.state.handle = acceptedSocket;
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
+                acquiredSocket.state.cameFromServer = true;
 
                 if (acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {
                     logger.error("Error occured while creating the on close event with code", acceptedSocket,
@@ -375,7 +376,7 @@ version (Windows) {
                 }
 
                 if (!listenSocketState.certificate.isNull) {
-                    if (!acquiredSocket.state.encryptionState.reinitializeEncryption(acquiredSocket.state,
+                    if (!acquiredSocket.state.encryptionState.addEncryption(acquiredSocket.state,
                             listenSocketState.certificate, listenSocketState.encryption)) {
                         logger.error("Error could not initialize encryption on socket ", acceptedSocket, perSockState.handle);
                         closesocket(acceptedSocket);

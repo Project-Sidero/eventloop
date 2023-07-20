@@ -1,4 +1,5 @@
 module sidero.eventloop.certificates.defs;
+import sidero.eventloop.handles;
 import sidero.base.allocators;
 import sidero.base.datetime;
 import sidero.base.text;
@@ -7,6 +8,9 @@ import sidero.base.typecons : Optional;
 import sidero.base.path.file;
 
 export @safe nothrow @nogc:
+
+///
+static immutable WinCryptCertificateHandleType = SystemHandleType.from("wictcert");
 
 ///
 struct Certificate {
@@ -46,6 +50,21 @@ export @safe nothrow @nogc:
             return Type.None;
 
         return state.type;
+    }
+
+    /// Warning: unsafe, you must handle reference counting and keeping this instance alive
+    SystemHandle unsafeGetHandle() scope const @trusted {
+        if (isNull)
+            return SystemHandle.init;
+
+        final switch(state.type) {
+            case Certificate.Type.None:
+            case Certificate.Type.Default:
+                assert(0);
+
+            case Certificate.Type.WinCrypt:
+                return SystemHandle(cast(void*)state.winCryptCertificateContext, WinCryptCertificateHandleType);
+        }
     }
 
     ///

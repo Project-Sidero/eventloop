@@ -3,12 +3,18 @@ import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.certificates;
 import sidero.base.containers.dynamicarray;
+import sidero.base.containers.readonlyslice;
+import sidero.base.containers.list.concurrentlinkedlist;
+import sidero.base.errors;
+import sidero.base.synchronization.mutualexclusion;
 
 struct EncryptionState {
     package(sidero.eventloop.networking.internal) {
         Certificate currentCertificate;
         Socket.EncryptionProtocol currentProtocol;
         size_t bufferSize;
+
+        DecryptedState decryptedState;
 
         version (Windows) {
             import sidero.eventloop.networking.internal.windows.encryption;
@@ -35,42 +41,20 @@ struct EncryptionState {
         }
     }
 
-    bool reinitializeEncryption(scope SocketState* socketState, Socket.EncryptionProtocol protocol) scope @trusted {
-        // wanted raw & is raw
-        if (currentCertificate.type == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None))
-            return true;
-
-        final switch (currentCertificate.type) {
-        case Certificate.Type.None:
-            // we can't actually remove encryption once added when it comes to TLS
-            return false;
-        case Certificate.Type.WinCrypt:
-            version (Windows) {
-                return winCrypt.replace(socketState, currentCertificate, protocol);
-            } else
-                return false;
-        case Certificate.Type.Default:
-            assert(0);
-        }
-    }
-
-    bool reinitializeEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol) scope @trusted {
+    bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol) scope @trusted {
         // wanted raw & is raw
         if (currentCertificate.type == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None ||
                 certificate.type == Certificate.Type.None))
             return true;
+        else if (!currentCertificate.isNull || currentProtocol != Socket.EncryptionProtocol.None)
+            return false;
 
         final switch (certificate.type) {
         case Certificate.Type.None:
-            // we can't actually remove encryption once added when it comes to TLS
             return false;
         case Certificate.Type.WinCrypt:
             version (Windows) {
-                if (currentCertificate.type == Certificate.Type.None) {
-                    return winCrypt.add(socketState, certificate, protocol);
-                } else {
-                    return winCrypt.replace(socketState, certificate, protocol);
-                }
+                return winCrypt.add(socketState, certificate, protocol);
             } else
                 return false;
         case Certificate.Type.Default:
@@ -78,24 +62,7 @@ struct EncryptionState {
         }
     }
 
-    void protectRead(scope SocketState* socketState, scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope {
-        if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
-            // ok we use the raw buffer directly
-            socketState.rawReadingState.protectReadForEncryption(del);
-            return;
-        }
-
-        final switch (currentCertificate.type) {
-        case Certificate.Type.WinCrypt:
-            break;
-
-        case Certificate.Type.None:
-        case Certificate.Type.Default:
-            assert(0);
-        }
-    }
-
-    size_t amountNeedToBeRead(scope SocketState* socketState) {
+    size_t amountNeedToBeRead(scope SocketState* socketState) scope {
         if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             const amount = socketState.readingState.getWantedAmount();
             return amount < size_t.max ? amount : 4096;
@@ -105,5 +72,103 @@ struct EncryptionState {
             return 4096;
         else
             return this.bufferSize;
+    }
+
+    void readData(scope SocketState* socketState, scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope {
+        if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+            // ok we use the raw buffer directly
+            socketState.rawReadingState.protectReadForEncryption(del);
+            return;
+        }
+
+        bool doneOne;
+
+        while ((socketState.rawReadingState.haveDataToRead || decryptedState.haveDataToRead) && !doneOne) {
+            final switch (currentCertificate.type) {
+            case Certificate.Type.WinCrypt:
+                version (Windows) {
+                    winCrypt.readData(socketState);
+                    break;
+                } else
+                    assert(0);
+
+            case Certificate.Type.None:
+            case Certificate.Type.Default:
+                assert(0);
+            }
+
+            doneOne = decryptedState.tryFulfillRequest(socketState, del);
+        }
+    }
+
+    Expected writeData(scope SocketState* socketState, return scope Slice!ubyte data) scope @trusted {
+        if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+            socketState.rawWritingState.dataToSend(data);
+            return Expected(data.length, data.length);
+        }
+
+        final switch (currentCertificate.type) {
+        case Certificate.Type.WinCrypt:
+            version (Windows) {
+                return winCrypt.writeData(socketState, data);
+            } else
+                assert(0);
+
+        case Certificate.Type.None:
+        case Certificate.Type.Default:
+            assert(0);
+        }
+    }
+}
+
+struct DecryptedState {
+    TestTestSetLockInline mutex;
+    ConcurrentLinkedList!(DynamicArray!ubyte) decryptedData;
+
+@safe nothrow @nogc:
+
+    bool haveDataToRead() scope {
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
+
+        return decryptedData.length > 0;
+    }
+
+    void addDecryptedData(return scope DynamicArray!ubyte data) {
+        mutex.pureLock;
+
+        decryptedData ~= data;
+
+        mutex.unlock;
+    }
+
+    bool tryFulfillRequest(scope SocketState* socketState, scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
+        mutex.pureLock;
+
+        bool doneOne = decryptedData.length == 0;
+        size_t handled = doneOne ? 0 : 1;
+
+        while (decryptedData.length > 0 && handled > 0) {
+            auto da = decryptedData[0];
+            assert(da);
+
+            handled = del(da.get);
+
+            if (handled > 0) {
+                auto sliced = da.get[handled .. $];
+                assert(sliced);
+
+                if (sliced.length > 0)
+                    decryptedData[0] = sliced;
+                else
+                    decryptedData.remove(0, 1);
+
+                doneOne = true;
+            }
+        }
+
+        mutex.unlock;
+        return doneOne;
     }
 }
