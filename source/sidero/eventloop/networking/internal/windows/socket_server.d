@@ -58,6 +58,7 @@ version (Windows) {
             address.onNetworkOrder((uint value) @trusted {
                 //ipv4
                 addressFamily = AF_INET;
+                serverAddressSize = SockAddress4Size;
 
                 sockaddr_in* saPtr = cast(sockaddr_in*)serverAddressBuffer.ptr;
                 saPtr.sin_family = AF_INET;
@@ -66,6 +67,7 @@ version (Windows) {
             }, (ushort[8] value) @trusted {
                 // ipv6
                 addressFamily = AF_INET6;
+                serverAddressSize = SockAddress6Size;
 
                 sockaddr_in6* saPtr = cast(sockaddr_in6*)serverAddressBuffer.ptr;
                 saPtr.sin6_family = AF_INET6;
@@ -106,7 +108,7 @@ version (Windows) {
         }
 
         {
-            platformListenSocket.handle = WSASocketA(addressFamily, socketType, 0, null, 0, WSA_FLAG_OVERLAPPED);
+            platformListenSocket.handle = WSASocketW(addressFamily, socketType, 0, null, 0, WSA_FLAG_OVERLAPPED);
 
             if (platformListenSocket.handle == INVALID_SOCKET) {
                 logger.error("Error could not open socket", address, WSAGetLastError());
@@ -119,11 +121,13 @@ version (Windows) {
         {
             if (reuseAddr && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
                 logger.error("Error could not set SO_REUSEADDR", address, WSAGetLastError());
+                closesocket(platformListenSocket.handle);
                 return false;
             }
 
             if (keepAlive && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
                 logger.error("Error could not set SO_KEEPALIVE", address, WSAGetLastError());
+                closesocket(platformListenSocket.handle);
                 return false;
             }
         }
@@ -207,6 +211,7 @@ version (Windows) {
 
     void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
         import sidero.eventloop.internal.windows.iocp;
+        import sidero.eventloop.networking.internal.windows.socket_client;
         import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
         import core.sys.windows.windows : GetLastError, socket, INVALID_SOCKET, closesocket, AF_INET, AF_INET6,
             SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP, sockaddr_in, sockaddr_in6, WSAGetLastError, ERROR_IO_PENDING, SOCKET_ERROR;
@@ -388,31 +393,6 @@ version (Windows) {
                 acquiredSocket.state.pin();
                 listenSocketState.onAcceptHandler(acquiredSocket);
             }
-        }
-    }
-
-    void handleSocketEvent(void* handle, void* user) @trusted {
-        import core.atomic : atomicStore;
-        import core.sys.windows.windows : closesocket, GetLastError, WSAENOTSOCK;
-
-        SocketState* socketState = cast(SocketState*)user;
-        WSANETWORKEVENTS wsaEvent;
-
-        if (WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
-            auto error = GetLastError();
-
-            if (error == WSAENOTSOCK) {
-                // ok just in case lets just unpin it
-                socketState.unpin;
-            } else {
-                logger.error("Error could not enumerate WSA network socket events with code", error, socketState.handle);
-            }
-        } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
-            logger.trace("Socket closed", socketState.handle);
-            closesocket(socketState.handle);
-            socketState.unpin();
-        } else {
-            logger.error("Error unknown socket event", wsaEvent, socketState.handle);
         }
     }
 }

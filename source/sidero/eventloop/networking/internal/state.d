@@ -9,11 +9,13 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.path.networking;
 import sidero.base.allocators;
+import sidero.base.errors;
 
 package(sidero.eventloop):
 
 version (Windows) {
     import sidero.eventloop.networking.internal.windows.socket_server;
+    import sidero.eventloop.networking.internal.windows.socket_client;
     public import sidero.eventloop.networking.internal.windows.mechanism;
 } else
     static assert(0, "Unimplemented");
@@ -130,11 +132,11 @@ package(sidero.eventloop):
             ptrdiff_t refCount = atomicOp!"-="(this.refCount, 1);
 
             if (refCount == 0) {
-                if (atomicLoad(isAlive))
-                    platform.forceClose;
-
                 encryptionState.cleanup;
                 platform.cleanup;
+
+                if (atomicLoad(isAlive))
+                    platform.forceClose;
 
                 RCAllocator allocator = this.allocator;
                 allocator.dispose(&this);
@@ -172,6 +174,13 @@ package(sidero.eventloop):
             platform.forceClose();
             unpin;
         }
+    }
+
+    ErrorResult startUp(NetworkAddress address, bool keepAlive = true) scope @trusted {
+        Socket socket;
+        socket.state = &this;
+        this.rc(true);
+        return connectToSpecificAddress(socket, address, keepAlive);
     }
 }
 

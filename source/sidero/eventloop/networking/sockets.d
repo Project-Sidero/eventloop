@@ -174,7 +174,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    ErrorResult addEncryption(Certificate certificate, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS) scope {
+    ErrorResult addEncryption(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS, Certificate certificate = Certificate.init) scope {
         if (!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
@@ -205,6 +205,23 @@ export @safe nothrow @nogc:
         TLS_1_3,
         ///
         Best_TLS,
+    }
+
+    ///
+    static Result!Socket connectTo(NetworkAddress address, Socket.Protocol protocol, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+        if (allocator.isNull)
+            allocator = globalAllocator();
+
+        Socket ret;
+        ret.state = allocator.make!SocketState;
+        ret.state.allocator = allocator;
+
+        ret.state.protocol = protocol;
+
+        auto errorResult = ret.state.startUp(address, keepAlive);
+        if (!errorResult)
+            return typeof(return)(errorResult.getError());
+        return typeof(return)(ret);
     }
 
     package(sidero.eventloop) static Socket fromListen(Protocol protocol, NetworkAddress localAddress,

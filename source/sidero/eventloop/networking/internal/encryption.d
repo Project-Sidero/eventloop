@@ -11,6 +11,7 @@ import sidero.base.synchronization.mutualexclusion;
 struct EncryptionState {
     package(sidero.eventloop.networking.internal) {
         Certificate currentCertificate;
+        Certificate.Type encryptionEngine;
         Socket.EncryptionProtocol currentProtocol;
         size_t bufferSize;
 
@@ -26,7 +27,7 @@ struct EncryptionState {
 @safe nothrow @nogc:
 
     void cleanup() scope {
-        final switch (currentCertificate.type) {
+        final switch (encryptionEngine) {
         case Certificate.Type.None:
             break;
 
@@ -43,7 +44,7 @@ struct EncryptionState {
 
     bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol) scope @trusted {
         // wanted raw & is raw
-        if (currentCertificate.type == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None ||
+        if (encryptionEngine == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None &&
                 certificate.type == Certificate.Type.None))
             return true;
         else if (!currentCertificate.isNull || currentProtocol != Socket.EncryptionProtocol.None)
@@ -51,7 +52,10 @@ struct EncryptionState {
 
         final switch (certificate.type) {
         case Certificate.Type.None:
-            return false;
+            version (Windows) {
+                goto case Certificate.Type.WinCrypt;
+            } else
+                return false;
         case Certificate.Type.WinCrypt:
             version (Windows) {
                 return winCrypt.add(socketState, certificate, protocol);
@@ -63,7 +67,7 @@ struct EncryptionState {
     }
 
     size_t amountNeedToBeRead(scope SocketState* socketState) scope {
-        if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+        if (encryptionEngine || currentProtocol == Socket.EncryptionProtocol.None) {
             const amount = socketState.readingState.getWantedAmount();
             return amount < size_t.max ? amount : 4096;
         }
@@ -75,7 +79,7 @@ struct EncryptionState {
     }
 
     void readData(scope SocketState* socketState, scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope {
-        if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+        if (encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             // ok we use the raw buffer directly
             socketState.rawReadingState.protectReadForEncryption(del);
             return;
@@ -84,7 +88,7 @@ struct EncryptionState {
         bool doneOne;
 
         while ((socketState.rawReadingState.haveDataToRead || decryptedState.haveDataToRead) && !doneOne) {
-            final switch (currentCertificate.type) {
+            final switch (encryptionEngine) {
             case Certificate.Type.WinCrypt:
                 version (Windows) {
                     winCrypt.readData(socketState);
@@ -102,12 +106,12 @@ struct EncryptionState {
     }
 
     Expected writeData(scope SocketState* socketState, return scope Slice!ubyte data) scope @trusted {
-        if (currentCertificate.type == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+        if (encryptionEngine || currentProtocol == Socket.EncryptionProtocol.None) {
             socketState.rawWritingState.dataToSend(data);
             return Expected(data.length, data.length);
         }
 
-        final switch (currentCertificate.type) {
+        final switch (encryptionEngine) {
         case Certificate.Type.WinCrypt:
             version (Windows) {
                 return winCrypt.writeData(socketState, data);

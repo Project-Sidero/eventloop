@@ -6,7 +6,7 @@ version (Windows) {
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
-    public import core.sys.windows.sspi : SecPkgInfoW, CredHandle, SECPKG_CRED_INBOUND, TimeStamp, SEC_GET_KEY_FN,
+    public import core.sys.windows.sspi : SecPkgInfoW, CredHandle, SECPKG_CRED_INBOUND, SECPKG_CRED_OUTBOUND, TimeStamp, SEC_GET_KEY_FN,
         SecPkgContext_StreamSizes,
         CtxtHandle, PSecHandle, SECPKG_ATTR_STREAM_SIZES, SecBuffer, SecBufferDesc, SECBUFFER_STREAM_HEADER, SECBUFFER_DATA,
         PCtxtHandle, SECBUFFER_STREAM_TRAILER, SECBUFFER_VERSION, SECBUFFER_EMPTY, SECBUFFER_EXTRA, SECBUFFER_TOKEN;
@@ -53,6 +53,7 @@ version (Windows) {
         SECURITY_STATUS EncryptMessage(PSecHandle, ULONG, SecBufferDesc*, ULONG);
         SECURITY_STATUS AcceptSecurityContext(CredHandle*, PCtxtHandle, SecBufferDesc*, ULONG, ULONG, PCtxtHandle,
                 SecBufferDesc*, ULONG*, TimeStamp*);
+        SECURITY_STATUS DeleteSecurityContext(PCtxtHandle);
     }
 
     enum {
@@ -86,6 +87,28 @@ version (Windows) {
         SECURITY_NATIVE_DREP = 0x00000010,
         ISC_REQ_ALLOCATE_MEMORY = 0x00000100,
         ISC_REQ_STREAM = 0x00008000,
+
+        SP_PROT_SSL2_SERVER = 0x00000004,
+        SP_PROT_SSL3_SERVER = 0x00000010,
+        SP_PROT_TLS1_SERVER = 0x00000040,
+        SP_PROT_TLS1_0_SERVER = SP_PROT_TLS1_SERVER,
+        SP_PROT_TLS1_1_SERVER = 0x00000100,
+        SP_PROT_TLS1_2_SERVER = 0x00000400,
+        SP_PROT_TLS1_3_SERVER = 0x00001000,
+        SP_PROT_DTLS1_SERVER = 0x00010000,
+        SP_PROT_DTLS1_0_SERVER = SP_PROT_DTLS1_SERVER,
+        SP_PROT_DTLS1_2_SERVER = 0x00040000,
+
+        SP_PROT_SSL2_CLIENT = 0x00000008,
+        SP_PROT_SSL3_CLIENT = 0x00000020,
+        SP_PROT_TLS1_CLIENT = 0x00000080,
+        SP_PROT_TLS1_0_CLIENT = SP_PROT_TLS1_CLIENT,
+        SP_PROT_TLS1_1_CLIENT = 0x00000200,
+        SP_PROT_TLS1_2_CLIENT = 0x00000800,
+        SP_PROT_TLS1_3_CLIENT = 0x00002000,
+        SP_PROT_DTLS1_CLIENT = 0x00020000,
+        SP_PROT_DTLS1_0_CLIENT = SP_PROT_DTLS1_CLIENT,
+        SP_PROT_DTLS1_2_CLIENT = 0x00080000,
     }
 
     struct WSAPROTOCOLCHAIN {

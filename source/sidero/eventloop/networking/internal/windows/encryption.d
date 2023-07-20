@@ -56,6 +56,11 @@ version (Windows) {
     @safe nothrow @nogc:
 
         void cleanup() scope @trusted {
+            if (negotationState.haveContextHandle) {
+                DeleteSecurityContext(&negotationState.contextHandle);
+                negotationState.haveContextHandle = false;
+            }
+
             if (credentialHandleSet) {
                 FreeCredentialsHandle(&credentialHandle);
                 credentialHandleSet = false;
@@ -66,39 +71,60 @@ version (Windows) {
             socketState.encryptionState.currentCertificate = certificate;
             socketState.encryptionState.currentProtocol = protocol;
             socketState.encryptionState.bufferSize = maxTokenSize;
+            socketState.encryptionState.encryptionEngine = Certificate.Type.WinCrypt;
 
             {
+                auto credDirection = socketState.cameFromServer ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND;
 
                 PCCERT_CONTEXT certificateContext;
                 TLS_PARAMETERS[1] tlsParameters;
 
+                if (socketState.cameFromServer) {
+                    enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_0_SERVER |
+                        SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER |
+                        SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_0_SERVER | SP_PROT_DTLS1_2_SERVER;
+
+                    static immutable Flags = [
+                        All, All & (~(SP_PROT_TLS1_0_SERVER)), All & (~(SP_PROT_TLS1_1_SERVER)),
+                        All & (~(SP_PROT_TLS1_2_SERVER)), All & (~(SP_PROT_TLS1_3_SERVER)),
+                        All & (~(SP_PROT_TLS1_0_SERVER | SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER))
+                    ];
+                    static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
+                    tlsParameters[0].grbitDisabledProtocols = Flags[protocol];
+                } else {
+                    enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_0_CLIENT |
+                        SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT |
+                        SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_0_CLIENT | SP_PROT_DTLS1_2_CLIENT;
+
+                    static immutable Flags = [
+                        All, All & (~(SP_PROT_TLS1_0_CLIENT)), All & (~(SP_PROT_TLS1_1_CLIENT)),
+                        All & (~(SP_PROT_TLS1_2_CLIENT)), All & (~(SP_PROT_TLS1_3_CLIENT)),
+                        All & (~(SP_PROT_TLS1_0_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT))
+                    ];
+                    static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
+                    tlsParameters[0].grbitDisabledProtocols = Flags[protocol];
+                }
+
                 SCH_CREDENTIALS tlsCredentials;
                 tlsCredentials.dwVersion = SCH_CREDENTIALS_VERSION;
-                tlsCredentials.cCreds = 1;
+                tlsCredentials.cCreds = (socketState.cameFromServer || !certificate.isNull) ? 1 : 0;
                 tlsCredentials.paCred = &certificateContext;
                 tlsCredentials.cTlsParameters = 1;
                 tlsCredentials.pTlsParameters = tlsParameters.ptr;
-
-                /+SCHANNEL_CRED tlsCredentials;
-                tlsCredentials.dwVersion = SCHANNEL_CRED_VERSION;
-                tlsCredentials.cCreds = 1;
-                tlsCredentials.paCred = &certificateContext;
-                tlsCredentials.grbitEnabledProtocol = SP_PROT_TLS1_2_SERVER;
-                tlsCredentials.dwFlags = SCH_USE_STRONG_CRYPTO;+/
 
                 auto certificateHandle = socketState.encryptionState.currentCertificate.unsafeGetHandle;
                 if (certificateHandle.type == WinCryptCertificateHandleType) {
                     // ok
                     certificateContext = cast(PCCERT_CONTEXT)certificateHandle.handle;
-                } else {
+                } else if (tlsCredentials.cCreds == 1) {
                     // what???
                     // this should be possible
                     logger.fatal("Fatal error: got a certificate that was not from WinCrypt??? ", certificateHandle.type);
                     assert(0);
                 }
 
-                auto ss = AcquireCredentialsHandleW(null, cast(wchar*)SecurityPackageName.ptr, SECPKG_CRED_INBOUND,
-                        null, &tlsCredentials, null, null, &credentialHandle, null);
+                auto ss = AcquireCredentialsHandleW(null, cast(wchar*)SecurityPackageName.ptr, credDirection, null,
+                        &tlsCredentials, null, null, &credentialHandle, null);
                 if (ss != SEC_E_OK) {
                     // failed
                     // log it, close socket!
@@ -328,7 +354,8 @@ version (Windows) {
             socketState.encryptionState.winCrypt.encryptedMessageSize = sizes.cbMaximumMessage;
             socketState.encryptionState.winCrypt.encryptedPacketTrailerSize = sizes.cbTrailer;
             socketState.encryptionState.winCrypt.maxEncryptedPacketSize = sizes.cbHeader + sizes.cbMaximumMessage + sizes.cbTrailer;
-            logger.trace("Max WinCrypt encrypted package size for ", SecurityPackageName, ": ", socketState.encryptionState.winCrypt.maxEncryptedPacketSize);
+            logger.trace("Max WinCrypt encrypted package size for ", SecurityPackageName, ": ",
+                    socketState.encryptionState.winCrypt.maxEncryptedPacketSize);
         }
 
         bool negotiateServer(scope SocketState* socketState) scope @trusted {
@@ -360,8 +387,10 @@ version (Windows) {
                 buffersDescriptionOut.cBuffers = 1;
                 buffersDescriptionOut.pBuffers = buffersOut.ptr;
 
-                auto ss = AcceptSecurityContext(&socketState.encryptionState.winCrypt.credentialHandle, haveContextHandle ? &contextHandle : null,
-                    &buffersDescriptionIn, plAttributes, SECURITY_NATIVE_DREP, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+                auto ss = AcceptSecurityContext(&socketState.encryptionState.winCrypt.credentialHandle,
+                    haveContextHandle ? &contextHandle : null,
+                    &buffersDescriptionIn, plAttributes, SECURITY_NATIVE_DREP, &contextHandle,
+                    &buffersDescriptionOut, &plAttributes, null);
                 haveContextHandle = true;
                 logger.trace(ss);
 
