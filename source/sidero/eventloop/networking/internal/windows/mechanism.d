@@ -170,7 +170,7 @@ version (Windows) {
             return state.rawWritingState.protect(() @trusted nothrow @nogc {
                 bool didSomething;
 
-                while (state.rawWritingState.toSend.length >= 1) {
+                while (state.rawWritingState.toSend.length > 0 && state.rawWritingState.waitingOnDataToSend == 0) {
                     auto firstItem = state.rawWritingState.toSend[0];
                     assert(firstItem);
 
@@ -199,7 +199,12 @@ version (Windows) {
                         if (error == ERROR_IO_PENDING) {
                             // ok
                             logger.trace("Waiting for data written to complete via IOCP", handle);
+                            state.rawWritingState.waitingOnDataToSend = amountSent;
                             return true;
+                        } else if (error == WSAENOTSOCK) {
+                            // ok
+                            logger.info("Socket has closed, cannot write data to it", handle);
+                            return false;
                         } else {
                             logger.error("Failed to write data to socket with error code", error, handle);
                             return false;

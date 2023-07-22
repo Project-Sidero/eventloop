@@ -133,6 +133,7 @@ package(sidero.eventloop):
 
             if (refCount == 0) {
                 encryptionState.cleanup;
+                platform.shutdown();
                 platform.cleanup;
 
                 if (atomicLoad(isAlive))
@@ -164,6 +165,7 @@ package(sidero.eventloop):
             return;
 
         atomicStore(isAlive, false);
+        platform.shutdown();
         rc(false);
     }
 
@@ -447,6 +449,7 @@ struct RawReadingState {
 struct RawWritingState {
     TestTestSetLockInline mutex;
     ConcurrentLinkedList!(Slice!ubyte) toSend;
+    size_t waitingOnDataToSend;
 
 @safe nothrow @nogc:
 
@@ -465,7 +468,12 @@ struct RawWritingState {
     }
 
     bool haveData() scope {
-        return toSend.length > 0 && toSend[0].length > 0;
+        if (toSend.length == 0)
+            return false;
+
+        auto firstItem = toSend[0];
+        assert(firstItem);
+        return firstItem.length > 0;
     }
 
     void complete(size_t amount) scope {
@@ -486,6 +494,12 @@ struct RawWritingState {
             } else {
                 amount -= firstItem.length;
                 toSend.remove(0, 1);
+            }
+
+            if (waitingOnDataToSend > canDo) {
+                waitingOnDataToSend -= canDo;
+            } else {
+                waitingOnDataToSend = 0;
             }
         }
     }

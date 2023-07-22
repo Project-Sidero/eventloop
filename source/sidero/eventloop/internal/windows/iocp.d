@@ -107,10 +107,13 @@ version (Windows) {
 
             logger.trace("IOCP worker thread got ", result, " ", Thread.self);
 
-            if (!result) {
-                if (GetLastError() == WAIT_TIMEOUT) {
+            if (result == 0) {
+                const errorCode = GetLastError();
+                if (errorCode == WAIT_TIMEOUT) {
+                } else if (overlapped is null) {
+                    logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " ", Thread.self());
                 } else {
-                    logger.error("IOCP worker GetQueuedCompletionStatus failed ", GetLastError(), " ", Thread.self());
+                    logger.error("IOCP worker GetQueuedCompletionStatus failed ", errorCode, " ", Thread.self());
                     return;
                 }
             } else if (overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
@@ -155,6 +158,11 @@ version (Windows) {
                 // no data?
                 logger.trace("WSA received no data ", socket, " ", Thread.self());
                 return;
+            } else if (error == WSAENOTSOCK) {
+                logger.trace("Handle not socket message ", socket.state.handle);
+                // ok just in case lets just unpin it
+                socket.state.unpin;
+                return;
             } else {
                 logger.error("Error unknown read socket error with code ", error, " ", socket, " ", Thread.self());
                 return;
@@ -174,11 +182,16 @@ version (Windows) {
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.writeOverlapped, &transferredBytes, false, &flags);
 
-        if (!result) {
+        if (result == 0) {
             auto error = GetLastError();
             if (error == WSA_IO_INCOMPLETE) {
                 // no data?
                 logger.trace("WSA wrote no data ", socket, " ", Thread.self());
+                return;
+            } else if (error == WSAENOTSOCK) {
+                logger.trace("Handle not socket message ", socket.state.handle);
+                // ok just in case lets just unpin it
+                socket.state.unpin;
                 return;
             } else {
                 logger.error("Error unknown write socket error with code ", error, " ", socket, " ", Thread.self());

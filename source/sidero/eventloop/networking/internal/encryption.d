@@ -67,9 +67,9 @@ struct EncryptionState {
     }
 
     size_t amountNeedToBeRead(scope SocketState* socketState) scope {
-        if (encryptionEngine || currentProtocol == Socket.EncryptionProtocol.None) {
+        if (encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             const amount = socketState.readingState.getWantedAmount();
-            return amount < size_t.max ? amount : 4096;
+            return (amount > 0 && amount < uint.max) ? amount : 4096;
         }
 
         if (this.bufferSize == 0)
@@ -106,7 +106,7 @@ struct EncryptionState {
     }
 
     Expected writeData(scope SocketState* socketState, return scope Slice!ubyte data) scope @trusted {
-        if (encryptionEngine || currentProtocol == Socket.EncryptionProtocol.None) {
+        if (encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             socketState.rawWritingState.dataToSend(data);
             return Expected(data.length, data.length);
         }

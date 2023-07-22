@@ -148,7 +148,7 @@ export @safe nothrow @nogc:
 
     ///
     bool readUntil(scope return Slice!ubyte endCondition, scope return SocketReadCallback onRecieve) scope @trusted {
-        if (!isAlive || isReadInProgress)
+        if (isReadInProgress)
             return false;
 
         if (!state.readingState.requestFromUser(endCondition, onRecieve))

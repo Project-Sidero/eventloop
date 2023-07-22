@@ -80,9 +80,9 @@ version (Windows) {
                 TLS_PARAMETERS[1] tlsParameters;
 
                 if (socketState.cameFromServer) {
-                    enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_0_SERVER |
-                        SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER |
-                        SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_0_SERVER | SP_PROT_DTLS1_2_SERVER;
+                    enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_0_SERVER | SP_PROT_TLS1_1_SERVER |
+                        SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_0_SERVER |
+                        SP_PROT_DTLS1_2_SERVER;
 
                     static immutable Flags = [
                         All, All & (~(SP_PROT_TLS1_0_SERVER)), All & (~(SP_PROT_TLS1_1_SERVER)),
@@ -92,9 +92,9 @@ version (Windows) {
                     static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
                     tlsParameters[0].grbitDisabledProtocols = Flags[protocol];
                 } else {
-                    enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_0_CLIENT |
-                        SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT |
-                        SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_0_CLIENT | SP_PROT_DTLS1_2_CLIENT;
+                    enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_0_CLIENT | SP_PROT_TLS1_1_CLIENT |
+                        SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_0_CLIENT |
+                        SP_PROT_DTLS1_2_CLIENT;
 
                     static immutable Flags = [
                         All, All & (~(SP_PROT_TLS1_0_CLIENT)), All & (~(SP_PROT_TLS1_1_CLIENT)),
@@ -111,6 +111,10 @@ version (Windows) {
                 tlsCredentials.paCred = &certificateContext;
                 tlsCredentials.cTlsParameters = 1;
                 tlsCredentials.pTlsParameters = tlsParameters.ptr;
+
+                if (!socketState.cameFromServer) {
+                    tlsCredentials.dwFlags = /+0x00000020 |+/ 0x00000008 | 0x00000010 | 0x00000004;
+                }
 
                 auto certificateHandle = socketState.encryptionState.currentCertificate.unsafeGetHandle;
                 if (certificateHandle.type == WinCryptCertificateHandleType) {
@@ -137,8 +141,11 @@ version (Windows) {
                 credentialHandleSet = true;
             }
 
+            logger.trace("Starting negotiation of encryption on socket ", socketState.handle);
             negotationState.negotiating = true;
-            socketState.triggerRead(socketState, false);
+
+            negotationState.triggerClientHandshake(socketState);
+            socketState.triggerRead(socketState, true);
             return true;
         }
 
@@ -250,7 +257,7 @@ version (Windows) {
     struct NegotationState {
         TestTestSetLockInline mutex;
         ConcurrentLinkedList!(Slice!ubyte) queueToEncrypt;
-        bool negotiating, isReadQueued, isWriteQueued;
+        bool negotiating, isReadQueued;
 
         CtxtHandle contextHandle;
         bool haveContextHandle;
@@ -321,21 +328,23 @@ version (Windows) {
                     mutex.pureLock;
                 }
 
-                if (isWriteQueued) {
-                    foreach (toWrite; queueToEncrypt) {
-                        mutex.unlock;
+                size_t toRemove;
 
-                        if (!socketState.encryptionState.winCrypt.writeData(socketState, toWrite)) {
-                            mutex.pureLock;
-                            break;
-                        }
+                foreach (toWrite; queueToEncrypt) {
+                    mutex.unlock;
+                    assert(toWrite);
 
+                    if (!socketState.encryptionState.winCrypt.writeData(socketState, toWrite)) {
                         mutex.pureLock;
+                        break;
                     }
 
-                    if (queueToEncrypt.length == 0)
-                        isWriteQueued = false;
+                    toRemove++;
+                    mutex.pureLock;
                 }
+
+                queueToEncrypt.remove(0, toRemove);
+                socketState.triggerWrite(socketState);
             }
         }
 
@@ -366,11 +375,11 @@ version (Windows) {
 
             ULONG plAttributes = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
 
-            logger.trace("starting negotation");
+            logger.trace("starting negotation for server socket ", socketState.handle);
 
             socketState.rawReadingState.protectReadForEncryption((DynamicArray!ubyte data) @trusted {
                 auto canDo = data.unsafeGetLiteral()[0 .. (data.length >= tokenLeft) ? tokenLeft: data.length];
-                logger.trace(canDo.length);
+                logger.trace("socket server received data ", canDo.length);
 
                 SecBuffer[2] buffersIn = [
                     SecBuffer(cast(uint)canDo.length, SECBUFFER_TOKEN, canDo.ptr), SecBuffer(0, SECBUFFER_EMPTY, null)
@@ -392,14 +401,13 @@ version (Windows) {
                     &buffersDescriptionIn, plAttributes, SECURITY_NATIVE_DREP, &contextHandle,
                     &buffersDescriptionOut, &plAttributes, null);
                 haveContextHandle = true;
-                logger.trace(ss);
 
                 if (buffersOut[0].cbBuffer > 0) {
                     auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                     socketState.rawWritingState.dataToSend(sliced.dup);
                     FreeContextBuffer(buffersOut[0].pvBuffer);
 
-                    logger.trace("sending data");
+                    logger.trace("sending data for server socket ", socketState.handle);
                 }
 
                 negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
@@ -408,7 +416,7 @@ version (Windows) {
 
                 if (!negotiating) {
                     if (ss != SEC_E_OK) {
-                        logger.warning("Unable to negotiate socket encryption ", socketState.handle);
+                        logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
                         socketState.close(true);
                     }
                 }
@@ -429,8 +437,111 @@ version (Windows) {
             return ret;
         }
 
+        void triggerClientHandshake(scope SocketState* socketState) scope @trusted {
+            bool ret;
+            tokenLeft = maxTokenSize;
+
+            ULONG plAttributes = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+            logger.trace("starting negotation for client socket ", socketState.handle);
+
+            SecBuffer[1] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null)];
+
+            SecBufferDesc buffersDescriptionOut;
+            buffersDescriptionOut.ulVersion = SECBUFFER_VERSION;
+            buffersDescriptionOut.cBuffers = 1;
+            buffersDescriptionOut.pBuffers = buffersOut.ptr;
+
+            auto ss = InitializeSecurityContextW(&socketState.encryptionState.winCrypt.credentialHandle, null, null,
+                    plAttributes, 0, 0, null, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+            haveContextHandle = true;
+
+            if (buffersOut[0].cbBuffer > 0) {
+                auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
+                socketState.rawWritingState.dataToSend(sliced.dup);
+                FreeContextBuffer(buffersOut[0].pvBuffer);
+
+                logger.trace("sending data for client socket ", socketState.handle);
+            }
+
+            logger.trace("Socket client handshake ", socketState.handle, " ", ss);
+
+            negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
+
+            if (!negotiating) {
+                updateStreamSizes(socketState);
+            }
+
+            socketState.triggerWrite(socketState);
+        }
+
         bool negotiateClient(scope SocketState* socketState) scope @trusted {
-            assert(0);
+            bool ret;
+            if (tokenLeft == 0) {
+                tokenLeft = maxTokenSize;
+            }
+
+            ULONG plAttributes = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+            logger.trace("starting negotation for client socket ", socketState.handle);
+
+            socketState.rawReadingState.protectReadForEncryption((DynamicArray!ubyte data) @trusted {
+                auto canDo = data.unsafeGetLiteral()[0 .. (data.length >= tokenLeft) ? tokenLeft: data.length];
+                logger.trace("socket client received data ", canDo.length);
+
+                SecBuffer[2] buffersIn = [
+                    SecBuffer(cast(uint)canDo.length, SECBUFFER_TOKEN, canDo.ptr), SecBuffer(0, SECBUFFER_EMPTY, null)
+                ];
+                SecBuffer[1] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null)];
+
+                SecBufferDesc buffersDescriptionIn, buffersDescriptionOut;
+
+                buffersDescriptionIn.ulVersion = SECBUFFER_VERSION;
+                buffersDescriptionIn.cBuffers = 2;
+                buffersDescriptionIn.pBuffers = buffersIn.ptr;
+
+                buffersDescriptionOut.ulVersion = SECBUFFER_VERSION;
+                buffersDescriptionOut.cBuffers = 1;
+                buffersDescriptionOut.pBuffers = buffersOut.ptr;
+
+                auto ss = InitializeSecurityContextW(&socketState.encryptionState.winCrypt.credentialHandle, haveContextHandle ?
+                    &contextHandle : null, null, plAttributes, 0, 0, &buffersDescriptionIn, 0, &contextHandle,
+                    &buffersDescriptionOut, &plAttributes, null);
+                haveContextHandle = true;
+
+                if (buffersOut[0].cbBuffer > 0) {
+                    auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
+                    socketState.rawWritingState.dataToSend(sliced.dup);
+                    FreeContextBuffer(buffersOut[0].pvBuffer);
+
+                    logger.trace("sending data for client socket ", socketState.handle);
+                }
+
+                logger.trace("Socket client handshake ", socketState.handle, " ", ss);
+
+                negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
+                if (ss == SEC_E_INCOMPLETE_MESSAGE)
+                    return 0;
+
+                if (!negotiating) {
+                    if (ss != SEC_E_OK) {
+                        logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
+                        socketState.close(true);
+                    }
+                }
+
+                size_t consumed = canDo.length;
+                if (buffersIn[1].BufferType == SECBUFFER_EXTRA)
+                    consumed -= buffersIn[1].cbBuffer;
+
+                ret = consumed > 0;
+                return consumed;
+            });
+
+            if (!negotiating) {
+                updateStreamSizes(socketState);
+            }
+
+            socketState.triggerWrite(socketState);
+            return ret;
         }
     }
 }
