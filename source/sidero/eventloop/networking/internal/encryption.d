@@ -42,7 +42,7 @@ struct EncryptionState {
         }
     }
 
-    bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol) scope @trusted {
+    bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol, bool validateCertificates) scope @trusted {
         // wanted raw & is raw
         if (encryptionEngine == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None &&
                 certificate.type == Certificate.Type.None))
@@ -58,7 +58,7 @@ struct EncryptionState {
                 return false;
         case Certificate.Type.WinCrypt:
             version (Windows) {
-                return winCrypt.add(socketState, certificate, protocol);
+                return winCrypt.add(socketState, certificate, protocol, validateCertificates);
             } else
                 return false;
         case Certificate.Type.Default:

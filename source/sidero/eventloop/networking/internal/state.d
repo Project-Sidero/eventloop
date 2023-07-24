@@ -32,6 +32,7 @@ package(sidero.eventloop):
 
     Certificate certificate;
     Socket.EncryptionProtocol encryption;
+    bool validateCertificates;
 
     ListenSocketOnAccept onAcceptHandler;
     ConcurrentHashMap!(PlatformListenSocketKey, PlatformListenSocket) platformSockets;
@@ -252,6 +253,7 @@ struct ReadingState {
 
     bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
         import core.atomic : atomicLoad;
+
         // ok what is the source of our buffers?
         // we work through the encryption API, so it can figure it out if we are reading directly or not
 

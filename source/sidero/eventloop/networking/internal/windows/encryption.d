@@ -67,7 +67,7 @@ version (Windows) {
             }
         }
 
-        bool add(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol) scope @trusted {
+        bool add(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol, bool validateCertificates) scope @trusted {
             socketState.encryptionState.currentCertificate = certificate;
             socketState.encryptionState.currentProtocol = protocol;
             socketState.encryptionState.bufferSize = maxTokenSize;
@@ -112,8 +112,13 @@ version (Windows) {
                 tlsCredentials.cTlsParameters = 1;
                 tlsCredentials.pTlsParameters = tlsParameters.ptr;
 
-                if (!socketState.cameFromServer) {
-                    tlsCredentials.dwFlags = /+0x00000020 |+/ 0x00000008 | 0x00000010 | 0x00000004;
+                if (validateCertificates) {
+                    tlsCredentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION;
+                } else {
+                    if (socketState.cameFromServer)
+                        tlsCredentials.dwFlags = 0;
+                    else
+                        tlsCredentials.dwFlags = SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_SERVERNAME_CHECK;
                 }
 
                 auto certificateHandle = socketState.encryptionState.currentCertificate.unsafeGetHandle;

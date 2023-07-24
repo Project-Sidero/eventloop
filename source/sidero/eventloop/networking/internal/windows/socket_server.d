@@ -382,7 +382,7 @@ version (Windows) {
 
                 if (!listenSocketState.certificate.isNull) {
                     if (!acquiredSocket.state.encryptionState.addEncryption(acquiredSocket.state,
-                            listenSocketState.certificate, listenSocketState.encryption)) {
+                            listenSocketState.certificate, listenSocketState.encryption, listenSocketState.validateCertificates)) {
                         logger.error("Error could not initialize encryption on socket ", acceptedSocket, perSockState.handle);
                         closesocket(acceptedSocket);
                         return;

@@ -115,10 +115,14 @@ version (Windows) {
         }
 
         bool triggerRead(SocketState* socketState, bool tryToFulfill = true) scope @trusted {
+            import core.atomic : atomicLoad;
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, GetLastError;
 
             if (tryToFulfill && socketState.readingState.tryFulfillRequest(socketState))
                 return true;
+
+            if (!atomicLoad(socketState.isAlive))
+                return false;
 
             return socketState.rawReadingState.protectTriggeringOfRead(() @trusted {
                 const uint bufferNeeded = cast(uint)socketState.encryptionState.amountNeedToBeRead(socketState);
@@ -164,14 +168,18 @@ version (Windows) {
             });
         }
 
-        bool triggerWrite(scope SocketState* state) scope @trusted {
+        bool triggerWrite(scope SocketState* socketState) scope @trusted {
             import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
+            import core.atomic : atomicLoad;
 
-            return state.rawWritingState.protect(() @trusted nothrow @nogc {
+            if (!atomicLoad(socketState.isAlive))
+                return false;
+
+            return socketState.rawWritingState.protect(() @trusted nothrow @nogc {
                 bool didSomething;
 
-                while (state.rawWritingState.toSend.length > 0 && state.rawWritingState.waitingOnDataToSend == 0) {
-                    auto firstItem = state.rawWritingState.toSend[0];
+                while (socketState.rawWritingState.toSend.length > 0 && socketState.rawWritingState.waitingOnDataToSend == 0) {
+                    auto firstItem = socketState.rawWritingState.toSend[0];
                     assert(firstItem);
 
                     // ok we can send this
@@ -184,14 +192,14 @@ version (Windows) {
                         buffers[0].len = cast(uint)firstItem.length;
 
                     DWORD amountSent, flags;
-                    state.writeOverlapped = OVERLAPPED.init;
+                    socketState.writeOverlapped = OVERLAPPED.init;
 
-                    auto result = WSASend(state.handle, &buffers[0], 1, &amountSent, flags, &state.writeOverlapped, null);
+                    auto result = WSASend(socketState.handle, &buffers[0], 1, &amountSent, flags, &socketState.writeOverlapped, null);
 
                     if (result == 0) {
                         // ok sent
                         logger.trace("Socket has had data written to it", handle);
-                        state.rawWritingState.complete(amountSent);
+                        socketState.rawWritingState.complete(amountSent);
                         didSomething = true;
                     } else {
                         auto error = GetLastError();
@@ -199,7 +207,7 @@ version (Windows) {
                         if (error == ERROR_IO_PENDING) {
                             // ok
                             logger.trace("Waiting for data written to complete via IOCP", handle);
-                            state.rawWritingState.waitingOnDataToSend = amountSent;
+                            socketState.rawWritingState.waitingOnDataToSend = amountSent;
                             return true;
                         } else if (error == WSAENOTSOCK) {
                             // ok

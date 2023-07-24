@@ -60,7 +60,7 @@ export @safe nothrow @nogc:
     /// Listen on port
     static Result!ListenSocket from(ListenSocketOnAccept handler, NetworkAddress address, Socket.Protocol protocol,
             Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate certificate = Certificate.init,
-            bool reuseAddr = true, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+            bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
 
@@ -76,6 +76,7 @@ export @safe nothrow @nogc:
         ret.state.protocol = protocol;
         ret.state.encryption = encryption;
         ret.state.certificate = certificate;
+        ret.state.validateCertificates = validateCertificates;
 
         if (!ret.state.startUp(reuseAddr, keepAlive))
             return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
@@ -174,11 +175,12 @@ export @safe nothrow @nogc:
     }
 
     ///
-    ErrorResult addEncryption(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS, Certificate certificate = Certificate.init) scope {
+    ErrorResult addEncryption(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
+            Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
         if (!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if (!state.encryptionState.addEncryption(this.state, certificate, encryption))
+        if (!state.encryptionState.addEncryption(this.state, certificate, encryption, validateCertificates))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
@@ -208,7 +210,8 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Result!Socket connectTo(NetworkAddress address, Socket.Protocol protocol, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+    static Result!Socket connectTo(NetworkAddress address, Socket.Protocol protocol, bool keepAlive = true,
+            scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
 
