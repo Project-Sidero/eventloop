@@ -42,6 +42,10 @@ version (none) {
         }
     }
 
+    bool initializePlatformEventWaiting() {
+        return false;
+    }
+
     size_t maximumNumberOfHandlesPerEventWaiter() {
         return 0;
     }
@@ -53,13 +57,19 @@ version (none) {
     }
 }
 
-package(sidero.eventloop.internal) __gshared {
-    ConcurrentHashMap!(ulong, EventWaiterThread) eventWaiterThreads;
-    SystemLock eventWaiterMutex;
+__gshared {
+    package(sidero.eventloop.internal) {
+        ConcurrentHashMap!(ulong, EventWaiterThread) eventWaiterThreads;
+        SystemLock eventWaiterMutex;
 
-    HashMap!(void*, UserEventHandler) allEventHandles;
-    LoggerReference logger;
+        HashMap!(void*, UserEventHandler) allEventHandles;
+    }
+
+    private {
+        LoggerReference logger;
+    }
 }
+
 
 void addEventWaiterHandle(void* handleToWaitOn, UserEventProc proc, void* user) @trusted {
     auto lockError = eventWaiterMutex.lock;
@@ -103,9 +113,12 @@ void updateEventWaiterThreads() @trusted {
             eventWaiterMutex.unlock;
             return;
         }
+
+        if (!initializePlatformEventWaiting())
+            return;
     }
 
-    logger.trace("Updating event waiter thread handles");
+    logger.debug_("Updating event waiter thread handles");
     const oldThreadCount = eventWaiterThreads.length;
 
     {
@@ -163,7 +176,7 @@ void updateEventWaiterThreads() @trusted {
         while (tempHandles.length > 0) {
             auto gotThread = Thread.create(&threadStartProc);
             if (!gotThread) {
-                logger.error("Thread failed to be created, stopping event waiting updating", gotThread.getError());
+                logger.warning("Thread failed to be created, stopping event waiting updating ", gotThread.getError());
                 break;
             }
 
@@ -191,6 +204,7 @@ void updateEventWaiterThreads() @trusted {
     }
 
     triggerUpdatesOnThreads(oldThreadCount);
+    logger.debug_("Updated event waiting threads and handles");
     eventWaiterMutex.unlock;
 }
 
@@ -202,11 +216,17 @@ void threadStartProc() @trusted {
     auto threadState = eventWaiterThreads[key];
 
     if (!threadState) {
-        logger.error("Could not start event waiter thread, missing thread information");
+        logger.warning("Could not start event waiter thread, missing thread information for ", Thread.self);
         eventWaiterMutex.unlock;
         return;
     }
+
+    logger.debug_("Event waiting thread starting ", Thread.self);
     eventWaiterMutex.unlock;
+
+    scope(exit) {
+        logger.debug_("Event waiting thread finished ", Thread.self);
+    }
 
     threadState.ourProc();
 }

@@ -43,29 +43,38 @@ bool startWorkers(size_t workerMultiplier) @trusted {
     if (!logger)
         return false;
 
-    const count = workerMultiplier * cpuCount();
-    if (threadPool.length >= count)
-        return true;
+    const oldCount = threadPool.length;
+    const newCount = workerMultiplier * cpuCount();
 
-    auto oldCount = threadPool.length;
+    if (oldCount > 0) {
+        if (newCount > oldCount) {
+            logger.notice("Starting additional workers, using multiplier ", workerMultiplier, " for an additional ",
+                    newCount - oldCount, " to form ", newCount, " workers");
+        } else {
+            logger.notice("Attempted to start additional workers, but the calculated new workers were less than the old ones ",
+                    newCount, " but was ", oldCount);
+            return true;
+        }
+    } else
+        logger.notice("Starting workers, using multiplier ", workerMultiplier, " for a total of ", newCount, " workers");
 
-    threadPool.reserve(count - oldCount);
-    if (!initializeWorkerMechanism(count))
+    threadPool.reserve(newCount - oldCount);
+    if (!initializeWorkerMechanism(newCount))
         return false;
 
-    foreach (i; oldCount .. count) {
+    foreach (i; oldCount .. newCount) {
         auto thread = Thread.create(&workerProc);
 
         if (thread)
             threadPool ~= thread.get;
         else {
-            logger.error("Could not create thread", thread.getError());
+            logger.error("Could not create worker thread ", thread.getError());
             break;
         }
     }
 
     isInitialized = true;
-    return true;
+    return threadPool.length > oldCount;
 }
 
 void shutdownWorkers() @trusted {
@@ -75,6 +84,8 @@ void shutdownWorkers() @trusted {
 
     if (!isInitialized)
         return;
+
+    logger.notice("Shutting down of workers");
 
     shutdownWorkerMechanism;
 
@@ -88,6 +99,8 @@ void shutdownWorkers() @trusted {
         assert(!thread.isNull);
         assert(!thread.isRunning);
     }
+
+    logger.notice("All worker threads have been joined");
 
     threadPool = typeof(threadPool).init;
     isInitialized = false;

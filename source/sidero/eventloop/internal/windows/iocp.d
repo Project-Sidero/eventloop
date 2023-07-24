@@ -9,15 +9,15 @@ version (Windows) {
     import sidero.eventloop.networking.internal.state;
     import core.sys.windows.windows : HANDLE;
 
-    __gshared {
+    private __gshared {
         LoggerReference logger;
         HANDLE completionPort;
         ubyte shutdownByte;
         uint requiredWorkers;
-    }
 
-    shared(ptrdiff_t) runningWorkers;
-    shared(ptrdiff_t) startedWorkers;
+        shared(ptrdiff_t) runningWorkers;
+        shared(ptrdiff_t) startedWorkers;
+    }
 
     struct IOCPwork {
         ubyte[4] key; //sock
@@ -37,12 +37,11 @@ version (Windows) {
         completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, null, 0, requiredWorkers);
 
         if (completionPort is null) {
-            logger.error("Error occured while creating IOCP ", GetLastError());
+            logger.error("Failed to initialize IOCP context ", GetLastError());
             return false;
-        } else {
-            logger.trace("IOCP initialized successfully");
         }
 
+        logger.notice("Initialized IOCP context for workers succesfully");
         return true;
     }
 
@@ -60,13 +59,14 @@ version (Windows) {
             auto result = PostQueuedCompletionStatus(completionPort, 0, shutdownKey, null);
 
             if (result == 0) {
-                logger.error("PostQueuedCompletionStatus failed ", GetLastError());
+                logger.error("IOCP worker shutdown message posting failed ", GetLastError());
             }
 
             Thread.yield;
         }
 
         CloseHandle(completionPort);
+        logger.notice("Shutdown IOCP context for workers successfully");
     }
 
     bool associateWithIOCP(Socket socket) @trusted {
@@ -79,7 +79,7 @@ version (Windows) {
                 cast(size_t)&socket.state.iocpWork, 0);
 
         if (completionPort2 !is completionPort) {
-            logger.error("Error could not associate socket with IOCP with code ", WSAGetLastError());
+            logger.debug_("Could not associate socket with IOCP with code ", WSAGetLastError(), " for socket ", socket.state.handle);
             return false;
         }
 
@@ -94,10 +94,10 @@ version (Windows) {
         atomicOp!"+="(runningWorkers, 1);
         scope (exit) {
             atomicOp!"-="(runningWorkers, 1);
-            logger.trace("Stopping IOCP worker");
+            logger.info("Stopping IOCP worker ", Thread.self);
         }
 
-        logger.trace("Starting IOCP worker");
+        logger.info("Starting IOCP worker ", Thread.self);
 
         for (;;) {
             DWORD numberOfBytesTransferred;
@@ -105,22 +105,22 @@ version (Windows) {
             OVERLAPPED* overlapped;
             auto result = GetQueuedCompletionStatus(completionPort, &numberOfBytesTransferred, &completionKey, &overlapped, INFINITE);
 
-            logger.trace("IOCP worker thread got ", result, " ", Thread.self);
+            logger.debug_("IOCP worker thread got ", result, " ", Thread.self);
 
             if (result == 0) {
                 const errorCode = GetLastError();
                 if (errorCode == WAIT_TIMEOUT) {
                 } else if (overlapped is null) {
-                    logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " ", Thread.self());
+                    logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " ", Thread.self);
                 } else {
-                    logger.error("IOCP worker GetQueuedCompletionStatus failed ", errorCode, " ", Thread.self());
+                    logger.warning("IOCP worker GetQueuedCompletionStatus failed ", errorCode, " ", Thread.self);
                     return;
                 }
             } else if (overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
-                logger.trace("Stopping a IOCP worker procedure cleanly ", Thread.self());
+                logger.debug_("Stopping a IOCP worker procedure cleanly ", Thread.self);
                 return;
             } else {
-                logger.trace("Got IOCP work ", numberOfBytesTransferred, " ", completionKey, " ", result, " ", Thread.self());
+                logger.debug_("Got IOCP work ", numberOfBytesTransferred, " ", completionKey, " ", result, " ", Thread.self);
 
                 IOCPwork* work = cast(IOCPwork*)completionKey;
 
@@ -156,22 +156,20 @@ version (Windows) {
             auto error = GetLastError();
             if (error == WSA_IO_INCOMPLETE) {
                 // no data?
-                logger.trace("WSA received no data ", socket, " ", Thread.self());
                 return;
             } else if (error == WSAENOTSOCK) {
-                logger.trace("Handle not socket message ", socket.state.handle);
+                logger.debug_("Handle not a socket message ", socket.state.handle, " on ", Thread.self);
                 // ok just in case lets just unpin it
                 socket.state.unpin;
                 return;
             } else {
-                logger.error("Error unknown read socket error with code ", error, " ", socket, " ", Thread.self());
+                logger.warning("Unknown read socket error with code ", error, " for ", socket.state.handle, " on ", Thread.self);
                 return;
             }
         } else {
-            logger.trace("Read from socket ", transferredBytes, flags, socket, Thread.self());
+            logger.debug_("Read from socket ", transferredBytes, " with flags ", flags, " for ", socket.state.handle, " on ", Thread.self);
             socket.state.rawReadingState.dataWasReceived(transferredBytes);
-            if (atomicLoad(socket.state.isAlive))
-                socket.state.readingState.tryFulfillRequest(socket.state);
+            socket.state.readingState.tryFulfillRequest(socket.state);
         }
     }
 
@@ -186,23 +184,23 @@ version (Windows) {
             auto error = GetLastError();
             if (error == WSA_IO_INCOMPLETE) {
                 // no data?
-                logger.trace("WSA wrote no data ", socket, " ", Thread.self());
+                logger.debug_("WSA wrote no data ", socket, " on ", Thread.self);
                 return;
             } else if (error == WSAENOTSOCK) {
-                logger.trace("Handle not socket message ", socket.state.handle);
+                logger.debug_("Handle not a socket message ", socket.state.handle, " on ", Thread.self);
                 // ok just in case lets just unpin it
                 socket.state.unpin;
                 return;
             } else {
-                logger.error("Error unknown write socket error with code ", error, " ", socket, " ", Thread.self());
+                logger.warning("Unknown write socket error with code ", error, " ", socket.state.handle, " ", Thread.self);
                 return;
             }
         } else {
-            logger.trace("Written from socket ", transferredBytes, " ", flags, " ", socket, " ", Thread.self());
+            logger.debug_("Written on socket ", transferredBytes, " with flags ", flags, " for ", socket.state.handle, " on ", Thread.self);
 
             socket.state.rawWritingState.protect(() {
                 socket.state.rawWritingState.complete(transferredBytes);
-                if (socket.state.rawWritingState.haveData && atomicLoad(socket.state.isAlive))
+                if (socket.state.rawWritingState.haveData)
                     socket.state.triggerWrite(socket.state);
                 return true;
             });

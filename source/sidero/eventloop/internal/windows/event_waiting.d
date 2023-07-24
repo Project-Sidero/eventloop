@@ -4,10 +4,20 @@ import sidero.eventloop.threads;
 import sidero.base.containers.dynamicarray;
 import sidero.base.attributes;
 import sidero.base.text;
+import sidero.base.logger;
 
 @safe nothrow @nogc:
 
 version (Windows) {
+    private __gshared {
+        LoggerReference logger;
+    }
+
+    bool initializePlatformEventWaiting() @trusted {
+        logger = Logger.forName(String_UTF8(__MODULE__));
+        return cast(bool)logger;
+    }
+
     size_t maximumNumberOfHandlesPerEventWaiter() {
         import core.sys.windows.windows : MAXIMUM_WAIT_OBJECTS;
 
@@ -30,9 +40,9 @@ version (Windows) {
             atomicStore(threadState.isAlive, false);
 
             if (QueueUserAPC(&stopAcceptingProc, threadState.threadHandle, 0) == 0) {
-                logger.error("Error failed to send shutdown APC with code ", threadState.get, " ", GetLastError());
+                logger.warning("Failed to send shutdown APC with code ", GetLastError(), " to ", threadState.thread);
             } else {
-                logger.trace("Triggered shutdown APC for accept thread ", threadState.get);
+                logger.debug_("Triggered shutdown APC for accept thread ", threadState.thread);
             }
         }
 
@@ -53,8 +63,8 @@ version (Windows) {
             assert(lockError);
 
             auto threadState = cast(EventWaiterThread*)state;
-            logger.trace("Updating event waiter thread handles as lengths ", threadState.thread, " ",
-                    threadState.nextEventHandles.length, " ", threadState.nextEventProcs.length);
+            logger.debug_("Updating event waiter thread handles as lengths handles ", threadState.nextEventHandles.length,
+                    " procedures ", threadState.nextEventProcs.length, " for ", threadState.thread);
 
             threadState.eventHandles = threadState.nextEventHandles;
             threadState.eventProcs = threadState.nextEventProcs;
@@ -72,10 +82,10 @@ version (Windows) {
                 continue;
 
             if (QueueUserAPC(&updateHandlesProc, threadState.threadHandle, cast(size_t)&threadState.get()) == 0) {
-                logger.error("Error failed to send stop waiting APC with code ", threadState.get, " ", GetLastError());
+                logger.warning("Failed to send stop waiting APC with code ", GetLastError(), " to ", threadState.thread);
             } else {
-                logger.trace("Triggered update handles APC ", threadState.get, " ",
-                        threadState.nextEventHandles.length, " ", threadState.nextEventProcs.length);
+                logger.debug_("Triggered update handles APC handles ", threadState.nextEventHandles.length,
+                        " procedures ", threadState.nextEventProcs.length, " to ", threadState.thread);
             }
         }
     }
@@ -101,26 +111,26 @@ version (Windows) {
                 WaitForMultipleObjectsEx, WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_IO_COMPLETION, WAIT_FAILED, GetLastError,
                 ERROR_INVALID_HANDLE, HANDLE, MAXIMUM_WAIT_OBJECTS;
 
-            logger.trace("Starting event waiter thread ", thread);
+            logger.info("Starting event waiter thread ", thread);
 
             scope (exit) {
                 atomicStore(isAlive, false);
-                logger.trace("Ending event waiter thread ", thread);
+                logger.info("Ending event waiter thread ", thread);
             }
 
             if (DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &this.threadHandle, 0,
                     false, DUPLICATE_SAME_ACCESS) == 0) {
-                logger.error("Failed to aquire a thread handle for an event waiting thread with code ", GetLastError());
+                logger.warning("Failed to arquire a thread handle for an event waiting thread with code ", GetLastError());
                 return;
             } else {
-                logger.trace("Acquired thread handle for an event waiting thread ", thread);
+                logger.debug_("Acquired thread handle for an event waiting thread ", thread);
             }
 
             while (atomicLoad(this.isAlive)) {
                 if (this.eventHandles.length == 0) {
                     auto result = SleepEx(INFINITE, true);
 
-                    logger.trace("Got event waiting thread event from sleep ", thread, " ", result);
+                    logger.debug_("Got event waiting thread event from sleep with code", result, " on ", thread);
 
                     switch (result) {
                     case WAIT_IO_COMPLETION:
@@ -134,44 +144,45 @@ version (Windows) {
 
                     switch (result) {
                     case WAIT_TIMEOUT:
-                        logger.trace("Event waiter timeout ", thread);
+                        logger.debug_("Event waiter timeout ", thread);
                         break;
                     case WAIT_IO_COMPLETION:
-                        logger.trace("Event waiter got event io completion ", thread);
+                        logger.debug_("Event waiter got event io completion ", thread);
                         break;
                     case WAIT_FAILED:
-                        switch (GetLastError()) {
+                        const errorCode = GetLastError();
+
+                        switch (errorCode) {
                         case ERROR_INVALID_HANDLE:
                             // its probably ok, we'll handle this later, make sure APC's run via sleeping
                             SleepEx(0, true);
                             break;
                         default:
-                            logger.error("Failed to wait on event wait thread with code ", thread, GetLastError());
+                            logger.warning("Failed to wait on event wait thread with code ", errorCode, " on ", thread);
                             return;
                         }
                         break;
 
                     case WAIT_OBJECT_0: .. case WAIT_OBJECT_0 + MAXIMUM_WAIT_OBJECTS:
-                        auto handleIndex = result - WAIT_OBJECT_0;
-
+                        const handleIndex = result - WAIT_OBJECT_0;
                         auto gotHandle = eventHandles[handleIndex];
-                        if (!gotHandle) {
-                            logger.error("Failed to get event handle data ", thread, " ", handleIndex, " ", gotHandle);
-                            return;
-                        }
-
                         auto gotUserProc = eventProcs[handleIndex];
-                        if (!gotUserProc) {
-                            logger.error("Failed to get event user proc data ", thread, " ", handleIndex, " ", gotUserProc);
+
+                        if (!gotHandle) {
+                            logger.warning("Failed to get event handle data ", handleIndex, " on ", thread);
                             return;
                         }
 
-                        logger.trace("Got event for event handle ", thread, " ", handleIndex, " ", gotHandle, " ", gotUserProc);
+                        if (!gotUserProc) {
+                            logger.warning("Failed to get event user proc data ", handleIndex, " on ", thread);
+                            return;
+                        }
 
+                        logger.debug_("Got event for event handle ", gotHandle, " with procedure ", gotUserProc, " on ", thread);
                         gotUserProc.proc(gotHandle, gotUserProc.user);
                         break;
                     default:
-                        logger.trace("Got unknown event from wait ", thread, " ", result);
+                        logger.debug_("Got unknown event from wait ", result, " on ", thread);
                         break;
                     }
                 }
