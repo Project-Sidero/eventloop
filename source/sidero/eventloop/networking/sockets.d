@@ -8,6 +8,7 @@ import sidero.base.attributes;
 import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
 import sidero.base.errors;
+import sidero.base.internal.atomic;
 
 export @safe nothrow @nogc:
 
@@ -54,8 +55,6 @@ export @safe nothrow @nogc:
 
     ///
     bool isAlive() scope {
-        import core.atomic : atomicLoad;
-
         return !isNull && atomicLoad(state.isAlive);
     }
 
@@ -119,8 +118,6 @@ export @safe nothrow @nogc:
 
     ///
     bool isAlive() scope {
-        import core.atomic : atomicLoad;
-
         return !isNull && atomicLoad(state.isAlive);
     }
 

@@ -3,6 +3,7 @@ import sidero.eventloop.networking.sockets;
 import sidero.eventloop.threads;
 import sidero.base.logger;
 import sidero.base.text;
+import sidero.base.internal.atomic;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
@@ -46,7 +47,6 @@ version(Windows) {
     }
 
     void shutdownWorkerMechanism() @trusted {
-        import core.atomic : atomicLoad;
         import core.sys.windows.windows : PostQueuedCompletionStatus, ULONG_PTR, GetLastError, CloseHandle;
 
         ULONG_PTR shutdownKey = cast(ULONG_PTR)&shutdownByte;
@@ -87,13 +87,12 @@ version(Windows) {
     }
 
     void workerProc() @trusted {
-        import core.atomic : atomicOp, atomicLoad;
         import core.sys.windows.windows : GetQueuedCompletionStatus, DWORD, ULONG_PTR, OVERLAPPED, INFINITE, GetLastError, WAIT_TIMEOUT;
 
-        atomicOp!"+="(startedWorkers, 1);
-        atomicOp!"+="(runningWorkers, 1);
+        atomicIncrementAndLoad(startedWorkers, 1);
+        atomicIncrementAndLoad(runningWorkers, 1);
         scope(exit) {
-            atomicOp!"-="(runningWorkers, 1);
+            atomicDecrementAndLoad(runningWorkers, 1);
             logger.info("Stopping IOCP worker ", Thread.self);
         }
 
@@ -147,7 +146,6 @@ version(Windows) {
 
     void handleSocketRead(Socket socket) @trusted {
         import core.sys.windows.windows : DWORD, GetLastError;
-        import core.atomic : atomicLoad;
 
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.readOverlapped, &transferredBytes, false, &flags);
@@ -175,7 +173,6 @@ version(Windows) {
 
     void handleSocketWrite(Socket socket) @trusted {
         import core.sys.windows.windows : DWORD, GetLastError;
-        import core.atomic : atomicLoad;
 
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.writeOverlapped, &transferredBytes, false, &flags);

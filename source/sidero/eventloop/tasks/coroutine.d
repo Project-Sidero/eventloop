@@ -2,6 +2,7 @@ module sidero.eventloop.tasks.coroutine;
 import sidero.eventloop.handles;
 import sidero.base.allocators;
 import sidero.base.errors;
+import sidero.base.internal.atomic;
 
 // there are no hooks on non-windows for on thread creation (but is for cleanup)
 // basic_memory will need hooks for thread attach/detach
@@ -623,7 +624,6 @@ export @safe nothrow @nogc:
 }
 
 private:
-import core.atomic : atomicLoad, atomicStore;
 
 struct CoroutinePair(ResultType) {
     private {
@@ -784,9 +784,7 @@ struct CoroutineAllocatorMemory {
 export @safe nothrow @nogc:
 
     void rc(bool add) scope {
-        import core.atomic : atomicOp;
-
-        if(!add && atomicOp!"-="(refCount, 1) == 0) {
+        if(!add && atomicDecrementAndLoad(refCount, 1) == 0) {
             RCAllocator allocator = this.allocator;
 
             // run destructors ext.
@@ -795,7 +793,7 @@ export @safe nothrow @nogc:
 
             allocator.dispose(toDeallocate);
         } else if(add)
-            atomicOp!"+="(refCount, 1);
+            atomicIncrementAndLoad(refCount, 1);
     }
 }
 

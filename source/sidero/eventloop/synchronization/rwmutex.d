@@ -7,6 +7,7 @@ Copyright: 2022 Richard Andrew Cattermole
 */
 module sidero.base.synchronization.rwmutex;
 import sidero.base.attributes;
+import sidero.base.internal.atomic;
 
 export:
 
@@ -14,7 +15,6 @@ export:
 struct ReaderWriterLockInline {
     private @PrettyPrintIgnore {
         import sidero.eventloop.synchronization.mutualexclusion : TestTestSetLockInline;
-        import core.atomic : atomicOp;
 
         TestTestSetLockInline readerLock, globalLock;
         shared(ptrdiff_t) readers;
@@ -30,7 +30,7 @@ export @safe nothrow @nogc:
     ///
     void readLock() scope {
         readerLock.lock;
-        if (atomicOp!"+="(readers, 1) == 1)
+        if(atomicIncrementAndLoad(readers, 1) == 1)
             globalLock.lock;
         readerLock.unlock;
     }
@@ -38,7 +38,7 @@ export @safe nothrow @nogc:
     ///
     void readUnlock() scope {
         readerLock.lock;
-        if (atomicOp!"-="(readers, 1) == 0)
+        if(atomicDecrementAndLoad(readers, 1) == 0)
             globalLock.unlock;
         readerLock.unlock;
     }
@@ -46,7 +46,7 @@ export @safe nothrow @nogc:
     ///
     void pureConvertReadToWrite() scope @trusted {
         readerLock.lock;
-        if (atomicOp!"-="(readers, 1) == 0)
+        if(atomicDecrementAndLoad(readers, 1) == 0)
             globalLock.unlock;
         readerLock.unlock;
         globalLock.lock;
@@ -62,7 +62,7 @@ pure:
     /// A limited lock method, that is pure.
     void pureReadLock() scope @trusted {
         readerLock.pureLock;
-        if (atomicOp!"+="(readers, 1) == 1)
+        if(atomicIncrementAndLoad(readers, 1) == 1)
             globalLock.pureLock;
         readerLock.unlock;
     }
@@ -75,7 +75,7 @@ pure:
     /// A limited unlock method, that is pure.
     void pureReadUnlock() scope @trusted {
         readerLock.pureLock;
-        if (atomicOp!"-="(readers, 1) == 0)
+        if(atomicDecrementAndLoad(readers, 1) == 0)
             globalLock.unlock;
         readerLock.unlock;
     }
@@ -83,7 +83,7 @@ pure:
     /// A limited conversion method, that is pure.
     void pureConvertReadToWrite() scope @trusted {
         readerLock.pureLock;
-        if (atomicOp!"-="(readers, 1) == 0)
+        if(atomicDecrementAndLoad(readers, 1) == 0)
             globalLock.unlock;
         readerLock.unlock;
         globalLock.pureLock;
@@ -96,12 +96,12 @@ pure:
 
     ///
     bool tryReadLock() scope {
-        if (!readerLock.tryLock)
+        if(!readerLock.tryLock)
             return false;
 
-        if (atomicOp!"+="(readers, 1) == 1) {
-            if (!globalLock.tryLock) {
-                atomicOp!"-="(readers, 1);
+        if(atomicIncrementAndLoad(readers, 1) == 1) {
+            if(!globalLock.tryLock) {
+                atomicDecrementAndLoad(readers, 1);
                 readerLock.unlock;
             }
         }

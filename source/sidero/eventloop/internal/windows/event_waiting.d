@@ -5,6 +5,7 @@ import sidero.base.containers.dynamicarray;
 import sidero.base.attributes;
 import sidero.base.text;
 import sidero.base.logger;
+import sidero.base.internal.atomic;
 
 @safe nothrow @nogc:
 
@@ -27,7 +28,6 @@ version(Windows) {
     void shutdownEventWaiterThreadsMechanism() @trusted {
         import sidero.base.datetime.duration;
         import core.sys.windows.windows : QueueUserAPC, GetLastError, MAXIMUM_WAIT_OBJECTS, ULONG_PTR;
-        import core.atomic : atomicStore;
 
         extern (Windows) static void stopAcceptingProc(ULONG_PTR) {
         }
@@ -105,7 +105,6 @@ version(Windows) {
         }
 
         void ourProc() @trusted {
-            import core.atomic : atomicLoad, atomicStore;
             import core.sys.windows.windows : SleepEx, INFINITE, DuplicateHandle, GetCurrentProcess, GetCurrentThread,
                 DUPLICATE_SAME_ACCESS,
                 WaitForMultipleObjectsEx, WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_IO_COMPLETION, WAIT_FAILED, GetLastError,

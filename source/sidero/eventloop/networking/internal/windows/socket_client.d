@@ -188,7 +188,6 @@ version(Windows) {
     }
 
     void handleSocketEvent(void* handle, void* user) @trusted {
-        import core.atomic : atomicStore;
         import core.sys.windows.windows : closesocket, GetLastError, WSAENOTSOCK;
 
         SocketState* socketState = cast(SocketState*)user;

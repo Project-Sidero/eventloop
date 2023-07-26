@@ -2,6 +2,7 @@ module sidero.eventloop.threads.osthread;
 import sidero.eventloop.handles;
 import sidero.base.errors;
 import sidero.base.datetime.duration;
+import sidero.base.internal.atomic;
 
 // https://idea.popcount.org/2017-02-20-epoll-is-fundamentally-broken-12/ EPOLLONESHOT EPOLLEXCLUSIVE
 // https://idea.popcount.org/2017-03-20-epoll-is-fundamentally-broken-22/
@@ -22,8 +23,6 @@ If you need a unique id use the result of toHash.
 */
 struct Thread {
     private {
-        import core.atomic : atomicOp;
-
         State* state;
     }
 
@@ -34,12 +33,12 @@ export @safe nothrow @nogc:
         this.tupleof = other.tupleof;
 
         if(this.state !is null)
-            atomicOp!"+="(state.refCount, 1);
+            atomicIncrementAndLoad(state.refCount, 1);
     }
 
     ///
     ~this() scope @trusted {
-        if(this.state !is null && atomicOp!"-="(state.refCount, 1) == 0 && !this.isRunning) {
+        if(this.state !is null && atomicDecrementAndLoad(state.refCount, 1) == 0 && !this.isRunning) {
             mutex.pureLock;
             allThreads.remove(state.handle.handle);
 
@@ -82,8 +81,6 @@ export @safe nothrow @nogc:
             DWORD exitCode;
             return GetExitCodeThread(cast(HANDLE)state.handle.handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
         } else version(Posix) {
-            import core.atomic : atomicLoad;
-
             return atomicLoad(state.isRunning);
         } else
             static assert(0, "Unimplemented platform");
@@ -356,7 +353,7 @@ export @safe nothrow @nogc:
         if(isNull)
             return;
 
-        if(atomicOp!"+="(state.attachCount, 1) == 1) {
+        if(atomicIncrementAndLoad(state.attachCount, 1) == 1) {
             // tell all external thread registration mechanisms
             onAttachOfThread;
         }
@@ -367,7 +364,7 @@ export @safe nothrow @nogc:
         if(isNull)
             return;
 
-        if(atomicOp!"-="(state.attachCount, 1) == 0) {
+        if(atomicDecrementAndLoad(state.attachCount, 1) == 0) {
             // tell all external thread registration mechanisms
             onDetachOfThread;
         }
@@ -490,8 +487,6 @@ version(Windows) {
     }
 } else version(Posix) {
     static extern (C) void cleanupPosixRunning(void* state) {
-        import core.atomic : atomicStore;
-
         Thread self;
         self.state = cast(Thread.State*)state;
         self.__ctor(self);
@@ -502,7 +497,6 @@ version(Windows) {
 
     extern (C) void* start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state_) {
         import core.sys.posix.pthread : pthread_cleanup_push, pthread_self, pthread_t;
-        import core.atomic : atomicStore;
 
         Thread self;
         EFA efa;
@@ -540,8 +534,6 @@ version(Windows) {
 }
 
 unittest {
-    import core.atomic;
-
     shared(int) counter;
     shared(bool) goForIt;
 

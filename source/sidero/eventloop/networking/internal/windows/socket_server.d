@@ -6,6 +6,7 @@ import sidero.eventloop.networking.sockets;
 import sidero.base.path.networking;
 import sidero.base.text;
 import sidero.base.errors;
+import sidero.base.internal.atomic;
 
 @safe nothrow @nogc:
 
@@ -39,7 +40,6 @@ version(Windows) {
 
     private bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, bool keepAlive) @trusted {
         import sidero.base.bitmanip : swapEndian;
-        import core.atomic : atomicStore;
         import core.sys.windows.windows : AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM, INVALID_SOCKET, WSAGetLastError,
             sockaddr_in, sockaddr_in6, INADDR_ANY, IN6ADDR_ANY, bind, SOCKET_ERROR, closesocket, listen, sockaddr,
             SOL_SOCKET, SO_REUSEADDR, setsockopt, SO_KEEPALIVE, CloseHandle, GetLastError;
@@ -182,7 +182,6 @@ version(Windows) {
     }
 
     void handleListenSocketEvent(void* handle, void* user) @trusted {
-        import core.atomic : atomicStore;
         import core.sys.windows.windows : closesocket, GetLastError, WSAENOTSOCK;
 
         ListenSocketState* listenSocketState = cast(ListenSocketState*)user;

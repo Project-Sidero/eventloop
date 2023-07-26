@@ -8,6 +8,7 @@ import sidero.eventloop.threads.osthread;
 import sidero.base.attributes;
 import sidero.base.errors;
 import sidero.base.allocators : RCAllocator, globalAllocator, makeArray, dispose;
+import sidero.base.internal.atomic;
 
 ///
 enum {
@@ -43,14 +44,12 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult lock() scope {
-        import core.atomic : atomicStore, atomicLoad;
-
         Thread self = Thread.self;
         size_t offset, offsetNeg;
 
-        if (threads[0] == self) {
+        if(threads[0] == self) {
             offsetNeg = 1;
-        } else if (threads[1] == self) {
+        } else if(threads[1] == self) {
             offset = 1;
         } else {
             return ErrorResult(UnknownThreadException);
@@ -58,11 +57,11 @@ export @safe nothrow @nogc:
 
         atomicStore(flags[offset], true);
 
-        while (atomicLoad(flags[offsetNeg])) {
-            if (atomicLoad(turn) != self.toHash()) {
+        while(atomicLoad(flags[offsetNeg])) {
+            if(atomicLoad(turn) != self.toHash()) {
                 atomicStore(flags[offset], false);
 
-                while (atomicLoad(turn) != self.toHash()) {
+                while(atomicLoad(turn) != self.toHash()) {
                     Thread.yield;
                 }
 
@@ -75,14 +74,12 @@ export @safe nothrow @nogc:
 
     ///
     Result!bool tryLock() scope {
-        import core.atomic : atomicStore, atomicLoad;
-
         Thread self = Thread.self;
         size_t offset, offsetNeg;
 
-        if (threads[0] == self) {
+        if(threads[0] == self) {
             offsetNeg = 1;
-        } else if (threads[1] == self) {
+        } else if(threads[1] == self) {
             offset = 1;
         } else {
             return typeof(return)(UnknownThreadException);
@@ -90,7 +87,7 @@ export @safe nothrow @nogc:
 
         atomicStore(flags[offset], true);
 
-        if (atomicLoad(flags[offsetNeg])) {
+        if(atomicLoad(flags[offsetNeg])) {
             atomicStore(flags[offset], false);
             return typeof(return)(false);
         }
@@ -100,14 +97,12 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult unlock() scope {
-        import core.atomic : atomicStore;
-
         Thread self = Thread.self;
         size_t offset, offsetNeg;
 
-        if (threads[0] == self) {
+        if(threads[0] == self) {
             offsetNeg = 1;
-        } else if (threads[1] == self) {
+        } else if(threads[1] == self) {
             offset = 1;
         } else {
             return ErrorResult(UnknownThreadException);
@@ -144,13 +139,13 @@ export @safe nothrow @nogc:
         labels = allocator.makeArray!(shared(Label))(threads.length);
         flags = allocator.makeArray!(shared(bool))(threads.length);
 
-        foreach (i, thread; threads)
+        foreach(i, thread; threads)
             threads[i] = thread;
     }
 
     ///
     ~this() scope @trusted {
-        if (!allocator.isNull) {
+        if(!allocator.isNull) {
             allocator.dispose(threads);
             allocator.dispose(cast(Label[])labels);
             allocator.dispose(cast(bool[])flags);
@@ -165,21 +160,20 @@ export @safe nothrow @nogc:
     ///
     ErrorResult lock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : atomicFence, atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threads.countUntil(self)) < 0)
+        if((offset = threads.countUntil(self)) < 0)
             return ErrorResult(UnknownThreadException);
 
         atomicStore(flags[offset], true);
 
         shared Label maxLabel;
-        foreach (i; 0 .. labels.length) {
+        foreach(i; 0 .. labels.length) {
             atomicFence();
             shared Label temp = labels[i];
-            if (maxLabel < temp)
+            if(maxLabel < temp)
                 maxLabel = temp;
         }
         maxLabel++;
@@ -187,15 +181,15 @@ export @safe nothrow @nogc:
         labels[offset] = maxLabel;
         atomicStore(flags[offset], false);
 
-        foreach (i; 0 .. threads.length) {
-            if (i == offset)
+        foreach(i; 0 .. threads.length) {
+            if(i == offset)
                 continue;
 
-            while (atomicLoad(flags[i])) {
+            while(atomicLoad(flags[i])) {
                 Thread.yield;
             }
 
-            while (labels[i] != Label.init && (labels[i] < labels[offset] || (labels[i] == labels[offset] && i < offset))) {
+            while(labels[i] != Label.init && (labels[i] < labels[offset] || (labels[i] == labels[offset] && i < offset))) {
                 Thread.yield;
             }
         }
@@ -206,21 +200,20 @@ export @safe nothrow @nogc:
     ///
     Result!bool tryLock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : atomicFence, atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threads.countUntil(self)) < 0)
+        if((offset = threads.countUntil(self)) < 0)
             return typeof(return)(UnknownThreadException);
 
         atomicStore(flags[offset], true);
 
         shared Label maxLabel;
-        foreach (i; 0 .. labels.length) {
+        foreach(i; 0 .. labels.length) {
             atomicFence();
             shared Label temp = labels[i];
-            if (maxLabel < temp)
+            if(maxLabel < temp)
                 maxLabel = temp;
         }
         maxLabel++;
@@ -228,15 +221,15 @@ export @safe nothrow @nogc:
         labels[offset] = maxLabel;
         atomicStore(flags[offset], false);
 
-        foreach (i; 0 .. threads.length) {
-            if (i == offset)
+        foreach(i; 0 .. threads.length) {
+            if(i == offset)
                 continue;
 
-            if (atomicLoad(flags[i])) {
+            if(atomicLoad(flags[i])) {
                 return typeof(return)(false);
             }
 
-            if (labels[i] != Label.init && (labels[i] < labels[offset] || (labels[i] == labels[offset] && i < offset))) {
+            if(labels[i] != Label.init && (labels[i] < labels[offset] || (labels[i] == labels[offset] && i < offset))) {
                 return typeof(return)(false);
             }
         }
@@ -247,12 +240,11 @@ export @safe nothrow @nogc:
     ///
     ErrorResult unlock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : atomicStore;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threads.countUntil(self)) < 0)
+        if((offset = threads.countUntil(self)) < 0)
             return ErrorResult(UnknownThreadException);
 
         atomicStore(flags[offset], false);
@@ -269,32 +261,26 @@ private:
     export @safe nothrow @nogc:
 
         void opAssign(const Label other) scope shared {
-            import core.atomic : atomicLoad, atomicStore;
-
             atomicStore(timeOffset, other.timeOffset);
             atomicStore(value, atomicLoad(other.value));
         }
 
         void opUnary(string op)() scope shared if (op == "++") {
-            import core.atomic : atomicOp, atomicLoad, atomicStore;
-
-            if (atomicLoad(value) < 0) {
+            if(atomicLoad(value) < 0) {
                 atomicStore(value, 1);
                 atomicStore(timeOffset, accurateDateTime().pair);
             } else
-                atomicOp!"+="(value, 1);
+                atomicIncrementAndLoad(value, 1);
         }
 
         int opCmp(scope shared Label other) scope shared const {
-            import core.atomic : atomicLoad;
-
             long[2] ourST = atomicLoad(timeOffset);
             long[2] otherST = atomicLoad(other.timeOffset);
 
-            if (ourST == otherST) {
+            if(ourST == otherST) {
                 immutable uint a = value, b = other.value;
                 return a > b ? 1 : (a == b ? 0 : -1);
-            } else if (ourST > otherST)
+            } else if(ourST > otherST)
                 return 1;
             else
                 return -1;
@@ -334,14 +320,12 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult lock() scope {
-        import core.atomic : atomicStore, atomicLoad;
-
         Thread self = Thread.self;
         size_t offset, offsetNeg;
 
-        if (threads[0] == self) {
+        if(threads[0] == self) {
             offsetNeg = 1;
-        } else if (threads[1] == self) {
+        } else if(threads[1] == self) {
             offset = 1;
         } else {
             return ErrorResult(UnknownThreadException);
@@ -351,7 +335,7 @@ export @safe nothrow @nogc:
         atomicStore(currentThreadId, self.toHash());
 
         // if we are the current thread and the other thread has already locked, we wait
-        while (atomicLoad(flags[offsetNeg]) && atomicLoad(currentThreadId) == self.toHash()) {
+        while(atomicLoad(flags[offsetNeg]) && atomicLoad(currentThreadId) == self.toHash()) {
             Thread.yield;
         }
 
@@ -360,14 +344,12 @@ export @safe nothrow @nogc:
 
     ///
     Result!bool tryLock() scope {
-        import core.atomic : atomicStore, atomicLoad;
-
         Thread self = Thread.self;
         size_t offset, offsetNeg;
 
-        if (threads[0] == self) {
+        if(threads[0] == self) {
             offsetNeg = 1;
-        } else if (threads[1] == self) {
+        } else if(threads[1] == self) {
             offset = 1;
         } else {
             return typeof(return)(UnknownThreadException);
@@ -376,7 +358,7 @@ export @safe nothrow @nogc:
         atomicStore(flags[offset], true);
         atomicStore(currentThreadId, self.toHash());
 
-        if (atomicLoad(flags[offsetNeg]) && atomicLoad(currentThreadId) == self.toHash()) {
+        if(atomicLoad(flags[offsetNeg]) && atomicLoad(currentThreadId) == self.toHash()) {
             atomicStore(flags[offset], false);
             return typeof(return)(false);
         }
@@ -386,13 +368,11 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult unlock() scope {
-        import core.atomic : atomicStore;
-
         Thread self = Thread.self;
         size_t offset;
 
-        if (threads[0] == self) {
-        } else if (threads[1] == self) {
+        if(threads[0] == self) {
+        } else if(threads[1] == self) {
             offset = 1;
         } else {
             return ErrorResult(UnknownThreadException);
@@ -424,7 +404,7 @@ export @safe nothrow @nogc:
         lastToEnter = allocator.makeArray!(shared(ulong))(threads.length);
         levels = allocator.makeArray!(shared(size_t))(threads.length);
 
-        foreach (i, thread; threads)
+        foreach(i, thread; threads)
             threads[i] = thread;
     }
 
@@ -443,15 +423,14 @@ export @safe nothrow @nogc:
     ///
     ErrorResult lock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threads.countUntil(self)) < 0)
+        if((offset = threads.countUntil(self)) < 0)
             return ErrorResult(UnknownThreadException);
 
-        foreach (i; 1 .. threads.length) {
+        foreach(i; 1 .. threads.length) {
             atomicStore(levels[offset], i);
             atomicStore(lastToEnter[i], self.toHash());
 
@@ -460,23 +439,23 @@ export @safe nothrow @nogc:
             do {
                 wait = false;
 
-                foreach (k; 1 .. threads.length) {
-                    if (k == offset)
+                foreach(k; 1 .. threads.length) {
+                    if(k == offset)
                         continue;
 
-                    if (atomicLoad(levels[k]) >= i && atomicLoad(lastToEnter[i]) == self.toHash()) {
+                    if(atomicLoad(levels[k]) >= i && atomicLoad(lastToEnter[i]) == self.toHash()) {
                         wait = true;
                         break;
                     }
                 }
 
-                if (wait) {
-                    if (nWait)
+                if(wait) {
+                    if(nWait)
                         Thread.yield;
                     nWait = true;
                 }
             }
-            while (wait);
+            while(wait);
         }
 
         return ErrorResult.init;
@@ -485,23 +464,22 @@ export @safe nothrow @nogc:
     ///
     Result!bool tryLock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : atomicStore, atomicLoad;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threads.countUntil(self)) < 0)
+        if((offset = threads.countUntil(self)) < 0)
             return typeof(return)(UnknownThreadException);
 
-        foreach (i; 1 .. threads.length) {
+        foreach(i; 1 .. threads.length) {
             atomicStore(levels[offset], i);
             atomicStore(lastToEnter[i], self.toHash());
 
-            foreach (k; 0 .. threads.length) {
-                if (k == offset)
+            foreach(k; 0 .. threads.length) {
+                if(k == offset)
                     continue;
 
-                if (atomicLoad(levels[k]) >= i && atomicLoad(lastToEnter[i]) == self.toHash()) {
+                if(atomicLoad(levels[k]) >= i && atomicLoad(lastToEnter[i]) == self.toHash()) {
                     atomicStore(levels[offset], 0);
                     return typeof(return)(false);
                 }
@@ -514,12 +492,12 @@ export @safe nothrow @nogc:
     ///
     ErrorResult unlock() scope {
         import std.algorithm : countUntil;
-        import core.atomic : atomicStore;
+        import sidero.base.internal.atomic : atomicStore;
 
         Thread self = Thread.self;
         ptrdiff_t offset;
 
-        if ((offset = threads.countUntil(self)) < 0)
+        if((offset = threads.countUntil(self)) < 0)
             return ErrorResult(UnknownThreadException);
 
         atomicStore(levels[offset], 0);
@@ -537,9 +515,7 @@ export @safe nothrow @nogc:
 
     /// Non-pure will yield the thread lock
     void lock() scope {
-        import core.atomic : cas, atomicLoad;
-
-        while (!cas(&state, false, true)) {
+        while(!cas(state, false, true)) {
             Thread.yield;
         }
     }
@@ -548,28 +524,24 @@ pure:
 
     /// A much more limited lock method, that is pure.
     void pureLock() scope {
-        import core.atomic : cas, atomicFence, atomicLoad;
-
-        if (cas(&state, false, true))
+        if(cas(state, false, true))
             return;
         else
             atomicFence();
 
-        while (!cas(&state, false, true)) {
+        while(!cas(state, false, true)) {
             atomicFence();
         }
     }
 
     ///
     bool tryLock() scope {
-        import core.atomic : cas;
-
-        return cas(&state, false, true);
+        return cas(state, false, true);
     }
 
     ///
     void unlock() scope {
-        import core.atomic : atomicStore;
+        import sidero.base.internal.atomic : atomicStore;
 
         atomicStore(state, false);
     }
@@ -585,14 +557,12 @@ export @safe nothrow @nogc:
 
     /// Non-pure will yield the thread lock
     void lock() scope {
-        import core.atomic : cas, atomicLoad;
-
-        for (;;) {
-            while (atomicLoad(state)) {
+        for(;;) {
+            while(atomicLoad(state)) {
                 Thread.yield;
             }
 
-            if (cas(&state, false, true))
+            if(cas(state, false, true))
                 return;
         }
     }
@@ -601,28 +571,22 @@ pure:
 
     /// A much more limited lock method, that is pure.
     void pureLock() scope {
-        import core.atomic : cas, atomicFence, atomicLoad;
-
-        for (;;) {
-            if (atomicLoad(state))
+        for(;;) {
+            if(atomicLoad(state))
                 atomicFence();
 
-            if (cas(&state, false, true))
+            if(cas(state, false, true))
                 return;
         }
     }
 
     ///
     bool tryLock() scope {
-        import core.atomic : cas;
-
-        return cas(&state, false, true);
+        return cas(state, false, true);
     }
 
     ///
     void unlock() scope {
-        import core.atomic : atomicStore;
-
         atomicStore(state, false);
     }
 }

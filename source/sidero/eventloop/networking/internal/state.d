@@ -10,6 +10,7 @@ import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.path.networking;
 import sidero.base.allocators;
 import sidero.base.errors;
+import sidero.base.internal.atomic;
 
 package(sidero.eventloop):
 
@@ -41,12 +42,10 @@ package(sidero.eventloop):
 
 @safe nothrow @nogc:
     void rc(bool addRef) scope @trusted {
-        import core.atomic : atomicOp, atomicLoad;
-
         if(addRef)
-            atomicOp!"+="(refCount, 1);
+            atomicIncrementAndLoad(refCount, 1);
         else {
-            ptrdiff_t refCount = atomicOp!"-="(this.refCount, 1);
+            ptrdiff_t refCount = atomicDecrementAndLoad(this.refCount, 1);
 
             if(refCount == 0) {
                 if(atomicLoad(isAlive)) {
@@ -80,8 +79,6 @@ package(sidero.eventloop):
     }
 
     void pin(ptrdiff_t amount) scope {
-        import core.atomic : atomicLoad, atomicStore;
-
         if(atomicLoad(isAlive) > 0)
             assert(0, "Pinned");
 
@@ -90,12 +87,10 @@ package(sidero.eventloop):
     }
 
     void unpin() scope {
-        import core.atomic : atomicLoad, atomicOp;
-
         if(atomicLoad(isAlive) == 0)
             assert(0, "Not pinned");
 
-        if(atomicOp!"-="(isAlive, 1) == 0)
+        if(atomicDecrementAndLoad(isAlive, 1) == 0)
             rc(false);
     }
 
@@ -128,12 +123,10 @@ package(sidero.eventloop):
 @safe nothrow @nogc:
 
     void rc(bool addRef) scope @trusted {
-        import core.atomic : atomicLoad, atomicOp;
-
         if(addRef)
-            atomicOp!"+="(refCount, 1);
+            atomicIncrementAndLoad(refCount, 1);
         else {
-            ptrdiff_t refCount = atomicOp!"-="(this.refCount, 1);
+            ptrdiff_t refCount = atomicDecrementAndLoad(this.refCount, 1);
 
             if(refCount == 0) {
                 encryptionState.cleanup;
@@ -150,8 +143,6 @@ package(sidero.eventloop):
     }
 
     void pin() scope {
-        import core.atomic : atomicLoad, atomicStore;
-
         if(atomicLoad(isAlive))
             assert(0, "Pinned");
 
@@ -160,8 +151,6 @@ package(sidero.eventloop):
     }
 
     void unpin() scope @trusted {
-        import core.atomic : atomicLoad, atomicStore;
-
         if(!atomicLoad(isAlive))
             return;
 
@@ -171,8 +160,6 @@ package(sidero.eventloop):
     }
 
     void close(bool gracefully) scope @trusted {
-        import core.atomic : atomicLoad, atomicStore;
-
         if(!atomicLoad(isAlive))
             return;
 
@@ -258,8 +245,6 @@ struct ReadingState {
     }
 
     bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
-        import core.atomic : atomicLoad;
-
         // ok what is the source of our buffers?
         // we work through the encryption API, so it can figure it out if we are reading directly or not
 

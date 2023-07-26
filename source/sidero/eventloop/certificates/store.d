@@ -3,6 +3,7 @@ import sidero.eventloop.certificates.defs;
 import sidero.base.allocators;
 import sidero.base.text;
 import sidero.base.containers.dynamicarray;
+import sidero.base.internal.atomic;
 
 export @safe nothrow @nogc:
 
@@ -56,18 +57,14 @@ export:
 @safe nothrow @nogc:
 
     this(scope return ref CertificateStore other) scope {
-        import core.atomic : atomicOp;
-
         this.tupleof = other.tupleof;
 
         if(state !is null)
-            atomicOp!"+="(state.refCount, 1);
+            atomicIncrementAndLoad(state.refCount, 1);
     }
 
     ~this() scope @trusted {
-        import core.atomic : atomicOp;
-
-        if(state !is null && atomicOp!"-="(state.refCount, 1) == 0) {
+        if(state !is null && atomicDecrementAndLoad(state.refCount, 1) == 0) {
             state.cleanup;
             RCAllocator allocator = state.allocator;
             allocator.dispose(state);

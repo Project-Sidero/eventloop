@@ -3,6 +3,7 @@ import sidero.eventloop.networking.internal.state;
 import sidero.base.text;
 import sidero.base.logger;
 import sidero.base.path.networking;
+import sidero.base.internal.atomic;
 
 @safe nothrow @nogc:
 
@@ -93,9 +94,8 @@ version(Windows) {
         void forceClose(scope SocketState* socketState) scope @trusted {
             import sidero.eventloop.networking.sockets : Socket;
             import core.sys.windows.windows : closesocket;
-            import core.atomic : cas;
 
-            if(cas(&isClosed, false, true)) {
+            if(cas(isClosed, false, true)) {
                 logger.debug_("Forcing closed socket ", this.handle);
                 closesocket(handle);
 
@@ -113,9 +113,8 @@ version(Windows) {
         void shutdown(scope SocketState* socketState) scope @trusted {
             import sidero.eventloop.internal.event_waiting;
             import core.sys.windows.windows : CloseHandle, SD_BOTH, shutdown;
-            import core.atomic : cas;
 
-            if(cas(&isShutdown, false, true)) {
+            if(cas(isShutdown, false, true)) {
                 logger.notice("Shutting down socket socket ", this.handle);
                 onShutdownReadWriteEverything(socketState);
                 shutdown(handle, SD_BOTH);
@@ -131,7 +130,6 @@ version(Windows) {
         void onShutdownReadWriteEverything(scope SocketState* socketState) scope @trusted {
             import sidero.eventloop.networking.sockets : Socket;
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, WSAESHUTDOWN;
-            import core.atomic : atomicLoad;
 
             if(atomicLoad(isShutdown))
                 return;
@@ -265,7 +263,6 @@ version(Windows) {
         }
 
         bool triggerRead(SocketState* socketState, bool tryToFulfill = true) scope @trusted {
-            import core.atomic : atomicLoad;
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, GetLastError;
 
             if(tryToFulfill && socketState.readingState.tryFulfillRequest(socketState))
@@ -325,7 +322,6 @@ version(Windows) {
 
         bool triggerWrite(scope SocketState* socketState) scope @trusted {
             import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
-            import core.atomic : atomicLoad;
 
             if(!atomicLoad(socketState.isAlive))
                 return false;

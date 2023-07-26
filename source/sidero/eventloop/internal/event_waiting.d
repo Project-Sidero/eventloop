@@ -7,6 +7,7 @@ import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.attributes;
 import sidero.base.logger;
 import sidero.base.text;
+import sidero.base.internal.atomic;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.event_waiting;
@@ -99,8 +100,6 @@ void shutdownEventWaiterThreads() {
 private @hidden:
 
 void updateEventWaiterThreads() @trusted {
-    import core.atomic : atomicLoad;
-
     const maxEventHandles = maximumNumberOfHandlesPerEventWaiter();
 
     auto lockError = eventWaiterMutex.lock;
