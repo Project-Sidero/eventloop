@@ -9,7 +9,7 @@ import sidero.base.errors;
 
 @safe nothrow @nogc:
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
 
     ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) @trusted {
@@ -59,11 +59,11 @@ version (Windows) {
                 // needs to be have been already resolved
             }, () {});
 
-            if (!validAddress)
+            if(!validAddress)
                 return ErrorResult(MalformedInputException("Not a valid network address, must be resolved ip/port"));
         }
 
-        final switch (socketState.protocol) {
+        final switch(socketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             break;
@@ -75,7 +75,7 @@ version (Windows) {
         {
             socketState.handle = WSASocketW(addressFamily, socketType, 0, null, 0, WSA_FLAG_OVERLAPPED);
 
-            if (socketState.handle == INVALID_SOCKET) {
+            if(socketState.handle == INVALID_SOCKET) {
                 logger.error("Error could not open socket ", address, " ", WSAGetLastError());
                 return ErrorResult(UnknownPlatformBehaviorException("Could not create socket"));
             } else {
@@ -84,7 +84,7 @@ version (Windows) {
         }
 
         {
-            if (keepAlive && setsockopt(socketState.handle, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
+            if(keepAlive && setsockopt(socketState.handle, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
                 logger.error("Error could not set SO_KEEPALIVE ", address, " ", WSAGetLastError());
                 closesocket(socketState.handle);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not set keep alive status to socket"));
@@ -92,7 +92,7 @@ version (Windows) {
         }
 
         {
-            if (connect(socketState.handle, cast(sockaddr*)remoteAddressBuffer.ptr, remoteAddressSize) == SOCKET_ERROR) {
+            if(connect(socketState.handle, cast(sockaddr*)remoteAddressBuffer.ptr, remoteAddressSize) == SOCKET_ERROR) {
                 logger.error("Error could not connect to address on port ", address, " ", WSAGetLastError());
                 closesocket(socketState.handle);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not connect socket to address"));
@@ -104,7 +104,7 @@ version (Windows) {
         {
             socketState.onCloseEvent = WSACreateEvent();
 
-            if (socketState.onCloseEvent is WSA_INVALID_EVENT) {
+            if(socketState.onCloseEvent is WSA_INVALID_EVENT) {
                 logger.error("Error occured while creating the close event with code ", address, " ", GetLastError());
                 closesocket(socketState.handle);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not create on close event for socket"));
@@ -112,7 +112,7 @@ version (Windows) {
                 logger.trace("WSA close event created ", address);
             }
 
-            if (WSAEventSelect(socketState.handle, socketState.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
+            if(WSAEventSelect(socketState.handle, socketState.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
                 logger.error("Error could not associated on close event with socket accept event ", address, " ", GetLastError());
                 closesocket(socketState.handle);
                 CloseHandle(socketState.onCloseEvent);
@@ -122,7 +122,7 @@ version (Windows) {
             }
         }
 
-        if (!associateWithIOCP(socket)) {
+        if(!associateWithIOCP(socket)) {
             closesocket(socketState.handle);
             CloseHandle(socketState.onCloseEvent);
             return ErrorResult(UnknownPlatformBehaviorException("Could not associate socket with IOCP workers"));
@@ -134,17 +134,17 @@ version (Windows) {
             NetworkAddress localAddress;
             sockaddr_in* localAddressPtr = cast(sockaddr_in*)localAddressBuffer.ptr;
 
-            if (getsockname(socketState.handle, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
+            if(getsockname(socketState.handle, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
                 logger.error("Error could not acquire local network address for socket client ", address, " ", GetLastError());
                 closesocket(socketState.handle);
                 CloseHandle(socketState.onCloseEvent);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not associate on close event for socket"));
             }
 
-            if (localAddressPtr.sin_family == AF_INET) {
+            if(localAddressPtr.sin_family == AF_INET) {
                 sockaddr_in* localAddress4 = localAddressPtr;
                 localAddress = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
-            } else if (localAddressPtr.sin_family == AF_INET6) {
+            } else if(localAddressPtr.sin_family == AF_INET6) {
                 sockaddr_in6* localAddress6 = cast(sockaddr_in6*)localAddressPtr;
                 localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.s6_addr16, true, true);
             }
@@ -169,7 +169,7 @@ version (Windows) {
                 notRecognized = true;
             });
 
-            if (notRecognized) {
+            if(notRecognized) {
                 logger.error("Did not recognize an IP address for socket client ", localAddress, " ", address, " ", socketState.handle);
                 closesocket(socketState.handle);
                 CloseHandle(socketState.onCloseEvent);
@@ -194,17 +194,17 @@ version (Windows) {
         SocketState* socketState = cast(SocketState*)user;
         WSANETWORKEVENTS wsaEvent;
 
-        if (WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
+        if(WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
             auto error = GetLastError();
 
-            if (error == WSAENOTSOCK) {
+            if(error == WSAENOTSOCK) {
                 logger.trace("Handle not socket message ", socketState.handle);
                 // ok just in case lets just unpin it
                 socketState.unpin;
             } else {
                 logger.error("Error could not enumerate WSA network socket events with code ", error, " ", socketState.handle);
             }
-        } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
+        } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
             socketState.onShutdownReadWriteEverything(socketState);
 
             logger.trace("Socket closed ", socketState.handle);

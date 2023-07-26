@@ -24,17 +24,17 @@ void deregisterThreadRegistration(void* key) {
 package(sidero.eventloop.threads):
 
 void onAttachOfThread() {
-    foreach (k, ts; threadSystemRegistration) {
+    foreach(k, ts; threadSystemRegistration) {
         assert(ts);
-        if (ts.attachFunc !is null)
+        if(ts.attachFunc !is null)
             ts.attachFunc();
     }
 }
 
 void onDetachOfThread() {
-    foreach (k, ts; threadSystemRegistration) {
+    foreach(k, ts; threadSystemRegistration) {
         assert(ts);
-        if (ts.detachFunc !is null)
+        if(ts.detachFunc !is null)
             ts.detachFunc();
     }
 }

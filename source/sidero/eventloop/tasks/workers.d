@@ -7,7 +7,7 @@ export @safe nothrow @nogc:
 ErrorResult startWorkers(size_t workerMultiplier) @trusted {
     import iw = sidero.eventloop.internal.workers;
 
-    if (iw.startWorkers(workerMultiplier))
+    if(iw.startWorkers(workerMultiplier))
         return ErrorResult.init;
 
     return ErrorResult(UnknownPlatformBehaviorException("Could not start workers"));

@@ -25,14 +25,14 @@ export @safe nothrow @nogc:
 
         this.tupleof = other.tupleof;
 
-        if (state !is null)
+        if(state !is null)
             atomicOp!"+="(state.refCount, 1);
     }
 
     ~this() scope @trusted {
         import core.atomic : atomicOp;
 
-        if (state !is null && atomicOp!"-="(state.refCount, 1) == 0) {
+        if(state !is null && atomicOp!"-="(state.refCount, 1) == 0) {
             state.cleanup;
             RCAllocator allocator = state.allocator;
             allocator.dispose(state);
@@ -46,7 +46,7 @@ export @safe nothrow @nogc:
 
     ///
     Type type() scope const {
-        if (isNull)
+        if(isNull)
             return Type.None;
 
         return state.type;
@@ -54,39 +54,39 @@ export @safe nothrow @nogc:
 
     /// Warning: unsafe, you must handle reference counting and keeping this instance alive
     SystemHandle unsafeGetHandle() scope const @trusted {
-        if (isNull)
+        if(isNull)
             return SystemHandle.init;
 
         final switch(state.type) {
-            case Certificate.Type.None:
-            case Certificate.Type.Default:
-                assert(0);
-
-            case Certificate.Type.WinCrypt:
-                return SystemHandle(cast(void*)state.winCryptCertificateContext, WinCryptCertificateHandleType);
-        }
-    }
-
-    ///
-    Slice!ubyte publicKey(scope return RCAllocator allocator = RCAllocator.init) scope return @trusted {
-        if (isNull)
-            return typeof(return).init;
-
-        state.mutex.pureLock;
-        scope (exit)
-            state.mutex.unlock;
-
-        if (!state.copiedPublicKey.isNull)
-            return state.copiedPublicKey;
-
-        final switch (state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null && state.winCryptCertificateContext.pCertInfo !is null) {
+            return SystemHandle(cast(void*)state.winCryptCertificateContext, WinCryptCertificateHandleType);
+        }
+    }
+
+    ///
+    Slice!ubyte publicKey(scope return RCAllocator allocator = RCAllocator.init) scope return @trusted {
+        if(isNull)
+            return typeof(return).init;
+
+        state.mutex.pureLock;
+        scope(exit)
+            state.mutex.unlock;
+
+        if(!state.copiedPublicKey.isNull)
+            return state.copiedPublicKey;
+
+        final switch(state.type) {
+        case Certificate.Type.None:
+        case Certificate.Type.Default:
+            assert(0);
+
+        case Certificate.Type.WinCrypt:
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null && state.winCryptCertificateContext.pCertInfo !is null) {
                     auto spki = &state.winCryptCertificateContext.pCertInfo.SubjectPublicKeyInfo.PublicKey;
                     state.copiedPublicKey = Slice!ubyte(spki.pbData[0 .. spki.cbData]).dup(allocator);
                     return state.copiedPublicKey;
@@ -99,24 +99,24 @@ export @safe nothrow @nogc:
 
     ///
     Slice!ubyte privateKey(scope return RCAllocator allocator = RCAllocator.init) scope return @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
         state.mutex.pureLock;
-        scope (exit)
+        scope(exit)
             state.mutex.unlock;
 
-        if (!state.copiedPrivateKey.isNull)
+        if(!state.copiedPrivateKey.isNull)
             return state.copiedPrivateKey;
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null) {
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null) {
                     state.copiedPrivateKey = Slice!ubyte(
                             state.winCryptCertificateContext.pbCertEncoded[0 .. state.winCryptCertificateContext.cbCertEncoded]).dup(
                             allocator);
@@ -130,19 +130,19 @@ export @safe nothrow @nogc:
 
     ///
     Optional!GDateTime availableOn() scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null && state.winCryptCertificateContext.pCertInfo !is null) {
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null && state.winCryptCertificateContext.pCertInfo !is null) {
                     SYSTEMTIME systemTime;
-                    if (FileTimeToSystemTime(&state.winCryptCertificateContext.pCertInfo.NotBefore, &systemTime) != 0) {
+                    if(FileTimeToSystemTime(&state.winCryptCertificateContext.pCertInfo.NotBefore, &systemTime) != 0) {
                         return typeof(return)(GDateTime(GDate(systemTime.wYear, cast(ubyte)systemTime.wMonth,
                                 cast(ubyte)systemTime.wDay), TimeOfDay(cast(ubyte)systemTime.wHour,
                                 cast(ubyte)systemTime.wMinute, cast(ubyte)systemTime.wSecond)));
@@ -156,19 +156,19 @@ export @safe nothrow @nogc:
 
     ///
     Optional!GDateTime expiresOn() scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null && state.winCryptCertificateContext.pCertInfo !is null) {
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null && state.winCryptCertificateContext.pCertInfo !is null) {
                     SYSTEMTIME systemTime;
-                    if (FileTimeToSystemTime(&state.winCryptCertificateContext.pCertInfo.NotAfter, &systemTime) != 0) {
+                    if(FileTimeToSystemTime(&state.winCryptCertificateContext.pCertInfo.NotAfter, &systemTime) != 0) {
                         return typeof(return)(GDateTime(GDate(systemTime.wYear, cast(ubyte)systemTime.wMonth,
                                 cast(ubyte)systemTime.wDay), TimeOfDay(cast(ubyte)systemTime.wHour,
                                 cast(ubyte)systemTime.wMinute, cast(ubyte)systemTime.wSecond)));
@@ -182,30 +182,30 @@ export @safe nothrow @nogc:
 
     ///
     String_UTF8 friendlyName(scope return RCAllocator allocator = RCAllocator.init) scope @trusted {
-        if (isNull)
+        if(isNull)
             return String_UTF8.init;
 
         state.mutex.pureLock;
-        scope (exit)
+        scope(exit)
             state.mutex.unlock;
 
-        if (!state.copiedFriendlyName.isNull)
+        if(!state.copiedFriendlyName.isNull)
             return state.copiedFriendlyName;
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null) {
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null) {
                     void[128] buffer = void;
                     DWORD bufferUsed = buffer.length;
 
-                    if (CertGetCertificateContextProperty(state.winCryptCertificateContext, CERT_FRIENDLY_NAME_PROP_ID,
+                    if(CertGetCertificateContextProperty(state.winCryptCertificateContext, CERT_FRIENDLY_NAME_PROP_ID,
                             buffer.ptr, &bufferUsed)) {
-                        if (bufferUsed > 1)
+                        if(bufferUsed > 1)
                             bufferUsed -= 2;
                         state.copiedFriendlyName = String_UTF8(cast(wstring)buffer[0 .. bufferUsed]).dup(allocator);
                     }
@@ -220,30 +220,30 @@ export @safe nothrow @nogc:
 
     ///
     String_UTF8 issuedBy(scope return RCAllocator allocator = RCAllocator.init) scope @trusted {
-        if (isNull)
+        if(isNull)
             return String_UTF8.init;
 
         state.mutex.pureLock;
-        scope (exit)
+        scope(exit)
             state.mutex.unlock;
 
-        if (!state.copiedIssuedBy.isNull)
+        if(!state.copiedIssuedBy.isNull)
             return state.copiedIssuedBy;
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null) {
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null) {
                     DWORD dwStrType = CERT_SIMPLE_NAME_STR;
                     wchar[128] buffer;
                     auto converted = CertGetNameStringW(state.winCryptCertificateContext, CERT_NAME_RDN_TYPE,
                             CERT_NAME_ISSUER_FLAG, &dwStrType, buffer.ptr, cast(DWORD)buffer.length);
 
-                    if (converted > 0)
+                    if(converted > 0)
                         converted--;
 
                     state.copiedIssuedBy = String_UTF8(cast(wstring)buffer[0 .. converted]).dup(allocator);
@@ -257,30 +257,30 @@ export @safe nothrow @nogc:
 
     ///
     String_UTF8 issuedTo(scope return RCAllocator allocator = RCAllocator.init) scope @trusted {
-        if (isNull)
+        if(isNull)
             return String_UTF8.init;
 
         state.mutex.pureLock;
-        scope (exit)
+        scope(exit)
             state.mutex.unlock;
 
-        if (!state.copiedIssuedTo.isNull)
+        if(!state.copiedIssuedTo.isNull)
             return state.copiedIssuedTo;
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (state.winCryptCertificateContext !is null) {
+            version(Windows) {
+                if(state.winCryptCertificateContext !is null) {
                     DWORD dwStrType = CERT_SIMPLE_NAME_STR;
                     wchar[128] buffer;
                     auto converted = CertGetNameStringW(state.winCryptCertificateContext, CERT_NAME_RDN_TYPE, 0,
                             &dwStrType, buffer.ptr, cast(DWORD)buffer.length);
 
-                    if (converted > 0)
+                    if(converted > 0)
                         converted--;
 
                     state.copiedIssuedTo = String_UTF8(cast(wstring)buffer[0 .. converted]).dup(allocator);
@@ -294,7 +294,7 @@ export @safe nothrow @nogc:
 
     ///
     StringBuilder_UTF8 toString() scope const @trusted {
-        if (isNull)
+        if(isNull)
             return StringBuilder_UTF8("null");
 
         Certificate* self = cast(Certificate*)&this;
@@ -310,7 +310,7 @@ export @safe nothrow @nogc:
             bool usePKCS7_ASN_Encoding = true, return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.base.internal.filesystem : readFile;
 
-        version (Windows) {
+        version(Windows) {
             auto encodedBytes = readFile!ubyte(path);
             DWORD encodingOr = (useX509_ASN_Encoding ? X509_ASN_ENCODING : 0) | (usePKCS7_ASN_Encoding ? PKCS_7_ASN_ENCODING : 0);
             return Certificate.loadFromWinCrypt(CertCreateCertificateContext(encodingOr, encodedBytes.ptr,
@@ -320,13 +320,13 @@ export @safe nothrow @nogc:
     }
 
     package(sidero.eventloop.certificates) {
-        version (Windows) {
+        version(Windows) {
             static Certificate loadFromWinCrypt(scope return PCCERT_CONTEXT certificateContext,
                     return RCAllocator allocator = RCAllocator.init) @trusted {
-                if (certificateContext is null)
+                if(certificateContext is null)
                     return Certificate.init;
 
-                if (allocator.isNull)
+                if(allocator.isNull)
                     allocator = globalAllocator();
 
                 Certificate ret;
@@ -364,7 +364,7 @@ struct State {
 
     Certificate.Type type;
 
-    version (Windows) {
+    version(Windows) {
         PCCERT_CONTEXT winCryptCertificateContext;
     }
 
@@ -377,13 +377,13 @@ struct State {
 @safe nothrow @nogc:
 
     void cleanup() @trusted {
-        final switch (type) {
+        final switch(type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             return;
 
         case Certificate.Type.WinCrypt:
-            if (winCryptCertificateContext !is null)
+            if(winCryptCertificateContext !is null)
                 CertFreeCertificateContext(winCryptCertificateContext);
             break;
         }

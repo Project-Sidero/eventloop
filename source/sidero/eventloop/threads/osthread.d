@@ -33,20 +33,20 @@ export @safe nothrow @nogc:
     this(scope ref Thread other) scope @trusted {
         this.tupleof = other.tupleof;
 
-        if (this.state !is null)
+        if(this.state !is null)
             atomicOp!"+="(state.refCount, 1);
     }
 
     ///
     ~this() scope @trusted {
-        if (this.state !is null && atomicOp!"-="(state.refCount, 1) == 0 && !this.isRunning) {
+        if(this.state !is null && atomicOp!"-="(state.refCount, 1) == 0 && !this.isRunning) {
             mutex.pureLock;
             allThreads.remove(state.handle.handle);
 
-            if (state.owns) {
+            if(state.owns) {
                 // destroy handle (not needed with pthreads)
 
-                version (Windows) {
+                version(Windows) {
                     import core.sys.windows.winbase : CloseHandle;
                     import core.sys.windows.basetsd : HANDLE;
 
@@ -66,22 +66,22 @@ export @safe nothrow @nogc:
 
     /// Warning: unsafe, you must handle reference counting and keeping this instance alive
     SystemHandle unsafeGetHandle() @system {
-        if (isNull)
+        if(isNull)
             return SystemHandle.init;
         return this.state.handle;
     }
 
     /// Warning: this only really works right on Windows. On Posix this only will give the right results if it was created by this abstraction.
     bool isRunning() scope const @trusted {
-        if (isNull)
+        if(isNull)
             return false;
 
-        version (Windows) {
+        version(Windows) {
             import core.sys.windows.windows : HANDLE, STILL_ACTIVE, GetExitCodeThread;
 
             DWORD exitCode;
             return GetExitCodeThread(cast(HANDLE)state.handle.handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
-        } else version (Posix) {
+        } else version(Posix) {
             import core.atomic : atomicLoad;
 
             return atomicLoad(state.isRunning);
@@ -136,11 +136,11 @@ export @safe nothrow @nogc:
                 mutex.unlock;
             }
 
-            version (Windows) {
+            version(Windows) {
                 import core.sys.windows.windows : CreateThread, CREATE_SUSPENDED, ResumeThread, GetThreadId;
 
                 auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, CREATE_SUSPENDED, null);
-                if (handle is null) {
+                if(handle is null) {
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
@@ -149,7 +149,7 @@ export @safe nothrow @nogc:
                 state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
                 allThreads[cast(void*)GetThreadId(handle)] = state;
                 ResumeThread(handle);
-            } else version (Posix) {
+            } else version(Posix) {
                 import core.sys.posix.pthread : pthread_create, pthread_t, pthread_attr_t, pthread_attr_init,
                     pthread_attr_destroy, pthread_attr_setstacksize;
 
@@ -157,13 +157,13 @@ export @safe nothrow @nogc:
                 pthread_attr_t attr;
 
                 s = pthread_attr_init(&attr);
-                if (s != 0) {
+                if(s != 0) {
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
                 }
                 s = pthread_attr_setstacksize(&attr, stackSize);
-                if (s != 0) {
+                if(s != 0) {
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
@@ -172,7 +172,7 @@ export @safe nothrow @nogc:
                 pthread_t handle;
                 s = pthread_create(&handle, attr, &start_routine!(EntryFunctionArgs!Args), cast(void*)state);
                 s |= pthread_attr_destroy(&attr);
-                if (s != 0) {
+                if(s != 0) {
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
@@ -187,11 +187,11 @@ export @safe nothrow @nogc:
 
     /// Tells the kernel that this thread can wait before continuing its work
     static void yield() @trusted {
-        version (Windows) {
+        version(Windows) {
             import core.sys.windows.windows : SwitchToThread;
 
             SwitchToThread();
-        } else version (Posix) {
+        } else version(Posix) {
             import core.sys.posix.sched : sched_yield;
 
             sched_yield();
@@ -200,17 +200,17 @@ export @safe nothrow @nogc:
 
     ///
     static ErrorResult sleep(Duration timeout) @trusted {
-        if (timeout <= Duration.init)
+        if(timeout <= Duration.init)
             return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
 
-        version (Windows) {
+        version(Windows) {
             import core.sys.windows.windows : SleepEx, WAIT_IO_COMPLETION;
 
             auto result = SleepEx(cast(uint)timeout.totalMilliSeconds(), true);
 
-            if (result == WAIT_IO_COMPLETION)
+            if(result == WAIT_IO_COMPLETION)
                 return ErrorResult(EarlyThreadReturnException("Thread sleep completed early due APC IO execution"));
-        } else version (Posix) {
+        } else version(Posix) {
             import core.sys.posix.time : clock_gettime, CLOCK_REALTIME, nanosleep;
             import core.stdc.time : timespec;
             import core.stdc.errno : EINTR, errno;
@@ -219,7 +219,7 @@ export @safe nothrow @nogc:
             long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
             timespec ts;
-            if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+            if(clock_gettime(CLOCK_REALTIME, &ts) != 0)
                 return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
 
             ts.tv_sec += secs;
@@ -228,8 +228,8 @@ export @safe nothrow @nogc:
             errno = 0;
             auto result = nanosleep(ts, null);
 
-            if (result != 0) {
-                if (errno == EINTR)
+            if(result != 0) {
+                if(errno == EINTR)
                     return ErrorResult(EarlyThreadReturnException("Thread sleep completed early due signal execution"));
                 else
                     return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
@@ -243,7 +243,7 @@ export @safe nothrow @nogc:
     static Thread self() @trusted {
         mutex.pureLock;
 
-        version (Windows) {
+        version(Windows) {
             import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
                 HANDLE, GetCurrentThread, DuplicateHandle, GetCurrentThreadId;
 
@@ -251,7 +251,7 @@ export @safe nothrow @nogc:
             DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
 
             auto lookupKey = GetCurrentThreadId();
-        } else version (Posix) {
+        } else version(Posix) {
             import core.sys.posix.pthread : pthread_self, pthread_t;
 
             pthread_t handle = pthread_self();
@@ -262,7 +262,7 @@ export @safe nothrow @nogc:
         {
             auto ifExists = allThreads.get(cast(void*)lookupKey, null);
 
-            if (ifExists) {
+            if(ifExists) {
                 Thread ret;
                 ret.state = ifExists.get;
                 ret.__ctor(ret);
@@ -292,15 +292,15 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult join(Duration timeout = Duration.min) scope const @trusted {
-        if (isNull)
+        if(isNull)
             return ErrorResult(NullPointerException);
 
-        if (!isRunning)
+        if(!isRunning)
             return ErrorResult.init;
 
         const block = timeout < Duration.zero;
 
-        version (Windows) {
+        version(Windows) {
             import core.sys.windows.windows : HANDLE, WaitForMultipleObjectsEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
                 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
 
@@ -309,7 +309,7 @@ export @safe nothrow @nogc:
             HANDLE handles = cast(HANDLE)state.handle.handle;
             auto result = WaitForMultipleObjectsEx(1, &handles, false, dwTimeout, true);
 
-            switch (result) {
+            switch(result) {
             case WAIT_OBJECT_0:
                 return ErrorResult.init;
 
@@ -323,24 +323,24 @@ export @safe nothrow @nogc:
             case WAIT_FAILED:
                 return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
             }
-        } else version (Posix) {
+        } else version(Posix) {
             import core.sys.posix.pthread : pthread_timedjoin_np, pthread_join;
             import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
             import core.stdc.time : timespec;
 
-            if (timeout >= Duration.zero) {
+            if(timeout >= Duration.zero) {
                 long secs = timeout.totalSeconds();
                 long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
                 timespec ts;
-                if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                if(clock_gettime(CLOCK_REALTIME, &ts) != 0)
                     return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
 
                 ts.tv_sec += secs;
                 ts.tv_nsec += nsecs;
 
                 int s = pthread_timedjoin_np(cast(void*)state.handle.handle, null, ts);
-                if (s != 0)
+                if(s != 0)
                     return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
             } else {
                 return waitForJoin(cast(void*)state.handle.handle);
@@ -353,10 +353,10 @@ export @safe nothrow @nogc:
 
     /// Attaching and detaching of this thread to pin it for other thread systems
     void externalAttach() scope @system {
-        if (isNull)
+        if(isNull)
             return;
 
-        if (atomicOp!"+="(state.attachCount, 1) == 1) {
+        if(atomicOp!"+="(state.attachCount, 1) == 1) {
             // tell all external thread registration mechanisms
             onAttachOfThread;
         }
@@ -364,10 +364,10 @@ export @safe nothrow @nogc:
 
     /// Ditto
     void externalDetach() scope @system {
-        if (isNull)
+        if(isNull)
             return;
 
-        if (atomicOp!"-="(state.attachCount, 1) == 0) {
+        if(atomicOp!"-="(state.attachCount, 1) == 0) {
             // tell all external thread registration mechanisms
             onDetachOfThread;
         }
@@ -380,9 +380,9 @@ export @safe nothrow @nogc:
 
     ///
     int opCmp(scope const Thread other) scope const {
-        if (cast(size_t)this.state < cast(size_t)other.state)
+        if(cast(size_t)this.state < cast(size_t)other.state)
             return -1;
-        else if (cast(size_t)this.state > cast(size_t)other.state)
+        else if(cast(size_t)this.state > cast(size_t)other.state)
             return 1;
         else
             return 0;
@@ -425,7 +425,7 @@ struct EntryFunctionArgs(Args...) {
     Args args;
 }
 
-version (Windows) {
+version(Windows) {
     import core.sys.windows.windows : DWORD;
 
     extern (Windows) DWORD start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state) {
@@ -444,7 +444,7 @@ version (Windows) {
         });
 
         self.externalAttach;
-        scope (exit)
+        scope(exit)
             self.externalDetach;
 
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
@@ -460,20 +460,20 @@ version (Windows) {
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
             mutex.pureLock;
             auto got = allThreads[handle];
-            if (got && got !is null) {
+            if(got && got !is null) {
                 self.state = got;
                 self.__ctor(self);
             }
             mutex.unlock;
         });
 
-        if (self.isNull || self.state.handle.handle is null)
+        if(self.isNull || self.state.handle.handle is null)
             return ErrorResult.init;
 
         assert(handle !is null);
         auto result = WaitForMultipleObjectsEx(1, &cast(HANDLE)handle, false, INFINITE, true);
 
-        switch (result) {
+        switch(result) {
         case WAIT_OBJECT_0:
             return ErrorResult.init;
 
@@ -488,7 +488,7 @@ version (Windows) {
             return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
         }
     }
-} else version (Posix) {
+} else version(Posix) {
     static extern (C) void cleanupPosixRunning(void* state) {
         import core.atomic : atomicStore;
 
@@ -533,7 +533,7 @@ version (Windows) {
 
     ErrorResult waitForJoin(scope void* handle) @trusted nothrow @nogc {
         int s = pthread_join(handle, null);
-        if (s != 0)
+        if(s != 0)
             return ErrorResult(UnknownPlatformBehaviorException("Thread failed to join for an unknown reason"));
         return ErrorResult.init;
     }
@@ -548,7 +548,7 @@ unittest {
     Thread[10] threads;
 
     static void handleIt(shared(int)* counter, shared(bool)* goForIt) nothrow {
-        while (!atomicLoad(goForIt)) {
+        while(!atomicLoad(goForIt)) {
             pause;
         }
 
@@ -557,17 +557,17 @@ unittest {
         do {
             prior = atomicLoad(*counter);
         }
-        while (!cas(counter, prior, prior + 1));
+        while(!cas(counter, prior, prior + 1));
     }
 
-    foreach (ref thread; threads) {
+    foreach(ref thread; threads) {
         auto got = Thread.create(0, &handleIt, &counter, &goForIt);
         thread = got.assumeOkay;
     }
 
     atomicStore(goForIt, true);
 
-    foreach (ref thread; threads) {
+    foreach(ref thread; threads) {
         cast(void)thread.join;
     }
 

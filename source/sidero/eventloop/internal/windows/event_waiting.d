@@ -8,7 +8,7 @@ import sidero.base.logger;
 
 @safe nothrow @nogc:
 
-version (Windows) {
+version(Windows) {
     private __gshared {
         LoggerReference logger;
     }
@@ -35,18 +35,18 @@ version (Windows) {
         auto lockError = eventWaiterMutex.lock;
         assert(lockError);
 
-        foreach (threadState; eventWaiterThreads) {
+        foreach(threadState; eventWaiterThreads) {
             assert(threadState);
             atomicStore(threadState.isAlive, false);
 
-            if (QueueUserAPC(&stopAcceptingProc, threadState.threadHandle, 0) == 0) {
+            if(QueueUserAPC(&stopAcceptingProc, threadState.threadHandle, 0) == 0) {
                 logger.warning("Failed to send shutdown APC with code ", GetLastError(), " to ", threadState.thread);
             } else {
                 logger.debug_("Triggered shutdown APC for accept thread ", threadState.thread);
             }
         }
 
-        foreach (threadState; eventWaiterThreads) {
+        foreach(threadState; eventWaiterThreads) {
             assert(threadState);
             cast(void)threadState.thread.join();
         }
@@ -76,12 +76,12 @@ version (Windows) {
         }
 
         // step five: wake up threads and set the handles to the new ones
-        foreach (threadState; eventWaiterThreads) {
+        foreach(threadState; eventWaiterThreads) {
             assert(threadState);
-            if (threadState.nextEventHandles.isNull)
+            if(threadState.nextEventHandles.isNull)
                 continue;
 
-            if (QueueUserAPC(&updateHandlesProc, threadState.threadHandle, cast(size_t)&threadState.get()) == 0) {
+            if(QueueUserAPC(&updateHandlesProc, threadState.threadHandle, cast(size_t)&threadState.get()) == 0) {
                 logger.warning("Failed to send stop waiting APC with code ", GetLastError(), " to ", threadState.thread);
             } else {
                 logger.debug_("Triggered update handles APC handles ", threadState.nextEventHandles.length,
@@ -113,12 +113,12 @@ version (Windows) {
 
             logger.info("Starting event waiter thread ", thread);
 
-            scope (exit) {
+            scope(exit) {
                 atomicStore(isAlive, false);
                 logger.info("Ending event waiter thread ", thread);
             }
 
-            if (DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &this.threadHandle, 0,
+            if(DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &this.threadHandle, 0,
                     false, DUPLICATE_SAME_ACCESS) == 0) {
                 logger.warning("Failed to arquire a thread handle for an event waiting thread with code ", GetLastError());
                 return;
@@ -126,13 +126,13 @@ version (Windows) {
                 logger.debug_("Acquired thread handle for an event waiting thread ", thread);
             }
 
-            while (atomicLoad(this.isAlive)) {
-                if (this.eventHandles.length == 0) {
+            while(atomicLoad(this.isAlive)) {
+                if(this.eventHandles.length == 0) {
                     auto result = SleepEx(INFINITE, true);
 
                     logger.debug_("Got event waiting thread event from sleep with code", result, " on ", thread);
 
-                    switch (result) {
+                    switch(result) {
                     case WAIT_IO_COMPLETION:
                         break;
                     default:
@@ -142,7 +142,7 @@ version (Windows) {
                     auto result = WaitForMultipleObjectsEx(cast(uint)this.eventHandles.length,
                             cast(HANDLE*)this.eventHandles.ptr, false, INFINITE, true);
 
-                    switch (result) {
+                    switch(result) {
                     case WAIT_TIMEOUT:
                         logger.debug_("Event waiter timeout ", thread);
                         break;
@@ -152,7 +152,7 @@ version (Windows) {
                     case WAIT_FAILED:
                         const errorCode = GetLastError();
 
-                        switch (errorCode) {
+                        switch(errorCode) {
                         case ERROR_INVALID_HANDLE:
                             // its probably ok, we'll handle this later, make sure APC's run via sleeping
                             SleepEx(0, true);
@@ -168,12 +168,12 @@ version (Windows) {
                         auto gotHandle = eventHandles[handleIndex];
                         auto gotUserProc = eventProcs[handleIndex];
 
-                        if (!gotHandle) {
+                        if(!gotHandle) {
                             logger.warning("Failed to get event handle data ", handleIndex, " on ", thread);
                             return;
                         }
 
-                        if (!gotUserProc) {
+                        if(!gotUserProc) {
                             logger.warning("Failed to get event user proc data ", handleIndex, " on ", thread);
                             return;
                         }

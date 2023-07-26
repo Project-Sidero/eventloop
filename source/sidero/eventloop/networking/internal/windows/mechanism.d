@@ -6,7 +6,7 @@ import sidero.base.path.networking;
 
 @safe nothrow @nogc:
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
     import sidero.eventloop.internal.windows.iocp;
 
@@ -20,9 +20,9 @@ version (Windows) {
         import core.sys.windows.winsock2;
 
         logger = Logger.forName(String_UTF8(__MODULE__));
-        if (!logger)
+        if(!logger)
             return false;
-        else if (!setupWinCryptEncryption)
+        else if(!setupWinCryptEncryption)
             return false;
 
         enum WSAVersion = MAKEWORD(2, 2);
@@ -30,7 +30,7 @@ version (Windows) {
         WSADATA wsaData;
         int nResult = WSAStartup(WSAVersion, &wsaData);
 
-        if (nResult != NO_ERROR) {
+        if(nResult != NO_ERROR) {
             logger.warning("Error occured while executing WSAStartup with code", GetLastError(), " ", nResult);
             return false;
         } else {
@@ -95,11 +95,11 @@ version (Windows) {
             import core.sys.windows.windows : closesocket;
             import core.atomic : cas;
 
-            if (cas(&isClosed, false, true)) {
+            if(cas(&isClosed, false, true)) {
                 logger.debug_("Forcing closed socket ", this.handle);
                 closesocket(handle);
 
-                if (socketState.onShutdownHandler !is null) {
+                if(socketState.onShutdownHandler !is null) {
                     Socket socket;
                     socket.state = socketState;
                     socketState.rc(true);
@@ -115,13 +115,13 @@ version (Windows) {
             import core.sys.windows.windows : CloseHandle, SD_BOTH, shutdown;
             import core.atomic : cas;
 
-            if (cas(&isShutdown, false, true)) {
+            if(cas(&isShutdown, false, true)) {
                 logger.notice("Shutting down socket socket ", this.handle);
                 onShutdownReadWriteEverything(socketState);
                 shutdown(handle, SD_BOTH);
             }
 
-            if (onCloseEvent !is null) {
+            if(onCloseEvent !is null) {
                 removeEventWaiterHandle(onCloseEvent);
                 CloseHandle(onCloseEvent);
                 onCloseEvent = null;
@@ -133,7 +133,7 @@ version (Windows) {
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, WSAESHUTDOWN;
             import core.atomic : atomicLoad;
 
-            if (atomicLoad(isShutdown))
+            if(atomicLoad(isShutdown))
                 return;
 
             logger.debug_("On socket shutdown, trying to read and write everything before closing ", this.handle);
@@ -141,7 +141,7 @@ version (Windows) {
             bool somethingChanged = true;
             bool notLikelyToRead, notLikelyToWrite;
 
-            while (somethingChanged) {
+            while(somethingChanged) {
                 somethingChanged = false;
 
                 // we need to do blocking reads and writes
@@ -154,7 +154,7 @@ version (Windows) {
                     somethingChanged = socketState.rawWritingState.protect(() @trusted nothrow @nogc {
                         bool didSomething;
 
-                        while (socketState.rawWritingState.toSend.length > 0 && socketState.rawWritingState.waitingOnDataToSend == 0) {
+                        while(socketState.rawWritingState.toSend.length > 0 && socketState.rawWritingState.waitingOnDataToSend == 0) {
                             auto firstItem = socketState.rawWritingState.toSend[0];
                             assert(firstItem);
 
@@ -162,7 +162,7 @@ version (Windows) {
                             WSABUF[1] buffers;
                             buffers[0].buf = cast(ubyte*)firstItem.ptr;
 
-                            if (firstItem.length > uint.max)
+                            if(firstItem.length > uint.max)
                                 buffers[0].len = uint.max;
                             else
                                 buffers[0].len = cast(uint)firstItem.length;
@@ -170,7 +170,7 @@ version (Windows) {
                             DWORD amountSent, flags;
                             auto result = WSASend(this.handle, &buffers[0], 1, &amountSent, flags, null, null);
 
-                            if (result == 0) {
+                            if(result == 0) {
                                 // ok sent
                                 logger.debug_("Socket has had data written to it ", this.handle);
                                 socketState.rawWritingState.complete(amountSent);
@@ -178,13 +178,13 @@ version (Windows) {
                             } else {
                                 auto error = GetLastError();
 
-                                if (error == ERROR_IO_PENDING) {
+                                if(error == ERROR_IO_PENDING) {
                                     // ok this isn't too good, it means we probably won't send any more data.
                                     logger.debug_("Waiting for data written to complete via IOCP ", this.handle);
                                     socketState.rawWritingState.waitingOnDataToSend = amountSent;
                                     notLikelyToWrite = true;
                                     return true;
-                                } else if (error == WSAENOTSOCK || error == WSAESHUTDOWN) {
+                                } else if(error == WSAENOTSOCK || error == WSAESHUTDOWN) {
                                     notLikelyToWrite = true;
                                     return false;
                                 } else {
@@ -200,7 +200,7 @@ version (Windows) {
 
                 logger.debug_(socketState.readingState.inProgress(), " ", notLikelyToRead);
                 // if we are not in progress, don't waste memory and hence time
-                if (socketState.readingState.inProgress() && !notLikelyToRead) {
+                if(socketState.readingState.inProgress() && !notLikelyToRead) {
                     logger.debug_("Reading is in progress, attempting to resolve ", this.handle);
 
                     // reads
@@ -211,7 +211,7 @@ version (Windows) {
                         logger.debug_("Preparing raw read with bytes ", bufferNeeded, " ", this.handle);
 
                         uint bufferLength = bufferNeeded;
-                        if (socketState.rawReadingState.bufferToReadInto.length > bufferNeeded)
+                        if(socketState.rawReadingState.bufferToReadInto.length > bufferNeeded)
                             bufferLength = cast(uint)socketState.rawReadingState.bufferToReadInto.length;
 
                         WSABUF[1] buffers;
@@ -223,21 +223,21 @@ version (Windows) {
                         DWORD received, flags;
                         auto result = WSARecv(this.handle, &buffers[0], 1, &received, &flags, null, null);
 
-                        if (result == 0) {
+                        if(result == 0) {
                             // ok data has been acquired, excellant that was what we wanted
                             logger.debug_("Triggering read without delay ", this.handle);
                             socketState.rawReadingState.dataWasReceived(received);
                             somethingChanged = true;
                             return false;
-                        } else if (result == SOCKET_ERROR) {
+                        } else if(result == SOCKET_ERROR) {
                             auto error = GetLastError();
 
-                            if (error == ERROR_IO_PENDING) {
+                            if(error == ERROR_IO_PENDING) {
                                 logger.debug_("Triggering read with delay in IOCP ", this.handle);
                                 // ok this isn't too good, it means we probably won't receive any more data.
                                 notLikelyToRead = true;
                                 return false;
-                            } else if (error == WSAENOTSOCK || error == WSAESHUTDOWN) {
+                            } else if(error == WSAENOTSOCK || error == WSAESHUTDOWN) {
                                 notLikelyToRead = true;
                                 return false;
                             } else {
@@ -254,7 +254,7 @@ version (Windows) {
                 }
             }
 
-            if (socketState.onShutdownHandler !is null) {
+            if(socketState.onShutdownHandler !is null) {
                 Socket socket;
                 socket.state = socketState;
                 socketState.rc(true);
@@ -268,10 +268,10 @@ version (Windows) {
             import core.atomic : atomicLoad;
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, GetLastError;
 
-            if (tryToFulfill && socketState.readingState.tryFulfillRequest(socketState))
+            if(tryToFulfill && socketState.readingState.tryFulfillRequest(socketState))
                 return true;
 
-            if (!atomicLoad(socketState.isAlive))
+            if(!atomicLoad(socketState.isAlive))
                 return false;
 
             bool ret;
@@ -280,7 +280,7 @@ version (Windows) {
                 socketState.rawReadingState.prepareBufferFor(bufferNeeded);
 
                 uint bufferLength = bufferNeeded;
-                if (socketState.rawReadingState.bufferToReadInto.length > bufferNeeded)
+                if(socketState.rawReadingState.bufferToReadInto.length > bufferNeeded)
                     bufferLength = cast(uint)socketState.rawReadingState.bufferToReadInto.length;
 
                 WSABUF[1] buffers;
@@ -296,16 +296,16 @@ version (Windows) {
                 this.readOverlapped = OVERLAPPED.init;
                 auto result = WSARecv(this.handle, &buffers[0], 1, &received, &flags, &this.readOverlapped, null);
 
-                if (result == 0) {
+                if(result == 0) {
                     // ok, we have data DANGIT, this isn't supposed to happen!
                     // it should however still go through IOCP so don't worry about handling it
                     logger.debug_("Triggering read without delay ", this.handle);
                     ret = true;
                     return false;
-                } else if (result == SOCKET_ERROR) {
+                } else if(result == SOCKET_ERROR) {
                     auto error = GetLastError();
 
-                    if (error == ERROR_IO_PENDING) {
+                    if(error == ERROR_IO_PENDING) {
                         logger.debug_("Triggering read with delay in IOCP ", this.handle);
                         // ok all good, this is what is expected (callback).
                         ret = true;
@@ -327,13 +327,13 @@ version (Windows) {
             import core.sys.windows.windows : GetLastError, ERROR_IO_PENDING;
             import core.atomic : atomicLoad;
 
-            if (!atomicLoad(socketState.isAlive))
+            if(!atomicLoad(socketState.isAlive))
                 return false;
 
             return socketState.rawWritingState.protect(() @trusted nothrow @nogc {
                 bool didSomething;
 
-                while (socketState.rawWritingState.toSend.length > 0 && socketState.rawWritingState.waitingOnDataToSend == 0) {
+                while(socketState.rawWritingState.toSend.length > 0 && socketState.rawWritingState.waitingOnDataToSend == 0) {
                     auto firstItem = socketState.rawWritingState.toSend[0];
                     assert(firstItem);
 
@@ -341,7 +341,7 @@ version (Windows) {
                     WSABUF[1] buffers;
                     buffers[0].buf = cast(ubyte*)firstItem.ptr;
 
-                    if (firstItem.length > uint.max)
+                    if(firstItem.length > uint.max)
                         buffers[0].len = uint.max;
                     else
                         buffers[0].len = cast(uint)firstItem.length;
@@ -351,7 +351,7 @@ version (Windows) {
 
                     auto result = WSASend(this.handle, &buffers[0], 1, &amountSent, flags, &socketState.writeOverlapped, null);
 
-                    if (result == 0) {
+                    if(result == 0) {
                         // ok sent
                         logger.debug_("Socket has had data written to it ", this.handle);
                         socketState.rawWritingState.complete(amountSent);
@@ -359,12 +359,12 @@ version (Windows) {
                     } else {
                         auto error = GetLastError();
 
-                        if (error == ERROR_IO_PENDING) {
+                        if(error == ERROR_IO_PENDING) {
                             // ok
                             logger.debug_("Waiting for data written to complete via IOCP ", this.handle);
                             socketState.rawWritingState.waitingOnDataToSend = amountSent;
                             return true;
-                        } else if (error == WSAENOTSOCK) {
+                        } else if(error == WSAENOTSOCK) {
                             // ok
                             logger.info("Socket has closed, cannot write data to it ", this.handle);
                             return false;

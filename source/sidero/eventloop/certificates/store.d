@@ -14,30 +14,30 @@ struct CertificateStore {
         State* state;
 
         int opApplyImpl(Del)(scope Del del) @trusted scope {
-            if (isNull)
+            if(isNull)
                 return 0;
 
             int ret;
 
-            final switch (state.type) {
+            final switch(state.type) {
             case Certificate.Type.None:
             case Certificate.Type.Default:
                 assert(0);
 
             case Certificate.Type.WinCrypt:
-                version (Windows) {
+                version(Windows) {
                     PCCERT_CONTEXT certificateContext;
-                    while ((certificateContext = CertEnumCertificatesInStore(state.winCryptCertificateStore, certificateContext)) !is null) {
+                    while((certificateContext = CertEnumCertificatesInStore(state.winCryptCertificateStore, certificateContext)) !is null) {
                         auto context2 = CertDuplicateCertificateContext(certificateContext);
                         auto certificate = Certificate.loadFromWinCrypt(context2);
 
-                        if (certificate.isNull) {
-                            if (context2 !is null)
+                        if(certificate.isNull) {
+                            if(context2 !is null)
                                 CertFreeCertificateContext(context2);
                         } else
                             ret = del(certificate);
 
-                        if (ret)
+                        if(ret)
                             break;
                     }
                 }
@@ -60,14 +60,14 @@ export:
 
         this.tupleof = other.tupleof;
 
-        if (state !is null)
+        if(state !is null)
             atomicOp!"+="(state.refCount, 1);
     }
 
     ~this() scope @trusted {
         import core.atomic : atomicOp;
 
-        if (state !is null && atomicOp!"-="(state.refCount, 1) == 0) {
+        if(state !is null && atomicOp!"-="(state.refCount, 1) == 0) {
             state.cleanup;
             RCAllocator allocator = state.allocator;
             allocator.dispose(state);
@@ -81,7 +81,7 @@ export:
 
     ///
     Certificate.Type type() scope {
-        if (isNull)
+        if(isNull)
             return Certificate.Type.None;
         else
             return state.type;
@@ -89,34 +89,34 @@ export:
 
     ///
     DynamicArray!Certificate byFriendlyName(String_UTF8 friendlyName, return RCAllocator allocator = RCAllocator.init) scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
         DynamicArray!Certificate ret = DynamicArray!Certificate(allocator);
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
+            version(Windows) {
                 PCCERT_CONTEXT certificateContext;
-                while ((certificateContext = CertEnumCertificatesInStore(state.winCryptCertificateStore, certificateContext)) !is null) {
+                while((certificateContext = CertEnumCertificatesInStore(state.winCryptCertificateStore, certificateContext)) !is null) {
                     void[128] buffer = void;
                     DWORD bufferUsed = buffer.length;
 
-                    if (CertGetCertificateContextProperty(certificateContext, CERT_FRIENDLY_NAME_PROP_ID, buffer.ptr, &bufferUsed)) {
-                        if (bufferUsed > 1)
+                    if(CertGetCertificateContextProperty(certificateContext, CERT_FRIENDLY_NAME_PROP_ID, buffer.ptr, &bufferUsed)) {
+                        if(bufferUsed > 1)
                             bufferUsed -= 2;
-                        if (bufferUsed < 2 || !String_UTF16(cast(wstring)buffer[0 .. bufferUsed]).contains(friendlyName))
+                        if(bufferUsed < 2 || !String_UTF16(cast(wstring)buffer[0 .. bufferUsed]).contains(friendlyName))
                             continue;
 
                         auto context2 = CertDuplicateCertificateContext(certificateContext);
                         auto certificate = Certificate.loadFromWinCrypt(context2);
 
-                        if (certificate.isNull) {
-                            if (context2 !is null)
+                        if(certificate.isNull) {
+                            if(context2 !is null)
                                 CertFreeCertificateContext(context2);
                         } else
                             ret ~= certificate;
@@ -141,30 +141,30 @@ export:
 
     ///
     DynamicArray!Certificate byIssuer(String_UTF8 issuer, return RCAllocator allocator = RCAllocator.init) scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
         DynamicArray!Certificate ret = DynamicArray!Certificate(allocator);
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
+            version(Windows) {
                 String_UTF16 toSearchFor = issuer.byUTF16;
-                if (!toSearchFor.isPtrNullTerminated)
+                if(!toSearchFor.isPtrNullTerminated)
                     toSearchFor = toSearchFor.dup;
 
                 PCCERT_CONTEXT certificateContext;
-                while ((certificateContext = CertFindCertificateInStore(state.winCryptCertificateStore,
+                while((certificateContext = CertFindCertificateInStore(state.winCryptCertificateStore,
                         X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_ISSUER_STR_W, toSearchFor.ptr, certificateContext)) !is null) {
                     auto context2 = CertDuplicateCertificateContext(certificateContext);
                     auto certificate = Certificate.loadFromWinCrypt(context2);
 
-                    if (certificate.isNull) {
-                        if (context2 !is null)
+                    if(certificate.isNull) {
+                        if(context2 !is null)
                             CertFreeCertificateContext(context2);
                     } else
                         ret ~= certificate;
@@ -188,30 +188,30 @@ export:
 
     ///
     DynamicArray!Certificate byIssuedTo(String_UTF8 issuedTo, return RCAllocator allocator = RCAllocator.init) scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
         DynamicArray!Certificate ret = DynamicArray!Certificate(allocator);
 
-        final switch (state.type) {
+        final switch(state.type) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
             assert(0);
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
+            version(Windows) {
                 String_UTF16 toSearchFor = issuedTo.byUTF16;
-                if (!toSearchFor.isPtrNullTerminated)
+                if(!toSearchFor.isPtrNullTerminated)
                     toSearchFor = toSearchFor.dup;
 
                 PCCERT_CONTEXT certificateContext;
-                while ((certificateContext = CertFindCertificateInStore(state.winCryptCertificateStore,
+                while((certificateContext = CertFindCertificateInStore(state.winCryptCertificateStore,
                         X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_SUBJECT_STR_W, toSearchFor.ptr, certificateContext)) !is null) {
                     auto context2 = CertDuplicateCertificateContext(certificateContext);
                     auto certificate = Certificate.loadFromWinCrypt(context2);
 
-                    if (certificate.isNull) {
-                        if (context2 !is null)
+                    if(certificate.isNull) {
+                        if(context2 !is null)
                             CertFreeCertificateContext(context2);
                     } else
                         ret ~= certificate;
@@ -235,23 +235,23 @@ export:
 
     ///
     static CertificateStore from(Certificate.Type type = Certificate.Type.Default, return RCAllocator allocator = RCAllocator.init) {
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
-        if (type == Certificate.Type.Default) {
-            version (Windows) {
+        if(type == Certificate.Type.Default) {
+            version(Windows) {
                 type = Certificate.Type.WinCrypt;
             } else
                 type = Certificate.Type.None;
         }
 
-        version (Windows) {
+        version(Windows) {
         } else {
-            if (type == Certificate.Type.WinCrypt)
+            if(type == Certificate.Type.WinCrypt)
                 type = Certificate.Type.None;
         }
 
-        if (type == Certificate.Type.None)
+        if(type == Certificate.Type.None)
             return CertificateStore.init;
 
         CertificateStore ret;
@@ -259,9 +259,9 @@ export:
         ret.state.allocator = allocator;
         ret.state.type = type;
 
-        final switch (type) {
+        final switch(type) {
         case Certificate.Type.WinCrypt:
-            if (!ret.state.loadWinCrypt(WinCryptStore.Personal))
+            if(!ret.state.loadWinCrypt(WinCryptStore.Personal))
                 return CertificateStore.init;
             break;
 
@@ -275,16 +275,16 @@ export:
 
     ///
     static CertificateStore from(WinCryptStore store, return RCAllocator allocator = RCAllocator.init) {
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
-        version (Windows) {
+        version(Windows) {
             CertificateStore ret;
             ret.state = allocator.make!State;
             ret.state.allocator = allocator;
             ret.state.type = Certificate.Type.WinCrypt;
 
-            if (ret.state.loadWinCrypt(store))
+            if(ret.state.loadWinCrypt(store))
                 return ret;
         }
 
@@ -313,14 +313,14 @@ struct State {
 
     Certificate.Type type;
 
-    version (Windows) {
+    version(Windows) {
         HCERTSTORE winCryptCertificateStore;
     }
 
 @safe nothrow @nogc:
 
     bool loadWinCrypt(CertificateStore.WinCryptStore store) @trusted {
-        version (Windows) {
+        version(Windows) {
             winCryptCertificateStore = CertOpenSystemStoreW(0, cast(wchar*)&WinCrypt_Stores_Strings[store][0]);
             return winCryptCertificateStore !is null;
         } else
@@ -328,10 +328,10 @@ struct State {
     }
 
     void cleanup() @trusted {
-        final switch (type) {
+        final switch(type) {
         case Certificate.Type.WinCrypt:
-            version (Windows) {
-                if (winCryptCertificateStore !is null)
+            version(Windows) {
+                if(winCryptCertificateStore !is null)
                     CertCloseStore(winCryptCertificateStore, 0);
             }
             break;

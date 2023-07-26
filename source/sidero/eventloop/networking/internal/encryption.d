@@ -17,7 +17,7 @@ struct EncryptionState {
 
         DecryptedState decryptedState;
 
-        version (Windows) {
+        version(Windows) {
             import sidero.eventloop.networking.internal.windows.encryption;
 
             EncryptionStateWinCrypt winCrypt;
@@ -27,12 +27,12 @@ struct EncryptionState {
 @safe nothrow @nogc:
 
     void cleanup() scope {
-        final switch (encryptionEngine) {
+        final switch(encryptionEngine) {
         case Certificate.Type.None:
             break;
 
         case Certificate.Type.WinCrypt:
-            version (Windows) {
+            version(Windows) {
                 winCrypt.cleanup;
             }
             break;
@@ -42,22 +42,23 @@ struct EncryptionState {
         }
     }
 
-    bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol, bool validateCertificates) scope @trusted {
+    bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol,
+            bool validateCertificates) scope @trusted {
         // wanted raw & is raw
-        if (encryptionEngine == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None &&
+        if(encryptionEngine == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None &&
                 certificate.type == Certificate.Type.None))
             return true;
-        else if (!currentCertificate.isNull || currentProtocol != Socket.EncryptionProtocol.None)
+        else if(!currentCertificate.isNull || currentProtocol != Socket.EncryptionProtocol.None)
             return false;
 
-        final switch (certificate.type) {
+        final switch(certificate.type) {
         case Certificate.Type.None:
-            version (Windows) {
+            version(Windows) {
                 goto case Certificate.Type.WinCrypt;
             } else
                 return false;
         case Certificate.Type.WinCrypt:
-            version (Windows) {
+            version(Windows) {
                 return winCrypt.add(socketState, certificate, protocol, validateCertificates);
             } else
                 return false;
@@ -67,19 +68,19 @@ struct EncryptionState {
     }
 
     size_t amountNeedToBeRead(scope SocketState* socketState) scope {
-        if (encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+        if(encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             const amount = socketState.readingState.getWantedAmount();
             return (amount > 0 && amount < uint.max) ? amount : 4096;
         }
 
-        if (this.bufferSize == 0)
+        if(this.bufferSize == 0)
             return 4096;
         else
             return this.bufferSize;
     }
 
     void readData(scope SocketState* socketState, scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope {
-        if (encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+        if(encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             // ok we use the raw buffer directly
             socketState.rawReadingState.protectReadForEncryption(del);
             return;
@@ -87,10 +88,10 @@ struct EncryptionState {
 
         bool doneOne;
 
-        while ((socketState.rawReadingState.haveDataToRead || decryptedState.haveDataToRead) && !doneOne) {
-            final switch (encryptionEngine) {
+        while((socketState.rawReadingState.haveDataToRead || decryptedState.haveDataToRead) && !doneOne) {
+            final switch(encryptionEngine) {
             case Certificate.Type.WinCrypt:
-                version (Windows) {
+                version(Windows) {
                     winCrypt.readData(socketState);
                     break;
                 } else
@@ -106,14 +107,14 @@ struct EncryptionState {
     }
 
     Expected writeData(scope SocketState* socketState, return scope Slice!ubyte data) scope @trusted {
-        if (encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
+        if(encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             socketState.rawWritingState.dataToSend(data);
             return Expected(data.length, data.length);
         }
 
-        final switch (encryptionEngine) {
+        final switch(encryptionEngine) {
         case Certificate.Type.WinCrypt:
-            version (Windows) {
+            version(Windows) {
                 return winCrypt.writeData(socketState, data);
             } else
                 assert(0);
@@ -133,7 +134,7 @@ struct DecryptedState {
 
     bool haveDataToRead() scope {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         return decryptedData.length > 0;
@@ -153,17 +154,17 @@ struct DecryptedState {
         bool doneOne = decryptedData.length == 0;
         size_t handled = doneOne ? 0 : 1;
 
-        while (decryptedData.length > 0 && handled > 0) {
+        while(decryptedData.length > 0 && handled > 0) {
             auto da = decryptedData[0];
             assert(da);
 
             handled = del(da.get);
 
-            if (handled > 0) {
+            if(handled > 0) {
                 auto sliced = da.get[handled .. $];
                 assert(sliced);
 
-                if (sliced.length > 0)
+                if(sliced.length > 0)
                     decryptedData[0] = sliced;
                 else
                     decryptedData.remove(0, 1);

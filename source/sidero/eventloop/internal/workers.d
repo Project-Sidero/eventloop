@@ -6,7 +6,7 @@ import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.synchronization.mutualexclusion;
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.internal.windows.iocp;
 } else {
     static assert(0, "unimplemented");
@@ -14,7 +14,7 @@ version (Windows) {
 
 export @safe nothrow @nogc:
 
-version (none) {
+version(none) {
     void shutdownWorkerMechanism() {
     }
 
@@ -36,18 +36,18 @@ private __gshared {
 
 bool startWorkers(size_t workerMultiplier) @trusted {
     mutex.pureLock;
-    scope (exit)
+    scope(exit)
         mutex.unlock;
 
     logger = Logger.forName(String_UTF8(__MODULE__));
-    if (!logger)
+    if(!logger)
         return false;
 
     const oldCount = threadPool.length;
     const newCount = workerMultiplier * cpuCount();
 
-    if (oldCount > 0) {
-        if (newCount > oldCount) {
+    if(oldCount > 0) {
+        if(newCount > oldCount) {
             logger.notice("Starting additional workers, using multiplier ", workerMultiplier, " for an additional ",
                     newCount - oldCount, " to form ", newCount, " workers");
         } else {
@@ -59,13 +59,13 @@ bool startWorkers(size_t workerMultiplier) @trusted {
         logger.notice("Starting workers, using multiplier ", workerMultiplier, " for a total of ", newCount, " workers");
 
     threadPool.reserve(newCount - oldCount);
-    if (!initializeWorkerMechanism(newCount))
+    if(!initializeWorkerMechanism(newCount))
         return false;
 
-    foreach (i; oldCount .. newCount) {
+    foreach(i; oldCount .. newCount) {
         auto thread = Thread.create(&workerProc);
 
-        if (thread)
+        if(thread)
             threadPool ~= thread.get;
         else {
             logger.error("Could not create worker thread ", thread.getError());
@@ -79,20 +79,20 @@ bool startWorkers(size_t workerMultiplier) @trusted {
 
 void shutdownWorkers() @trusted {
     mutex.pureLock;
-    scope (exit)
+    scope(exit)
         mutex.unlock;
 
-    if (!isInitialized)
+    if(!isInitialized)
         return;
 
     logger.notice("Shutting down of workers");
 
     shutdownWorkerMechanism;
 
-    foreach (thread; threadPool) {
-        for (;;) {
+    foreach(thread; threadPool) {
+        for(;;) {
             auto got = thread.join();
-            if (got)
+            if(got)
                 break;
         }
 

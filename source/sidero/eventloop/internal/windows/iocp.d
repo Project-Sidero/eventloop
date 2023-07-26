@@ -4,7 +4,7 @@ import sidero.eventloop.threads;
 import sidero.base.logger;
 import sidero.base.text;
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
     import sidero.eventloop.networking.internal.state;
     import core.sys.windows.windows : HANDLE;
@@ -30,13 +30,13 @@ version (Windows) {
         import core.sys.windows.windows : CreateIoCompletionPort, INVALID_HANDLE_VALUE, GetLastError;
 
         logger = Logger.forName(String_UTF8(__MODULE__));
-        if (!logger || logger.isNull)
+        if(!logger || logger.isNull)
             return false;
 
         requiredWorkers = cast(uint)numberOfWorkers;
         completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, null, 0, requiredWorkers);
 
-        if (completionPort is null) {
+        if(completionPort is null) {
             logger.error("Failed to initialize IOCP context ", GetLastError());
             return false;
         }
@@ -51,14 +51,14 @@ version (Windows) {
 
         ULONG_PTR shutdownKey = cast(ULONG_PTR)&shutdownByte;
 
-        while (atomicLoad(startedWorkers) != requiredWorkers) {
+        while(atomicLoad(startedWorkers) != requiredWorkers) {
             Thread.yield;
         }
 
-        while (atomicLoad(runningWorkers) > 0) {
+        while(atomicLoad(runningWorkers) > 0) {
             auto result = PostQueuedCompletionStatus(completionPort, 0, shutdownKey, null);
 
-            if (result == 0) {
+            if(result == 0) {
                 logger.error("IOCP worker shutdown message posting failed ", GetLastError());
             }
 
@@ -78,7 +78,7 @@ version (Windows) {
         HANDLE completionPort2 = CreateIoCompletionPort(cast(void*)socket.state.handle, completionPort,
                 cast(size_t)&socket.state.iocpWork, 0);
 
-        if (completionPort2 !is completionPort) {
+        if(completionPort2 !is completionPort) {
             logger.debug_("Could not associate socket with IOCP with code ", WSAGetLastError(), " for socket ", socket.state.handle);
             return false;
         }
@@ -92,14 +92,14 @@ version (Windows) {
 
         atomicOp!"+="(startedWorkers, 1);
         atomicOp!"+="(runningWorkers, 1);
-        scope (exit) {
+        scope(exit) {
             atomicOp!"-="(runningWorkers, 1);
             logger.info("Stopping IOCP worker ", Thread.self);
         }
 
         logger.info("Starting IOCP worker ", Thread.self);
 
-        for (;;) {
+        for(;;) {
             DWORD numberOfBytesTransferred;
             ULONG_PTR completionKey;
             OVERLAPPED* overlapped;
@@ -107,16 +107,16 @@ version (Windows) {
 
             logger.debug_("IOCP worker thread got ", result, " ", Thread.self);
 
-            if (result == 0) {
+            if(result == 0) {
                 const errorCode = GetLastError();
-                if (errorCode == WAIT_TIMEOUT) {
-                } else if (overlapped is null) {
+                if(errorCode == WAIT_TIMEOUT) {
+                } else if(overlapped is null) {
                     logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " ", Thread.self);
                 } else {
                     logger.warning("IOCP worker GetQueuedCompletionStatus failed ", errorCode, " ", Thread.self);
                     return;
                 }
-            } else if (overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
+            } else if(overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
                 logger.debug_("Stopping a IOCP worker procedure cleanly ", Thread.self);
                 return;
             } else {
@@ -124,19 +124,19 @@ version (Windows) {
 
                 IOCPwork* work = cast(IOCPwork*)completionKey;
 
-                if (work.key == cast(ubyte[4])"SOCK") {
+                if(work.key == cast(ubyte[4])"SOCK") {
                     Socket socket;
                     socket.state = cast(SocketState*)work.ptr;
                     socket.state.rc(true);
 
-                    if (numberOfBytesTransferred > 0) {
-                        if (overlapped is &socket.state.writeOverlapped)
+                    if(numberOfBytesTransferred > 0) {
+                        if(overlapped is &socket.state.writeOverlapped)
                             handleSocketWrite(socket);
-                        if (overlapped is &socket.state.readOverlapped)
+                        if(overlapped is &socket.state.readOverlapped)
                             handleSocketRead(socket);
                     }
 
-                    if (atomicLoad(socket.state.isShutdown) && socket.state.rawWritingState.protect(() {
+                    if(atomicLoad(socket.state.isShutdown) && socket.state.rawWritingState.protect(() {
                             return !socket.state.rawWritingState.haveData;
                         }) && !socket.state.readingState.inProgress)
                         socket.state.platform.forceClose(socket.state);
@@ -152,12 +152,12 @@ version (Windows) {
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.readOverlapped, &transferredBytes, false, &flags);
 
-        if (!result) {
+        if(!result) {
             auto error = GetLastError();
-            if (error == WSA_IO_INCOMPLETE) {
+            if(error == WSA_IO_INCOMPLETE) {
                 // no data?
                 return;
-            } else if (error == WSAENOTSOCK) {
+            } else if(error == WSAENOTSOCK) {
                 logger.debug_("Handle not a socket message ", socket.state.handle, " on ", Thread.self);
                 // ok just in case lets just unpin it
                 socket.state.unpin;
@@ -180,13 +180,13 @@ version (Windows) {
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.writeOverlapped, &transferredBytes, false, &flags);
 
-        if (result == 0) {
+        if(result == 0) {
             auto error = GetLastError();
-            if (error == WSA_IO_INCOMPLETE) {
+            if(error == WSA_IO_INCOMPLETE) {
                 // no data?
                 logger.debug_("WSA wrote no data ", socket, " on ", Thread.self);
                 return;
-            } else if (error == WSAENOTSOCK) {
+            } else if(error == WSAENOTSOCK) {
                 logger.debug_("Handle not a socket message ", socket.state.handle, " on ", Thread.self);
                 // ok just in case lets just unpin it
                 socket.state.unpin;
@@ -196,11 +196,12 @@ version (Windows) {
                 return;
             }
         } else {
-            logger.debug_("Written on socket ", transferredBytes, " with flags ", flags, " for ", socket.state.handle, " on ", Thread.self);
+            logger.debug_("Written on socket ", transferredBytes, " with flags ", flags, " for ",
+                    socket.state.handle, " on ", Thread.self);
 
             socket.state.rawWritingState.protect(() {
                 socket.state.rawWritingState.complete(transferredBytes);
-                if (socket.state.rawWritingState.haveData)
+                if(socket.state.rawWritingState.haveData)
                     socket.state.triggerWrite(socket.state);
                 return true;
             });

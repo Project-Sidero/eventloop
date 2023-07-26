@@ -1,6 +1,6 @@
 module sidero.eventloop.internal.windows.bindings;
 
-version (Windows) {
+version(Windows) {
     public import core.sys.windows.windows : SOCKET, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
         WAIT_TIMEOUT, OVERLAPPED, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR,
         PLUID, WSAENOTSOCK, getsockname, GetLastError;

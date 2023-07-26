@@ -45,7 +45,7 @@ export @safe nothrow @nogc:
 
     ///
     CoroutineCondition condition() scope {
-        if (pair.isWaiting)
+        if(pair.isWaiting)
             return pair.state.base.conditionToContinue;
         else
             return typeof(return).init;
@@ -61,7 +61,7 @@ export @safe nothrow @nogc:
 
     ///
     Result!ResultType result() {
-        if (!isInstantiated)
+        if(!isInstantiated)
             return typeof(return)(NullPointerException("Coroutine not instantiated"));
         return typeof(return)(this.pair.state.result);
     }
@@ -101,10 +101,10 @@ export @safe nothrow @nogc:
 
     ///
     InstantiableCoroutine!ResultType makeInstance(return scope RCAllocator allocator, return scope Args args) scope @trusted {
-        if (!pair.canInstance)
+        if(!pair.canInstance)
             return typeof(return).init;
 
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
         ArgsStorage!Args argsStorage;
@@ -131,7 +131,7 @@ export @safe nothrow @nogc:
 
     ///
     CoroutineCondition condition() scope {
-        if (pair.isWaiting)
+        if(pair.isWaiting)
             return pair.state.base.conditionToContinue;
         else
             return typeof(return).init;
@@ -155,7 +155,7 @@ export @safe nothrow @nogc:
 
     ///
     Result!ResultType result() {
-        if (!isInstantiated)
+        if(!isInstantiated)
             return typeof(return)(NullPointerException("Coroutine not instantiated"));
         return this.pair.state.result;
     }
@@ -199,7 +199,7 @@ export @safe nothrow @nogc:
 
     ///
     CoroutineCondition condition() scope {
-        if (pair.isWaiting)
+        if(pair.isWaiting)
             return pair.state.conditionToContinue;
         else
             return typeof(return).init;
@@ -226,9 +226,9 @@ export @safe nothrow @nogc:
 
     ///
     WaitingOn waitingOn() scope {
-        if (!systemHandle.isNull)
+        if(!systemHandle.isNull)
             return WaitingOn.SystemHandle;
-        else if (!coroutine.isNull)
+        else if(!coroutine.isNull)
             return WaitingOn.Coroutine;
         else
             return WaitingOn.Nothing;
@@ -254,8 +254,8 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
     static assert(() {
         size_t lastValue;
 
-        foreach (Name; __traits(allMembers, Stages)) {
-            if (__traits(getMember, Stages, Name) > lastValue + 1)
+        foreach(Name; __traits(allMembers, Stages)) {
+            if(__traits(getMember, Stages, Name) > lastValue + 1)
                 return false;
             lastValue = __traits(getMember, Stages, Name);
         }
@@ -281,12 +281,12 @@ export @safe nothrow @nogc:
 
     ///
     Result!(InstantiableCoroutine!(ResultType, Args)) build(RCAllocator allocator = RCAllocator.init) scope @trusted {
-        foreach (func; functions) {
-            if (func is null)
+        foreach(func; functions) {
+            if(func is null)
                 return typeof(return)(NullPointerException("All functions in vtable must be filled"));
         }
 
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
         CoroutinePair!ResultType pair;
@@ -319,7 +319,7 @@ export @safe nothrow @nogc:
                 state.destroy;
             };
 
-            static if (Args.length > 0) {
+            static if(Args.length > 0) {
                 ArgsStorage!Args argsStorage = *cast(ArgsStorage!Args*)args;
                 ret.userState = State(argsStorage.values);
             }
@@ -327,7 +327,7 @@ export @safe nothrow @nogc:
             return &ret.parent.base;
         };
 
-        static foreach (offset, Stage; __traits(allMembers, Stages)) {
+        static foreach(offset, Stage; __traits(allMembers, Stages)) {
             pair.descriptor.base.userFunctions[offset] = this.functions[__traits(getMember, Stages, Stage)];
             pair.descriptor.base.functions[offset] = (scope CoroutineAllocatorMemoryDescriptor* descriptor,
                     scope CoroutineAllocatorMemoryState* state) @trusted {
@@ -339,7 +339,7 @@ export @safe nothrow @nogc:
                 FunctionPrototype actualFunction = cast(FunctionPrototype)actualDescriptor.base.userFunctions[offset];
                 CoroutineResultType result = actualFunction(actualState.userState);
 
-                final switch (result.tag) {
+                final switch(result.tag) {
                 case CoroutineResultType.Tag.Value:
                     actualState.result = Result!ResultType(result.resultValue);
                     atomicStore(actualState.base.isComplete, true);
@@ -365,7 +365,7 @@ export @safe nothrow @nogc:
         return typeof(return)(ret);
     }
 
-    static if (is(ResultType == void)) {
+    static if(is(ResultType == void)) {
         ///
         static CoroutineResultType complete() {
             return CoroutineResultType.init;
@@ -432,7 +432,7 @@ unittest {
     assert(!co2.isNull);
     assert(co2.isInstantiated);
 
-    while (!co2.isComplete) {
+    while(!co2.isComplete) {
         assert(co2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
 
         ErrorResult er = co2.resume();
@@ -539,8 +539,8 @@ unittest {
     assert(!coI.isNull);
     assert(coI.isInstantiated);
 
-    while (!coI.isComplete) {
-        final switch (coI.condition.waitingOn) {
+    while(!coI.isComplete) {
+        final switch(coI.condition.waitingOn) {
         case CoroutineCondition.WaitingOn.Nothing:
             break;
         case CoroutineCondition.WaitingOn.SystemHandle:
@@ -553,7 +553,7 @@ unittest {
         case CoroutineCondition.WaitingOn.Coroutine:
             auto coI2 = coI.condition.coroutine;
 
-            while (!coI2.isComplete) {
+            while(!coI2.isComplete) {
                 assert(coI2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
 
                 ErrorResult er = coI2.resume();
@@ -580,7 +580,7 @@ struct CoroutineResult(Stages, ResultType = void) {
 
         CoroutineCondition condition;
 
-        static if (!is(ResultType == void)) {
+        static if(!is(ResultType == void)) {
             ResultType resultValue;
         }
 
@@ -635,12 +635,12 @@ export @safe nothrow @nogc:
     this(scope ref CoroutinePair other) scope {
         this.tupleof = other.tupleof;
 
-        if (!this.isNull)
+        if(!this.isNull)
             rc(true);
     }
 
     ~this() {
-        if (!this.isNull)
+        if(!this.isNull)
             rc(false);
     }
 
@@ -649,16 +649,16 @@ export @safe nothrow @nogc:
     }
 
     void rc(bool add) scope {
-        if (state !is null)
+        if(state !is null)
             state.base.rc(add);
-        if (descriptor !is null)
+        if(descriptor !is null)
             descriptor.base.rc(add);
     }
 
     ErrorResult resume() scope {
-        if (state.base.nextFunctionTag < 0)
+        if(state.base.nextFunctionTag < 0)
             return ErrorResult(MalformedInputException("Coroutine instance has completed"));
-        if (state.base.nextFunctionTag >= descriptor.base.functions.length)
+        if(state.base.nextFunctionTag >= descriptor.base.functions.length)
             return ErrorResult(MalformedInputException("Coroutine instance is in invalid state"));
         descriptor.base.functions[state.base.nextFunctionTag](&descriptor.base, &state.base);
         return ErrorResult.init;
@@ -679,9 +679,9 @@ export @safe nothrow @nogc:
     CoroutineAPair asGeneric() scope @trusted {
         CoroutineAPair ret;
 
-        if (descriptor !is null)
+        if(descriptor !is null)
             ret.descriptor = &this.descriptor.base;
-        if (state !is null)
+        if(state !is null)
             ret.state = &this.state.base;
 
         return ret;
@@ -705,12 +705,12 @@ export @safe nothrow @nogc:
     this(return scope ref CoroutineAPair other) scope {
         this.tupleof = other.tupleof;
 
-        if (!this.isNull)
+        if(!this.isNull)
             rc(true);
     }
 
     ~this() {
-        if (!this.isNull)
+        if(!this.isNull)
             rc(false);
     }
 
@@ -724,9 +724,9 @@ export @safe nothrow @nogc:
     }
 
     ErrorResult resume() scope {
-        if (state.nextFunctionTag < 0)
+        if(state.nextFunctionTag < 0)
             return ErrorResult(MalformedInputException("Coroutine instance has completed"));
-        if (state.nextFunctionTag >= descriptor.functions.length)
+        if(state.nextFunctionTag >= descriptor.functions.length)
             return ErrorResult(MalformedInputException("Coroutine instance is in invalid state"));
         descriptor.functions[state.nextFunctionTag](descriptor, state);
         return ErrorResult.init;
@@ -786,15 +786,15 @@ export @safe nothrow @nogc:
     void rc(bool add) scope {
         import core.atomic : atomicOp;
 
-        if (!add && atomicOp!"-="(refCount, 1) == 0) {
+        if(!add && atomicOp!"-="(refCount, 1) == 0) {
             RCAllocator allocator = this.allocator;
 
             // run destructors ext.
-            if (this.deinit !is null)
+            if(this.deinit !is null)
                 this.deinit(toDeallocate);
 
             allocator.dispose(toDeallocate);
-        } else if (add)
+        } else if(add)
             atomicOp!"+="(refCount, 1);
     }
 }

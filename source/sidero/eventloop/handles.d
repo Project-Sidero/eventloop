@@ -37,7 +37,7 @@ export @safe nothrow @nogc:
     do {
         ubyte[8] rstr = cast(ubyte)' ';
 
-        foreach (i; 0 .. from.length)
+        foreach(i; 0 .. from.length)
             rstr[i] = cast(ubyte)from[i];
 
         return SystemHandleType(rstr[0] | (rstr[1] << (1 * 8)) | (rstr[2] << (2 * 8)) | (rstr[3] << (3 * 8)) | (
@@ -64,7 +64,7 @@ export @safe nothrow @nogc:
     String_UTF8 toString() const scope @trusted {
         char[8] text;
         ulong temp = value;
-        foreach (i; 0 .. 8) {
+        foreach(i; 0 .. 8) {
             text[i] = cast(char)temp;
 
             temp /= 256;
@@ -78,7 +78,7 @@ export @safe nothrow @nogc:
         String_UTF8 first = String_UTF8(text_), second = String_UTF8(other.text_);
         const i = first.indexOf(" "), j = second.indexOf(" ");
 
-        if ((i < j || j < 0) && i >= 0) {
+        if((i < j || j < 0) && i >= 0) {
             // this == other
             return first[0 .. i] == second[0 .. i];
         } else

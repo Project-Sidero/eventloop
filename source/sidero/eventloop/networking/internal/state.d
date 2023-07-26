@@ -13,7 +13,7 @@ import sidero.base.errors;
 
 package(sidero.eventloop):
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.networking.internal.windows.socket_server;
     import sidero.eventloop.networking.internal.windows.socket_client;
     public import sidero.eventloop.networking.internal.windows.mechanism;
@@ -43,35 +43,35 @@ package(sidero.eventloop):
     void rc(bool addRef) scope @trusted {
         import core.atomic : atomicOp, atomicLoad;
 
-        if (addRef)
+        if(addRef)
             atomicOp!"+="(refCount, 1);
         else {
             ptrdiff_t refCount = atomicOp!"-="(this.refCount, 1);
 
-            if (refCount == 0) {
-                if (atomicLoad(isAlive)) {
-                    foreach (pls; platformSockets) {
-                        if (pls) {
-                            if (atomicLoad(pls.isAlive))
+            if(refCount == 0) {
+                if(atomicLoad(isAlive)) {
+                    foreach(pls; platformSockets) {
+                        if(pls) {
+                            if(atomicLoad(pls.isAlive))
                                 pls.forceClose;
                         }
                     }
                 }
 
-                foreach (pls; platformSockets) {
-                    if (pls) {
-                        if (atomicLoad(pls.isAlive))
+                foreach(pls; platformSockets) {
+                    if(pls) {
+                        if(atomicLoad(pls.isAlive))
                             pls.cleanup;
                     }
                 }
 
                 RCAllocator allocator = this.allocator;
                 allocator.dispose(&this);
-            } else if (refCount == 1 && atomicLoad(isAlive) > 0) {
+            } else if(refCount == 1 && atomicLoad(isAlive) > 0) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
-                foreach (pls; platformSockets) {
-                    if (pls) {
-                        if (atomicLoad(pls.isAlive))
+                foreach(pls; platformSockets) {
+                    if(pls) {
+                        if(atomicLoad(pls.isAlive))
                             pls.shutdown;
                     }
                 }
@@ -82,7 +82,7 @@ package(sidero.eventloop):
     void pin(ptrdiff_t amount) scope {
         import core.atomic : atomicLoad, atomicStore;
 
-        if (atomicLoad(isAlive) > 0)
+        if(atomicLoad(isAlive) > 0)
             assert(0, "Pinned");
 
         rc(true);
@@ -92,10 +92,10 @@ package(sidero.eventloop):
     void unpin() scope {
         import core.atomic : atomicLoad, atomicOp;
 
-        if (atomicLoad(isAlive) == 0)
+        if(atomicLoad(isAlive) == 0)
             assert(0, "Not pinned");
 
-        if (atomicOp!"-="(isAlive, 1) == 0)
+        if(atomicOp!"-="(isAlive, 1) == 0)
             rc(false);
     }
 
@@ -130,19 +130,19 @@ package(sidero.eventloop):
     void rc(bool addRef) scope @trusted {
         import core.atomic : atomicLoad, atomicOp;
 
-        if (addRef)
+        if(addRef)
             atomicOp!"+="(refCount, 1);
         else {
             ptrdiff_t refCount = atomicOp!"-="(this.refCount, 1);
 
-            if (refCount == 0) {
+            if(refCount == 0) {
                 encryptionState.cleanup;
                 platform.shutdown(&this);
                 platform.forceClose(&this);
 
                 RCAllocator allocator = this.allocator;
                 allocator.dispose(&this);
-            } else if (refCount == 1 && atomicLoad(isAlive)) {
+            } else if(refCount == 1 && atomicLoad(isAlive)) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
                 platform.shutdown(&this);
             }
@@ -152,7 +152,7 @@ package(sidero.eventloop):
     void pin() scope {
         import core.atomic : atomicLoad, atomicStore;
 
-        if (atomicLoad(isAlive))
+        if(atomicLoad(isAlive))
             assert(0, "Pinned");
 
         rc(true);
@@ -162,7 +162,7 @@ package(sidero.eventloop):
     void unpin() scope @trusted {
         import core.atomic : atomicLoad, atomicStore;
 
-        if (!atomicLoad(isAlive))
+        if(!atomicLoad(isAlive))
             return;
 
         atomicStore(isAlive, false);
@@ -173,12 +173,12 @@ package(sidero.eventloop):
     void close(bool gracefully) scope @trusted {
         import core.atomic : atomicLoad, atomicStore;
 
-        if (!atomicLoad(isAlive))
+        if(!atomicLoad(isAlive))
             return;
 
         platform.shutdown(&this);
 
-        if (!gracefully || (rawWritingState.protect(() { return !rawWritingState.haveData; }) && !readingState.inProgress)) {
+        if(!gracefully || (rawWritingState.protect(() { return !rawWritingState.haveData; }) && !readingState.inProgress)) {
             platform.forceClose(&this);
             atomicStore(isAlive, false);
             rc(false);
@@ -205,18 +205,18 @@ struct ReadingState {
 
     bool inProgress() scope {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         return toCall !is null;
     }
 
     size_t getWantedAmount() {
-        if (!inProgress)
+        if(!inProgress)
             return 0;
 
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         return wantedAmount > 0 ? wantedAmount : size_t.max;
@@ -226,11 +226,11 @@ struct ReadingState {
         assert(amount > 0);
         assert(callback !is null);
 
-        if (inProgress)
+        if(inProgress)
             return false;
 
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         toCall = callback;
@@ -243,11 +243,11 @@ struct ReadingState {
         assert(stopCondition.length > 0);
         assert(callback !is null);
 
-        if (inProgress)
+        if(inProgress)
             return false;
 
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         toCall = callback;
@@ -268,18 +268,18 @@ struct ReadingState {
         Slice!ubyte dataToCallWith;
 
         socketState.encryptionState.readData(socketState, (DynamicArray!ubyte availableData) @trusted {
-            if (toCall is null)
+            if(toCall is null)
                 return 0;
 
             size_t tryingToConsume;
 
             bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) {
                 auto first = appendingArray[start1 .. end1];
-                if (!first)
+                if(!first)
                     return false;
 
                 auto second = stopArray[start2 .. end2];
-                if (!second)
+                if(!second)
                     return false;
 
                 return first.get == second.get;
@@ -290,7 +290,7 @@ struct ReadingState {
                 assert(sliced);
                 auto slicedG = sliced.get;
 
-                if (appendingArray.length == 0)
+                if(appendingArray.length == 0)
                     appendingArray = slicedG.dup;
                 else
                     appendingArray ~= slicedG;
@@ -298,27 +298,27 @@ struct ReadingState {
                 tryingToConsume = slicedG.length;
             }
 
-            if (wantedAmount > 0 && availableData.length > 0) {
+            if(wantedAmount > 0 && availableData.length > 0) {
                 const canDo = wantedAmount > availableData.length ? availableData.length : wantedAmount;
 
                 subsetFromAvailable(canDo);
                 wantedAmount -= canDo;
                 success = wantedAmount == 0;
-            } else if (wantedAmount == 0 && stopArray.length > 0) {
+            } else if(wantedAmount == 0 && stopArray.length > 0) {
                 // ok stop condition is a little more complicated...
 
                 size_t maxInFirst = stopArray.length - 1;
-                if (maxInFirst > appendingArray.length)
+                if(maxInFirst > appendingArray.length)
                     maxInFirst = appendingArray.length;
 
-                foreach (i; appendingArray.length - maxInFirst .. appendingArray.length) {
+                foreach(i; appendingArray.length - maxInFirst .. appendingArray.length) {
                     const amountToCheck = appendingArray.length - i;
 
-                    if (checkIfStop(i, ptrdiff_t.max, 0, amountToCheck)) {
+                    if(checkIfStop(i, ptrdiff_t.max, 0, amountToCheck)) {
                         // ok existing in buffer ok, next up gotta check what has already been read
                         const inSecond = stopArray.length - amountToCheck;
 
-                        if (inSecond <= availableData.length && checkIfStop(0, inSecond, amountToCheck, ptrdiff_t.max)) {
+                        if(inSecond <= availableData.length && checkIfStop(0, inSecond, amountToCheck, ptrdiff_t.max)) {
                             subsetFromAvailable(inSecond);
                             stopArray = typeof(stopArray).init;
                             success = true;
@@ -326,10 +326,10 @@ struct ReadingState {
                     }
                 }
 
-                if (!success) {
+                if(!success) {
                     ptrdiff_t index = availableData.indexOf(stopArray);
 
-                    if (index < 0) {
+                    if(index < 0) {
                         subsetFromAvailable(ptrdiff_t.max);
                     } else {
                         subsetFromAvailable(index + stopArray.length);
@@ -339,7 +339,7 @@ struct ReadingState {
                 }
             }
 
-            if (success) {
+            if(success) {
                 assert(toCall !is null);
                 calling = toCall;
                 toCall = null;
@@ -352,7 +352,7 @@ struct ReadingState {
                 return 0;
         });
 
-        if (success) {
+        if(success) {
             assert(calling !is null);
 
             Socket socket;
@@ -363,7 +363,7 @@ struct ReadingState {
         } else {
             assert(calling is null);
 
-            if (!socketState.rawReadingState.protectTriggeringOfRead(() {
+            if(!socketState.rawReadingState.protectTriggeringOfRead(() {
                     return socketState.rawReadingState.currentlyTriggered;
                 }) && atomicLoad(socketState.isAlive)) {
                 socketState.triggerRead(socketState, false);
@@ -383,7 +383,7 @@ struct RawReadingState {
 
     bool haveDataToRead() scope {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         return currentlyAvailableData.length > 0;
@@ -393,8 +393,8 @@ struct RawReadingState {
         auto fullArray = bufferToReadInto.unsafeGetLiteral();
         auto sliced = currentlyAvailableData.unsafeGetLiteral();
 
-        if (sliced !is null && sliced.ptr !is fullArray.ptr) {
-            foreach (i, b; sliced) {
+        if(sliced !is null && sliced.ptr !is fullArray.ptr) {
+            foreach(i, b; sliced) {
                 fullArray[i] = b;
             }
 
@@ -406,7 +406,7 @@ struct RawReadingState {
         const have = fullArray.length - sliced.length;
         const diff = amount - have;
 
-        if (have < amount) {
+        if(have < amount) {
             bufferToReadInto.length = diff + fullArray.length;
         }
     }
@@ -415,7 +415,7 @@ struct RawReadingState {
         mutex.pureLock;
 
         amount += currentlyAvailableData.length;
-        if (amount > bufferToReadInto.length)
+        if(amount > bufferToReadInto.length)
             amount = bufferToReadInto.length;
 
         auto sliced = bufferToReadInto[0 .. amount];
@@ -428,17 +428,17 @@ struct RawReadingState {
 
     void protectReadForEncryption(scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
-        if (currentlyAvailableData.length == 0)
+        if(currentlyAvailableData.length == 0)
             return;
 
         size_t consumed = del(currentlyAvailableData);
-        if (consumed > currentlyAvailableData.length)
+        if(consumed > currentlyAvailableData.length)
             consumed = currentlyAvailableData.length;
 
-        if (consumed > 0) {
+        if(consumed > 0) {
             auto sliced = currentlyAvailableData[consumed .. $];
             assert(sliced);
             currentlyAvailableData = sliced.get;
@@ -447,14 +447,14 @@ struct RawReadingState {
 
     bool protectTriggeringOfRead(scope bool delegate() @safe nothrow @nogc del) scope @trusted {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
-        if (this.currentlyTriggered)
+        if(this.currentlyTriggered)
             return false;
 
         bool result = del();
-        if (result)
+        if(result)
             this.currentlyTriggered = true;
 
         return result;
@@ -476,7 +476,7 @@ struct RawWritingState {
 
     bool isWaitingOnDataToSend() {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         return waitingOnDataToSend > 0;
@@ -484,14 +484,14 @@ struct RawWritingState {
 
     bool protect(scope bool delegate() @safe nothrow @nogc del) scope {
         mutex.pureLock;
-        scope (exit)
+        scope(exit)
             mutex.unlock;
 
         return del();
     }
 
     bool haveData() scope {
-        if (toSend.length == 0)
+        if(toSend.length == 0)
             return false;
 
         auto firstItem = toSend[0];
@@ -502,13 +502,13 @@ struct RawWritingState {
     void complete(size_t amount) scope {
         // already protected by mutex
 
-        while (toSend.length > 0 && amount > 0) {
+        while(toSend.length > 0 && amount > 0) {
             auto firstItem = toSend[0];
             assert(firstItem);
 
             size_t canDo = firstItem.length;
 
-            if (canDo > amount) {
+            if(canDo > amount) {
                 auto sliced = firstItem[amount .. $];
                 assert(sliced);
 
@@ -519,7 +519,7 @@ struct RawWritingState {
                 toSend.remove(0, 1);
             }
 
-            if (waitingOnDataToSend > canDo) {
+            if(waitingOnDataToSend > canDo) {
                 waitingOnDataToSend -= canDo;
             } else {
                 waitingOnDataToSend = 0;

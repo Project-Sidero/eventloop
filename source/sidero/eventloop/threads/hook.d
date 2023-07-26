@@ -2,7 +2,7 @@ module sidero.eventloop.threads.hook;
 import sidero.eventloop.threads.registration;
 import sidero.eventloop.threads.osthread;
 
-version (D_BetterC) {
+version(D_BetterC) {
 } else {
     import core.thread.osthread : thread_attachThis;
     import core.thread.threadbase : thread_detachThis;

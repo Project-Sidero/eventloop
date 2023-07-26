@@ -14,12 +14,12 @@ struct SystemSemaphore {
 
         bool initialized;
 
-        version (Windows) {
+        version(Windows) {
             import core.sys.windows.windows : HANDLE, ReleaseSemaphore, WaitForSingleObject, CreateSemaphoreA,
                 CloseHandle, WAIT_OBJECT_0, WAIT_ABANDONED, WAIT_TIMEOUT, WAIT_FAILED, INFINITE;
 
             HANDLE semaphore;
-        } else version (Posix) {
+        } else version(Posix) {
             import core.sys.posix.semaphore : sem_init, sem_destroy, sem_wait, sem_post, sem_t, sem_trywait, sem_timedwait;
 
             sem_t semaphore;
@@ -33,13 +33,13 @@ export @safe nothrow @nogc:
 
     /// Maximum value does not apply to POSIX.
     this(uint initialValue, uint maximumValue = uint.max) scope {
-        version (Windows) {
+        version(Windows) {
             semaphore = CreateSemaphoreA(null, initialValue, maximumValue, null);
-            if (semaphore is null)
+            if(semaphore is null)
                 return;
-        } else version (Posix) {
+        } else version(Posix) {
             int got = sem_init(&semaphore, 0, initialValue);
-            if (got != 0)
+            if(got != 0)
                 return;
         } else
             static assert(0, "Unimplemented platform");
@@ -49,10 +49,10 @@ export @safe nothrow @nogc:
 
     ///
     ~this() scope @trusted {
-        if (initialized) {
-            version (Windows) {
+        if(initialized) {
+            version(Windows) {
                 CloseHandle(semaphore);
-            } else version (Posix) {
+            } else version(Posix) {
                 sem_destroy(&semaphore);
             } else
                 static assert(0, "Unimplemented platform");
@@ -71,16 +71,16 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult lock(Duration timeout = Duration.max) scope @trusted {
-        if (!initialized)
+        if(!initialized)
             return ErrorResult(NullPointerException);
-        else if (timeout <= Duration.init)
+        else if(timeout <= Duration.init)
             return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
 
-        version (Windows) {
-            if (timeout < Duration.max) {
+        version(Windows) {
+            if(timeout < Duration.max) {
                 auto result = WaitForSingleObject(semaphore, cast(uint)timeout.totalMilliSeconds());
 
-                switch (result) {
+                switch(result) {
                 case WAIT_OBJECT_0:
                 case WAIT_ABANDONED:
                     return ErrorResult.init;
@@ -92,19 +92,19 @@ export @safe nothrow @nogc:
             } else {
                 return waitForLock(semaphore);
             }
-        } else version (Posix) {
+        } else version(Posix) {
             import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
             import core.stdc.time : timespec;
             import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN, EINTR;
 
-            if (timeout < Duration.max) {
+            if(timeout < Duration.max) {
                 int result;
 
                 long secs = timeout.totalSeconds();
                 long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
                 timespec ts;
-                if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                if(clock_gettime(CLOCK_REALTIME, &ts) != 0)
                     return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
 
                 ts.tv_sec += secs;
@@ -112,7 +112,7 @@ export @safe nothrow @nogc:
 
                 result = sem_timedwait(&semaphore, ts);
 
-                switch (result) {
+                switch(result) {
                 case 0:
                     return ErrorResult.init;
 
@@ -136,13 +136,13 @@ export @safe nothrow @nogc:
 
     ///
     Result!bool tryLock() scope @trusted {
-        if (!initialized)
+        if(!initialized)
             return typeof(return)(NullPointerException);
 
-        version (Windows) {
+        version(Windows) {
             auto result = WaitForSingleObject(semaphore, 0);
 
-            switch (result) {
+            switch(result) {
             case WAIT_OBJECT_0:
             case WAIT_ABANDONED:
                 return typeof(return)(true);
@@ -154,10 +154,10 @@ export @safe nothrow @nogc:
             default:
                 return typeof(return)(UnknownPlatformBehaviorException("Could not lock semaphore"));
             }
-        } else version (Posix) {
+        } else version(Posix) {
             auto result = sem_trywait(&semaphore);
 
-            switch (result) {
+            switch(result) {
             case 0:
                 return typeof(return)(true);
 
@@ -175,14 +175,14 @@ export @safe nothrow @nogc:
 
     ///
     ErrorResult unlock() scope @trusted {
-        if (!initialized)
+        if(!initialized)
             return ErrorResult(NullPointerException);
 
-        version (Windows) {
-            if (ReleaseSemaphore(semaphore, 1, null) == 0)
+        version(Windows) {
+            if(ReleaseSemaphore(semaphore, 1, null) == 0)
                 return typeof(return)(UnknownPlatformBehaviorException("Could not unlock semaphore"));
-        } else version (Posix) {
-            if (sem_post(&semaphore) != 0)
+        } else version(Posix) {
+            if(sem_post(&semaphore) != 0)
                 return typeof(return)(UnknownPlatformBehaviorException("Could not unlock semaphore"));
         } else
             static assert(0, "Unimplemented platform");
@@ -194,12 +194,12 @@ export @safe nothrow @nogc:
 private:
 
 ErrorResult waitForLock(scope void* handle) @trusted nothrow @nogc {
-    version (Windows) {
+    version(Windows) {
         import core.sys.windows.windows : WaitForSingleObject, INFINITE, WAIT_OBJECT_0, WAIT_ABANDONED, WAIT_FAILED;
 
         auto result = WaitForSingleObject(handle, INFINITE);
 
-        switch (result) {
+        switch(result) {
         case WAIT_OBJECT_0:
         case WAIT_ABANDONED:
             return ErrorResult.init;
@@ -208,14 +208,14 @@ ErrorResult waitForLock(scope void* handle) @trusted nothrow @nogc {
         default:
             return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
         }
-    } else version (Posix) {
+    } else version(Posix) {
         import core.sys.posix.semaphore : sem_wait;
         import core.sys.posix.pthread : EOWNERDEAD, ENOTRECOVERABLE, EBUSY;
         import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN;
 
         int result = sem_wait(handle);
 
-        switch (result) {
+        switch(result) {
         case 0:
             return ErrorResult.init;
 

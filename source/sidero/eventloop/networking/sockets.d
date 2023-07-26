@@ -30,13 +30,13 @@ export @safe nothrow @nogc:
     this(return scope ref ListenSocket other) scope {
         this.state = other.state;
 
-        if (state !is null)
+        if(state !is null)
             state.rc(true);
     }
 
     ///
     ~this() scope {
-        if (state !is null)
+        if(state !is null)
             state.rc(false);
     }
 
@@ -47,7 +47,7 @@ export @safe nothrow @nogc:
 
     ///
     NetworkAddress address() scope {
-        if (isNull)
+        if(isNull)
             return NetworkAddress.init;
         return state.address;
     }
@@ -60,13 +60,15 @@ export @safe nothrow @nogc:
     }
 
     /// Listen on port
-    static Result!ListenSocket from(ListenSocketOnAccept onAcceptCallback, SocketShutdownCallback onShutdownCallback, NetworkAddress address, Socket.Protocol protocol,
+    static Result!ListenSocket from(ListenSocketOnAccept onAcceptCallback, SocketShutdownCallback onShutdownCallback, NetworkAddress address,
+            Socket.Protocol protocol,
             Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate certificate = Certificate.init,
-            bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) {
-        if (allocator.isNull)
+            bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true,
+            scope return RCAllocator allocator = RCAllocator.init) {
+        if(allocator.isNull)
             allocator = globalAllocator();
 
-        if (!ensureItIsSetup)
+        if(!ensureItIsSetup)
             return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         ListenSocket ret;
@@ -81,7 +83,7 @@ export @safe nothrow @nogc:
         ret.state.certificate = certificate;
         ret.state.validateCertificates = validateCertificates;
 
-        if (!ret.state.startUp(reuseAddr, keepAlive))
+        if(!ret.state.startUp(reuseAddr, keepAlive))
             return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
 
         return typeof(return)(ret);
@@ -100,13 +102,13 @@ export @safe nothrow @nogc:
     this(return scope ref Socket other) scope nothrow {
         this.state = other.state;
 
-        if (state !is null)
+        if(state !is null)
             state.rc(true);
     }
 
     ///
     ~this() scope nothrow @nogc {
-        if (state !is null)
+        if(state !is null)
             state.rc(false);
     }
 
@@ -129,17 +131,17 @@ export @safe nothrow @nogc:
 
     /// Stop sending & receiving of data
     void close(bool graceFully = true) scope {
-        if (isNull)
+        if(isNull)
             return;
         state.close(graceFully);
     }
 
     ///
     bool read(size_t amount, scope return SocketReadCallback onRecieve) scope @trusted {
-        if (isReadInProgress)
+        if(isReadInProgress)
             return false;
 
-        if (!state.readingState.requestFromUser(amount, onRecieve))
+        if(!state.readingState.requestFromUser(amount, onRecieve))
             return false;
 
         return state.triggerRead(state);
@@ -152,10 +154,10 @@ export @safe nothrow @nogc:
 
     ///
     bool readUntil(scope return Slice!ubyte endCondition, scope return SocketReadCallback onRecieve) scope @trusted {
-        if (isReadInProgress)
+        if(isReadInProgress)
             return false;
 
-        if (!state.readingState.requestFromUser(endCondition, onRecieve))
+        if(!state.readingState.requestFromUser(endCondition, onRecieve))
             return false;
 
         state.triggerRead(state);
@@ -169,11 +171,11 @@ export @safe nothrow @nogc:
 
     ///
     Expected write(scope return Slice!ubyte data) scope @trusted {
-        if (!isAlive())
+        if(!isAlive())
             return Expected(data.length, 0);
 
         auto expected = state.encryptionState.writeData(state, data);
-        if (expected)
+        if(expected)
             state.triggerWrite(state);
         return expected;
     }
@@ -181,10 +183,10 @@ export @safe nothrow @nogc:
     ///
     ErrorResult addEncryption(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
             Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
-        if (!isAlive())
+        if(!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if (!state.encryptionState.addEncryption(this.state, certificate, encryption, validateCertificates))
+        if(!state.encryptionState.addEncryption(this.state, certificate, encryption, validateCertificates))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
@@ -214,9 +216,9 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Result!Socket connectTo(SocketShutdownCallback onShutdownCallback, NetworkAddress address, Socket.Protocol protocol, bool keepAlive = true,
-            scope return RCAllocator allocator = RCAllocator.init) {
-        if (allocator.isNull)
+    static Result!Socket connectTo(SocketShutdownCallback onShutdownCallback, NetworkAddress address,
+            Socket.Protocol protocol, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+        if(allocator.isNull)
             allocator = globalAllocator();
 
         Socket ret;
@@ -227,14 +229,14 @@ export @safe nothrow @nogc:
         ret.state.protocol = protocol;
 
         auto errorResult = ret.state.startUp(address, keepAlive);
-        if (!errorResult)
+        if(!errorResult)
             return typeof(return)(errorResult.getError());
         return typeof(return)(ret);
     }
 
-    package(sidero.eventloop) static Socket fromListen(SocketShutdownCallback onShutdownCallback, Protocol protocol, NetworkAddress localAddress,
-            NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
-        if (allocator.isNull)
+    package(sidero.eventloop) static Socket fromListen(SocketShutdownCallback onShutdownCallback, Protocol protocol,
+            NetworkAddress localAddress, NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
+        if(allocator.isNull)
             allocator = globalAllocator();
 
         Socket ret;
@@ -253,13 +255,13 @@ export @safe nothrow @nogc:
 ///
 ErrorResult startUpNetworking() @trusted {
     mutex.pureLock;
-    scope (exit)
+    scope(exit)
         mutex.unlock;
 
-    if (isInitialized)
+    if(isInitialized)
         return ErrorResult.init;
 
-    if (!startUpNetworkingMechanism)
+    if(!startUpNetworkingMechanism)
         return ErrorResult(UnknownPlatformBehaviorException("Could not start networking"));
 
     isInitialized = true;
@@ -271,10 +273,10 @@ void shutdownNetworking() @trusted {
     import sidero.eventloop.internal.event_waiting;
 
     mutex.pureLock;
-    scope (exit)
+    scope(exit)
         mutex.unlock;
 
-    if (!isInitialized)
+    if(!isInitialized)
         return;
 
     shutdownEventWaiterThreads;
@@ -293,9 +295,9 @@ __gshared {
 bool ensureItIsSetup() {
     import sidero.eventloop.tasks.workers;
 
-    if (!startUpNetworking)
+    if(!startUpNetworking)
         return false;
-    else if (!startWorkers(1))
+    else if(!startWorkers(1))
         return false;
 
     return true;

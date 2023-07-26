@@ -11,7 +11,7 @@ import sidero.base.errors;
 import sidero.base.allocators;
 import sidero.base.synchronization.mutualexclusion;
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
 
     static immutable SecurityPackageName = "Schannel"w;
@@ -25,7 +25,7 @@ version (Windows) {
 
     bool setupWinCryptEncryption() @trusted {
         logger = Logger.forName(String_UTF8(__MODULE__));
-        if (!logger || logger.isNull)
+        if(!logger || logger.isNull)
             return false;
 
         {
@@ -56,12 +56,12 @@ version (Windows) {
     @safe nothrow @nogc:
 
         void cleanup() scope @trusted {
-            if (negotationState.haveContextHandle) {
+            if(negotationState.haveContextHandle) {
                 DeleteSecurityContext(&negotationState.contextHandle);
                 negotationState.haveContextHandle = false;
             }
 
-            if (credentialHandleSet) {
+            if(credentialHandleSet) {
                 FreeCredentialsHandle(&credentialHandle);
                 credentialHandleSet = false;
             }
@@ -79,7 +79,7 @@ version (Windows) {
                 PCCERT_CONTEXT certificateContext;
                 TLS_PARAMETERS[1] tlsParameters;
 
-                if (socketState.cameFromServer) {
+                if(socketState.cameFromServer) {
                     enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_0_SERVER | SP_PROT_TLS1_1_SERVER |
                         SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_0_SERVER |
                         SP_PROT_DTLS1_2_SERVER;
@@ -112,20 +112,20 @@ version (Windows) {
                 tlsCredentials.cTlsParameters = 1;
                 tlsCredentials.pTlsParameters = tlsParameters.ptr;
 
-                if (validateCertificates) {
+                if(validateCertificates) {
                     tlsCredentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION;
                 } else {
-                    if (socketState.cameFromServer)
+                    if(socketState.cameFromServer)
                         tlsCredentials.dwFlags = 0;
                     else
                         tlsCredentials.dwFlags = SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_SERVERNAME_CHECK;
                 }
 
                 auto certificateHandle = socketState.encryptionState.currentCertificate.unsafeGetHandle;
-                if (certificateHandle.type == WinCryptCertificateHandleType) {
+                if(certificateHandle.type == WinCryptCertificateHandleType) {
                     // ok
                     certificateContext = cast(PCCERT_CONTEXT)certificateHandle.handle;
-                } else if (tlsCredentials.cCreds == 1) {
+                } else if(tlsCredentials.cCreds == 1) {
                     // what???
                     // this should be possible
                     logger.fatal("Fatal error: got a certificate that was not from WinCrypt??? ", certificateHandle.type);
@@ -134,7 +134,7 @@ version (Windows) {
 
                 auto ss = AcquireCredentialsHandleW(null, cast(wchar*)SecurityPackageName.ptr, credDirection, null,
                         &tlsCredentials, null, null, &credentialHandle, null);
-                if (ss != SEC_E_OK) {
+                if(ss != SEC_E_OK) {
                     // failed
                     // log it, close socket!
 
@@ -155,7 +155,7 @@ version (Windows) {
         }
 
         void readData(scope SocketState* socketState) scope {
-            if (negotationState.ifNegotiatingQueueRead(socketState))
+            if(negotationState.ifNegotiatingQueueRead(socketState))
                 return;
 
             bool renegotiate;
@@ -174,17 +174,17 @@ version (Windows) {
                 auto ss = DecryptMessage(&negotationState.contextHandle, &buffersDescription, 0, null);
 
                 renegotiate = ss == SEC_I_RENEGOTIATE;
-                if (ss != SEC_E_OK && !renegotiate) {
+                if(ss != SEC_E_OK && !renegotiate) {
                     return 0;
                 }
 
                 size_t consumed;
 
-                foreach (ref buffer; buffers) {
-                    if (buffer.BufferType == SECBUFFER_DATA) {
+                foreach(ref buffer; buffers) {
+                    if(buffer.BufferType == SECBUFFER_DATA) {
                         consumed = data.length;
 
-                        if (buffer.cbBuffer > 0) {
+                        if(buffer.cbBuffer > 0) {
                             DynamicArray!ubyte da;
                             da ~= (cast(ubyte*)buffer.pvBuffer)[0 .. buffer.cbBuffer];
                             socketState.encryptionState.decryptedState.addDecryptedData(da);
@@ -193,9 +193,9 @@ version (Windows) {
                     }
                 }
 
-                if (consumed > 0) {
-                    foreach_reverse (ref buffer; buffers) {
-                        if (buffer.BufferType == SECBUFFER_EXTRA) {
+                if(consumed > 0) {
+                    foreach_reverse(ref buffer; buffers) {
+                        if(buffer.BufferType == SECBUFFER_EXTRA) {
                             consumed -= buffer.cbBuffer;
                             break;
                         }
@@ -205,7 +205,7 @@ version (Windows) {
                 return consumed;
             });
 
-            if (renegotiate) {
+            if(renegotiate) {
                 negotationState.triggerNegotiation(socketState);
             }
         }
@@ -213,19 +213,19 @@ version (Windows) {
         Expected writeData(scope SocketState* socketState, return scope Slice!ubyte data) scope @trusted {
             const originalLength = data.length;
 
-            if (negotationState.ifNegotiatingQueue(data)) {
+            if(negotationState.ifNegotiatingQueue(data)) {
                 return Expected(originalLength, originalLength);
             }
 
             RCAllocator allocator = globalAllocator();
 
-            while (data.length > 0 && maxEncryptedPacketSize > 0) {
+            while(data.length > 0 && maxEncryptedPacketSize > 0) {
                 auto todo = data.unsafeGetLiteral[0 .. data.length >= encryptedMessageSize ? encryptedMessageSize: data.length];
 
                 ubyte[] fullBuffer = allocator.makeArray!ubyte(maxEncryptedPacketSize);
                 Slice!ubyte sliceBuffer = Slice!ubyte(fullBuffer, allocator);
 
-                foreach (i, b; todo) {
+                foreach(i, b; todo) {
                     fullBuffer[encryptedPacketHeaderSize + i] = b;
                 }
 
@@ -241,7 +241,7 @@ version (Windows) {
                 buffersDescription.pBuffers = buffers.ptr;
 
                 auto ss = EncryptMessage(&negotationState.contextHandle, 0, &buffersDescription, 0);
-                if (ss != SEC_E_OK) {
+                if(ss != SEC_E_OK) {
                     break;
                 }
 
@@ -272,10 +272,10 @@ version (Windows) {
 
         bool ifNegotiatingQueueRead(scope SocketState* socketState) scope {
             mutex.pureLock;
-            scope (exit)
+            scope(exit)
                 mutex.unlock;
 
-            if (negotiating) {
+            if(negotiating) {
                 isReadQueued = true;
 
                 negotiateWrapper(socketState);
@@ -287,10 +287,10 @@ version (Windows) {
 
         bool ifNegotiatingQueue(return scope Slice!ubyte data) scope @trusted {
             mutex.pureLock;
-            scope (exit)
+            scope(exit)
                 mutex.unlock;
 
-            if (negotiating) {
+            if(negotiating) {
                 queueToEncrypt ~= data;
                 return true;
             } else
@@ -309,10 +309,10 @@ version (Windows) {
         void negotiateWrapper(scope SocketState* socketState) scope @trusted {
             bool didSomeNegotiations;
 
-            if (negotiating) {
+            if(negotiating) {
                 mutex.unlock;
 
-                if (socketState.cameFromServer)
+                if(socketState.cameFromServer)
                     didSomeNegotiations = negotiateServer(socketState);
                 else
                     didSomeNegotiations = negotiateClient(socketState);
@@ -320,12 +320,12 @@ version (Windows) {
                 mutex.pureLock;
             }
 
-            if (didSomeNegotiations) {
+            if(didSomeNegotiations) {
                 socketState.triggerRead(socketState, false);
             }
 
-            if (!negotiating) {
-                if (isReadQueued) {
+            if(!negotiating) {
+                if(isReadQueued) {
                     isReadQueued = false;
                     mutex.unlock;
 
@@ -335,11 +335,11 @@ version (Windows) {
 
                 size_t toRemove;
 
-                foreach (toWrite; queueToEncrypt) {
+                foreach(toWrite; queueToEncrypt) {
                     mutex.unlock;
                     assert(toWrite);
 
-                    if (!socketState.encryptionState.winCrypt.writeData(socketState, toWrite)) {
+                    if(!socketState.encryptionState.winCrypt.writeData(socketState, toWrite)) {
                         mutex.pureLock;
                         break;
                     }
@@ -359,7 +359,7 @@ version (Windows) {
             // Get stream data properties
             SECURITY_STATUS ss = QueryContextAttributesW(&contextHandle, SECPKG_ATTR_STREAM_SIZES, &sizes);
 
-            if (ss != SEC_E_OK) {
+            if(ss != SEC_E_OK) {
                 logger.warning("Could not acquire stream TLS properties for ", socketState.handle, " ", ss);
                 return;
             }
@@ -374,7 +374,7 @@ version (Windows) {
 
         bool negotiateServer(scope SocketState* socketState) scope @trusted {
             bool ret;
-            if (tokenLeft == 0) {
+            if(tokenLeft == 0) {
                 tokenLeft = maxTokenSize;
             }
 
@@ -407,7 +407,7 @@ version (Windows) {
                     &buffersDescriptionOut, &plAttributes, null);
                 haveContextHandle = true;
 
-                if (buffersOut[0].cbBuffer > 0) {
+                if(buffersOut[0].cbBuffer > 0) {
                     auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                     socketState.rawWritingState.dataToSend(sliced.dup);
                     FreeContextBuffer(buffersOut[0].pvBuffer);
@@ -416,25 +416,25 @@ version (Windows) {
                 }
 
                 negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
-                if (ss == SEC_E_INCOMPLETE_MESSAGE)
+                if(ss == SEC_E_INCOMPLETE_MESSAGE)
                     return 0;
 
-                if (!negotiating) {
-                    if (ss != SEC_E_OK) {
+                if(!negotiating) {
+                    if(ss != SEC_E_OK) {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
                         socketState.close(true);
                     }
                 }
 
                 size_t consumed = canDo.length;
-                if (buffersIn[1].BufferType == SECBUFFER_EXTRA)
+                if(buffersIn[1].BufferType == SECBUFFER_EXTRA)
                     consumed -= buffersIn[1].cbBuffer;
 
                 ret = consumed > 0;
                 return consumed;
             });
 
-            if (!negotiating) {
+            if(!negotiating) {
                 updateStreamSizes(socketState);
             }
 
@@ -460,7 +460,7 @@ version (Windows) {
                     plAttributes, 0, 0, null, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
             haveContextHandle = true;
 
-            if (buffersOut[0].cbBuffer > 0) {
+            if(buffersOut[0].cbBuffer > 0) {
                 auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                 socketState.rawWritingState.dataToSend(sliced.dup);
                 FreeContextBuffer(buffersOut[0].pvBuffer);
@@ -472,7 +472,7 @@ version (Windows) {
 
             negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
 
-            if (!negotiating) {
+            if(!negotiating) {
                 updateStreamSizes(socketState);
             }
 
@@ -481,7 +481,7 @@ version (Windows) {
 
         bool negotiateClient(scope SocketState* socketState) scope @trusted {
             bool ret;
-            if (tokenLeft == 0) {
+            if(tokenLeft == 0) {
                 tokenLeft = maxTokenSize;
             }
 
@@ -512,7 +512,7 @@ version (Windows) {
                     &buffersDescriptionOut, &plAttributes, null);
                 haveContextHandle = true;
 
-                if (buffersOut[0].cbBuffer > 0) {
+                if(buffersOut[0].cbBuffer > 0) {
                     auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                     socketState.rawWritingState.dataToSend(sliced.dup);
                     FreeContextBuffer(buffersOut[0].pvBuffer);
@@ -523,28 +523,29 @@ version (Windows) {
                 logger.trace("Socket client handshake ", socketState.handle, " ", ss);
 
                 negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
-                if (ss == SEC_E_INCOMPLETE_MESSAGE)
+                if(ss == SEC_E_INCOMPLETE_MESSAGE)
                     return 0;
 
-                if (!negotiating) {
-                    if (ss == SEC_E_WRONG_PRINCIPAL) {
-                        logger.warning("Unable to negotiate socket encryption possibly due to invalidate certificate ", socketState.handle, " ", ss);
+                if(!negotiating) {
+                    if(ss == SEC_E_WRONG_PRINCIPAL) {
+                        logger.warning("Unable to negotiate socket encryption possibly due to invalidate certificate ",
+                            socketState.handle, " ", ss);
                         socketState.close(true);
-                    } else if (ss != SEC_E_OK) {
+                    } else if(ss != SEC_E_OK) {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
                         socketState.close(true);
                     }
                 }
 
                 size_t consumed = canDo.length;
-                if (buffersIn[1].BufferType == SECBUFFER_EXTRA)
+                if(buffersIn[1].BufferType == SECBUFFER_EXTRA)
                     consumed -= buffersIn[1].cbBuffer;
 
                 ret = consumed > 0;
                 return consumed;
             });
 
-            if (!negotiating) {
+            if(!negotiating) {
                 updateStreamSizes(socketState);
             }
 
