@@ -80,26 +80,30 @@ version(Windows) {
                 TLS_PARAMETERS[1] tlsParameters;
 
                 if(socketState.cameFromServer) {
-                    enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_0_SERVER | SP_PROT_TLS1_1_SERVER |
-                        SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_0_SERVER |
-                        SP_PROT_DTLS1_2_SERVER;
+                    enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_1_SERVER |
+                        SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_2_SERVER;
 
                     static immutable Flags = [
-                        All, All & (~(SP_PROT_TLS1_0_SERVER)), All & (~(SP_PROT_TLS1_1_SERVER)),
-                        All & (~(SP_PROT_TLS1_2_SERVER)), All & (~(SP_PROT_TLS1_3_SERVER)),
-                        All & (~(SP_PROT_TLS1_0_SERVER | SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER))
+                        All, All & (~(SP_PROT_TLS1_SERVER | SP_PROT_DTLS1_SERVER)),
+                        All & (~(SP_PROT_TLS1_1_SERVER | SP_PROT_DTLS1_SERVER)),
+                        All & (~(SP_PROT_TLS1_2_SERVER | SP_PROT_DTLS1_2_SERVER)),
+                        All & (~(SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_2_SERVER)),
+                        All & (~(SP_PROT_TLS1_SERVER | SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER |
+                                SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_2_SERVER))
                     ];
                     static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
                     tlsParameters[0].grbitDisabledProtocols = Flags[protocol];
                 } else {
-                    enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_0_CLIENT | SP_PROT_TLS1_1_CLIENT |
-                        SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_0_CLIENT |
-                        SP_PROT_DTLS1_2_CLIENT;
+                    enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT |
+                        SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_2_CLIENT;
 
                     static immutable Flags = [
-                        All, All & (~(SP_PROT_TLS1_0_CLIENT)), All & (~(SP_PROT_TLS1_1_CLIENT)),
-                        All & (~(SP_PROT_TLS1_2_CLIENT)), All & (~(SP_PROT_TLS1_3_CLIENT)),
-                        All & (~(SP_PROT_TLS1_0_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT))
+                        All, All & (~(SP_PROT_TLS1_CLIENT | SP_PROT_DTLS1_CLIENT)),
+                        All & (~(SP_PROT_TLS1_1_CLIENT | SP_PROT_DTLS1_CLIENT)),
+                        All & (~(SP_PROT_TLS1_2_CLIENT | SP_PROT_DTLS1_2_CLIENT)),
+                        All & (~(SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_2_CLIENT)),
+                        All & (~(SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT |
+                                SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_2_CLIENT))
                     ];
                     static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
                     tlsParameters[0].grbitDisabledProtocols = Flags[protocol];
