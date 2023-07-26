@@ -2,16 +2,16 @@ module sidero.eventloop.internal.windows.bindings;
 
 version (Windows) {
     public import core.sys.windows.windows : SOCKET, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT, OVERLAPPED, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR, PLUID, WSAENOTSOCK, getsockname;
+        WAIT_TIMEOUT, OVERLAPPED, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR,
+        PLUID, WSAENOTSOCK, getsockname, GetLastError;
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
     public import core.sys.windows.sspi : SecPkgInfoW, CredHandle, SECPKG_CRED_INBOUND, SECPKG_CRED_OUTBOUND, TimeStamp, SEC_GET_KEY_FN,
-        SecPkgContext_StreamSizes,
-        CtxtHandle, PSecHandle, SECPKG_ATTR_STREAM_SIZES, SecBuffer, SecBufferDesc, SECBUFFER_STREAM_HEADER, SECBUFFER_DATA,
-        PCtxtHandle, SECBUFFER_STREAM_TRAILER, SECBUFFER_VERSION, SECBUFFER_EMPTY, SECBUFFER_EXTRA, SECBUFFER_TOKEN;
+        SecPkgContext_StreamSizes, CtxtHandle, PSecHandle, SECPKG_ATTR_STREAM_SIZES, SecBuffer, SecBufferDesc, SECBUFFER_STREAM_HEADER,
+        SECBUFFER_DATA, PCtxtHandle, SECBUFFER_STREAM_TRAILER, SECBUFFER_VERSION, SECBUFFER_EMPTY, SECBUFFER_EXTRA, SECBUFFER_TOKEN;
     public import core.sys.windows.security : SECURITY_STATUS, SEC_E_OK, SEC_I_RENEGOTIATE, SEC_I_CONTINUE_NEEDED,
-        SEC_E_INCOMPLETE_MESSAGE;
+        SEC_E_WRONG_PRINCIPAL, SEC_E_INCOMPLETE_MESSAGE;
     import core.stdc.config : c_long;
 
     alias WSAEVENT = HANDLE;
@@ -54,7 +54,8 @@ version (Windows) {
         SECURITY_STATUS AcceptSecurityContext(CredHandle*, PCtxtHandle, SecBufferDesc*, ULONG, ULONG, PCtxtHandle,
                 SecBufferDesc*, ULONG*, TimeStamp*);
         SECURITY_STATUS DeleteSecurityContext(PCtxtHandle);
-        SECURITY_STATUS InitializeSecurityContextW(CredHandle*,PCtxtHandle,wchar*,ULONG,ULONG,ULONG,SecBufferDesc*,ULONG,PCtxtHandle,SecBufferDesc*,ULONG*,TimeStamp*);
+        SECURITY_STATUS InitializeSecurityContextW(CredHandle*, PCtxtHandle, wchar*, ULONG, ULONG, ULONG,
+                SecBufferDesc*, ULONG, PCtxtHandle, SecBufferDesc*, ULONG*, TimeStamp*);
     }
 
     enum {

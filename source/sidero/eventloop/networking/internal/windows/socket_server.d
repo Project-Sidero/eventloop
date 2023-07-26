@@ -351,7 +351,7 @@ version (Windows) {
                     }
                 }
 
-                Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
+                Socket acquiredSocket = Socket.fromListen(listenSocketState.onShutdownHandler, listenSocketState.protocol, localAddress, remoteAddress);
                 acquiredSocket.state.handle = acceptedSocket;
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
                 acquiredSocket.state.cameFromServer = true;

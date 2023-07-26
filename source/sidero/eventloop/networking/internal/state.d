@@ -35,6 +35,8 @@ package(sidero.eventloop):
     bool validateCertificates;
 
     ListenSocketOnAccept onAcceptHandler;
+    SocketShutdownCallback onShutdownHandler;
+
     ConcurrentHashMap!(PlatformListenSocketKey, PlatformListenSocket) platformSockets;
 
 @safe nothrow @nogc:
@@ -109,6 +111,7 @@ package(sidero.eventloop):
     shared(bool) isAlive;
 
     bool cameFromServer;
+    SocketShutdownCallback onShutdownHandler;
 
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
@@ -134,17 +137,14 @@ package(sidero.eventloop):
 
             if (refCount == 0) {
                 encryptionState.cleanup;
-                platform.shutdown();
-                platform.cleanup;
-
-                if (atomicLoad(isAlive))
-                    platform.forceClose;
+                platform.shutdown(&this);
+                platform.forceClose(&this);
 
                 RCAllocator allocator = this.allocator;
                 allocator.dispose(&this);
             } else if (refCount == 1 && atomicLoad(isAlive)) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
-                platform.shutdown;
+                platform.shutdown(&this);
             }
         }
     }
@@ -166,16 +166,22 @@ package(sidero.eventloop):
             return;
 
         atomicStore(isAlive, false);
-        platform.shutdown();
+        platform.shutdown(&this);
         rc(false);
     }
 
     void close(bool gracefully) scope @trusted {
-        platform.shutdown();
+        import core.atomic : atomicLoad, atomicStore;
 
-        if (!gracefully || rawWritingState.protect(() { return !rawWritingState.haveData; }) && !readingState.inProgress) {
-            platform.forceClose();
-            unpin;
+        if (!atomicLoad(isAlive))
+            return;
+
+        platform.shutdown(&this);
+
+        if (!gracefully || (rawWritingState.protect(() { return !rawWritingState.haveData; }) && !readingState.inProgress)) {
+            platform.forceClose(&this);
+            atomicStore(isAlive, false);
+            rc(false);
         }
     }
 
@@ -262,6 +268,9 @@ struct ReadingState {
         Slice!ubyte dataToCallWith;
 
         socketState.encryptionState.readData(socketState, (DynamicArray!ubyte availableData) @trusted {
+            if (toCall is null)
+                return 0;
+
             size_t tryingToConsume;
 
             bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) {
@@ -295,10 +304,9 @@ struct ReadingState {
                 subsetFromAvailable(canDo);
                 wantedAmount -= canDo;
                 success = wantedAmount == 0;
-            } else if (wantedAmount == 0) {
+            } else if (wantedAmount == 0 && stopArray.length > 0) {
                 // ok stop condition is a little more complicated...
 
-                assert(stopArray.length > 0);
                 size_t maxInFirst = stopArray.length - 1;
                 if (maxInFirst > appendingArray.length)
                     maxInFirst = appendingArray.length;
@@ -332,10 +340,11 @@ struct ReadingState {
             }
 
             if (success) {
+                assert(toCall !is null);
                 calling = toCall;
-                dataToCallWith = appendingArray.asReadOnly();
-
                 toCall = null;
+
+                dataToCallWith = appendingArray.asReadOnly();
                 appendingArray = typeof(appendingArray).init;
 
                 return tryingToConsume;
@@ -343,13 +352,17 @@ struct ReadingState {
                 return 0;
         });
 
-        if (success && calling !is null) {
+        if (success) {
+            assert(calling !is null);
+
             Socket socket;
             socket.state = socketState;
             socket.state.rc(true);
 
             calling(socket, dataToCallWith);
         } else {
+            assert(calling is null);
+
             if (!socketState.rawReadingState.protectTriggeringOfRead(() {
                     return socketState.rawReadingState.currentlyTriggered;
                 }) && atomicLoad(socketState.isAlive)) {
@@ -459,6 +472,14 @@ struct RawWritingState {
         mutex.pureLock;
         toSend ~= data;
         mutex.unlock;
+    }
+
+    bool isWaitingOnDataToSend() {
+        mutex.pureLock;
+        scope (exit)
+            mutex.unlock;
+
+        return waitingOnDataToSend > 0;
     }
 
     bool protect(scope bool delegate() @safe nothrow @nogc del) scope {

@@ -15,6 +15,8 @@ export @safe nothrow @nogc:
 alias ListenSocketOnAccept = void function(Socket) @safe nothrow @nogc;
 ///
 alias SocketReadCallback = void function(Socket socket, Slice!ubyte data) @safe nothrow @nogc;
+///
+alias SocketShutdownCallback = void function(Socket socket) @safe nothrow @nogc;
 
 ///
 struct ListenSocket {
@@ -58,7 +60,7 @@ export @safe nothrow @nogc:
     }
 
     /// Listen on port
-    static Result!ListenSocket from(ListenSocketOnAccept handler, NetworkAddress address, Socket.Protocol protocol,
+    static Result!ListenSocket from(ListenSocketOnAccept onAcceptCallback, SocketShutdownCallback onShutdownCallback, NetworkAddress address, Socket.Protocol protocol,
             Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate certificate = Certificate.init,
             bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
@@ -71,7 +73,8 @@ export @safe nothrow @nogc:
         ret.state = allocator.make!ListenSocketState;
         ret.state.allocator = allocator;
 
-        ret.state.onAcceptHandler = handler;
+        ret.state.onAcceptHandler = onAcceptCallback;
+        ret.state.onShutdownHandler = onShutdownCallback;
         ret.state.address = address;
         ret.state.protocol = protocol;
         ret.state.encryption = encryption;
@@ -155,7 +158,8 @@ export @safe nothrow @nogc:
         if (!state.readingState.requestFromUser(endCondition, onRecieve))
             return false;
 
-        return state.triggerRead(state);
+        state.triggerRead(state);
+        return true;
     }
 
     ///
@@ -210,7 +214,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Result!Socket connectTo(NetworkAddress address, Socket.Protocol protocol, bool keepAlive = true,
+    static Result!Socket connectTo(SocketShutdownCallback onShutdownCallback, NetworkAddress address, Socket.Protocol protocol, bool keepAlive = true,
             scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
@@ -218,6 +222,7 @@ export @safe nothrow @nogc:
         Socket ret;
         ret.state = allocator.make!SocketState;
         ret.state.allocator = allocator;
+        ret.state.onShutdownHandler = onShutdownCallback;
 
         ret.state.protocol = protocol;
 
@@ -227,7 +232,7 @@ export @safe nothrow @nogc:
         return typeof(return)(ret);
     }
 
-    package(sidero.eventloop) static Socket fromListen(Protocol protocol, NetworkAddress localAddress,
+    package(sidero.eventloop) static Socket fromListen(SocketShutdownCallback onShutdownCallback, Protocol protocol, NetworkAddress localAddress,
             NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
@@ -235,6 +240,7 @@ export @safe nothrow @nogc:
         Socket ret;
         ret.state = allocator.make!SocketState;
         ret.state.allocator = allocator;
+        ret.state.onShutdownHandler = onShutdownCallback;
 
         ret.state.protocol = protocol;
         ret.state.localAddress = localAddress;

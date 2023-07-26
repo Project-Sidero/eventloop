@@ -219,7 +219,7 @@ version (Windows) {
 
             RCAllocator allocator = globalAllocator();
 
-            while (data.length > 0) {
+            while (data.length > 0 && maxEncryptedPacketSize > 0) {
                 auto todo = data.unsafeGetLiteral[0 .. data.length >= encryptedMessageSize ? encryptedMessageSize: data.length];
 
                 ubyte[] fullBuffer = allocator.makeArray!ubyte(maxEncryptedPacketSize);
@@ -527,7 +527,10 @@ version (Windows) {
                     return 0;
 
                 if (!negotiating) {
-                    if (ss != SEC_E_OK) {
+                    if (ss == SEC_E_WRONG_PRINCIPAL) {
+                        logger.warning("Unable to negotiate socket encryption possibly due to invalidate certificate ", socketState.handle, " ", ss);
+                        socketState.close(true);
+                    } else if (ss != SEC_E_OK) {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
                         socketState.close(true);
                     }

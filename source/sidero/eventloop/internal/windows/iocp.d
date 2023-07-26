@@ -139,7 +139,7 @@ version (Windows) {
                     if (atomicLoad(socket.state.isShutdown) && socket.state.rawWritingState.protect(() {
                             return !socket.state.rawWritingState.haveData;
                         }) && !socket.state.readingState.inProgress)
-                        socket.state.platform.forceClose();
+                        socket.state.platform.forceClose(socket.state);
                 }
             }
         }

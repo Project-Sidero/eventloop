@@ -25,7 +25,7 @@ version (Windows) {
         enum SockAddressMaxSize = SockAddress6Size > SockAddress4Size ? SockAddress6Size : SockAddress4Size;
 
         ubyte[SockAddressMaxSize] localAddressBuffer, remoteAddressBuffer;
-        int localAddressSize, remoteAddressSize;
+        int localAddressSize = SockAddressMaxSize, remoteAddressSize;
         short addressFamily, socketType;
 
         {
@@ -134,7 +134,7 @@ version (Windows) {
             NetworkAddress localAddress;
             sockaddr_in* localAddressPtr = cast(sockaddr_in*)localAddressBuffer.ptr;
 
-            if (getsockname(socketState.handle, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) == 0) {
+            if (getsockname(socketState.handle, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
                 logger.error("Error could not acquire local network address for socket client ", address, " ", GetLastError());
                 closesocket(socketState.handle);
                 CloseHandle(socketState.onCloseEvent);
@@ -205,8 +205,9 @@ version (Windows) {
                 logger.error("Error could not enumerate WSA network socket events with code ", error, " ", socketState.handle);
             }
         } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
+            socketState.onShutdownReadWriteEverything(socketState);
+
             logger.trace("Socket closed ", socketState.handle);
-            closesocket(socketState.handle);
             socketState.unpin();
         } else {
             logger.error("Error unknown socket event ", wsaEvent, socketState.handle);
