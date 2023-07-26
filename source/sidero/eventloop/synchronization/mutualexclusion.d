@@ -297,7 +297,7 @@ struct PetersonLockInline {
     private @PrettyPrintIgnore {
         Thread[2] threads;
         shared(bool)[2] flags;
-        ulong currentThreadId;
+        shared(ulong) currentThreadId;
     }
 
     @disable this(this);
