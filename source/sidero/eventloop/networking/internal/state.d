@@ -106,6 +106,8 @@ package(sidero.eventloop):
     shared(bool) isAlive;
 
     bool cameFromServer;
+
+    bool inShutdownProcess;
     SocketShutdownCallback onShutdownHandler;
 
     Socket.Protocol protocol;
@@ -128,13 +130,16 @@ package(sidero.eventloop):
         else {
             ptrdiff_t refCount = atomicDecrementAndLoad(this.refCount, 1);
 
-            if(refCount == 0) {
+            if(inShutdownProcess) {
+            } else if(refCount == 0) {
+                inShutdownProcess = true;
+
                 encryptionState.cleanup;
                 platform.shutdown(&this);
                 platform.forceClose(&this);
 
-                RCAllocator allocator = this.allocator;
-                allocator.dispose(&this);
+                RCAllocator alloc = this.allocator;
+                alloc.dispose(&this);
             } else if(refCount == 1 && atomicLoad(isAlive)) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
                 platform.shutdown(&this);

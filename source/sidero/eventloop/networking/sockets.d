@@ -218,12 +218,17 @@ export @safe nothrow @nogc:
         if(allocator.isNull)
             allocator = globalAllocator();
 
+        if(!ensureItIsSetup)
+            return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
+
         Socket ret;
         ret.state = allocator.make!SocketState;
         ret.state.allocator = allocator;
         ret.state.onShutdownHandler = onShutdownCallback;
 
         ret.state.protocol = protocol;
+
+        assert(!ret.state.allocator.isNull);
 
         auto errorResult = ret.state.startUp(address, keepAlive);
         if(!errorResult)
