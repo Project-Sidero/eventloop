@@ -7,7 +7,7 @@ import sidero.base.internal.atomic;
 package(sidero.eventloop.coroutine):
 
 struct CoroutinePair(ResultType) {
-    private {
+    package(sidero.eventloop.coroutine) {
         CoroutineDescriptor!ResultType* descriptor;
         CoroutineState!ResultType* state;
     }

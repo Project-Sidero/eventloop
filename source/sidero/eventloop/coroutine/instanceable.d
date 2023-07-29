@@ -9,7 +9,7 @@ import sidero.base.internal.atomic;
 
 ///
 struct InstantiableCoroutine(ResultType, Args...) {
-    private {
+    package(sidero.eventloop.coroutine) {
         CoroutinePair!ResultType pair;
         ConstructionAStateWrapper constructionState;
     }
@@ -37,7 +37,7 @@ export @safe nothrow @nogc:
 
     ///
     bool canInstance() scope const {
-        return pair.descriptor !is null && pair.canInstance();
+        return pair.canInstance();
     }
 
     ///
@@ -54,12 +54,12 @@ export @safe nothrow @nogc:
         InstantiableCoroutine!ResultType ret;
 
         if(this.constructionState.isNull) {
-            ret.pair.state = cast(CoroutineState!ResultType*)ret.pair.descriptor.base.createInstanceState(allocator,
+            ret.pair.state = cast(CoroutineState!ResultType*)this.pair.descriptor.base.createInstanceState(allocator,
                     cast(void*)&argsStorage);
         } else {
-            ret.pair.state = cast(CoroutineState!ResultType*)constructionState.state.createInstanceState((void* actualArgsStorage) {
-                ret.pair.state = cast(CoroutineState!ResultType*)ret.pair.descriptor.base.createInstanceState(allocator,
-                    cast(void*)&actualArgsStorage);
+            ret.pair.state = cast(CoroutineState!ResultType*)constructionState.state.createInstanceState(
+                    (void* actualArgsStorage) @trusted {
+                return ret.pair.descriptor.base.createInstanceState(allocator, cast(void*)&actualArgsStorage);
             }, cast(void*)&argsStorage);
         }
 

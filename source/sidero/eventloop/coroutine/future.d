@@ -6,7 +6,7 @@ import sidero.base.errors;
 
 ///
 struct Future(ResultType) {
-    private {
+    package(sidero.eventloop.coroutine) {
         CoroutinePair!ResultType pair;
     }
 

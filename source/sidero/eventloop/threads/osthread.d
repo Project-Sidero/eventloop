@@ -540,8 +540,8 @@ unittest {
     Thread[10] threads;
 
     static void handleIt(shared(int)* counter, shared(bool)* goForIt) nothrow {
-        while(!atomicLoad(goForIt)) {
-            pause;
+        while(!atomicLoad(*goForIt)) {
+            atomicFence;
         }
 
         int prior;
@@ -549,7 +549,7 @@ unittest {
         do {
             prior = atomicLoad(*counter);
         }
-        while(!cas(counter, prior, prior + 1));
+        while(!cas(*counter, prior, prior + 1));
     }
 
     foreach(ref thread; threads) {

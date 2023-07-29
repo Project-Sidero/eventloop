@@ -4,7 +4,7 @@ import sidero.eventloop.handles;
 
 ///
 struct CoroutineCondition {
-    private {
+    package(sidero.eventloop.coroutine) {
         SystemHandle systemHandle;
         GenericCoroutine coroutine;
     }

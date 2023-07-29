@@ -4,6 +4,7 @@ import sidero.eventloop.coroutine.condition;
 import sidero.eventloop.coroutine.generic;
 import sidero.eventloop.coroutine.future;
 import sidero.eventloop.coroutine.instanceable;
+import sidero.eventloop.handles;
 import sidero.base.allocators;
 import sidero.base.errors;
 import sidero.base.internal.atomic;
@@ -27,7 +28,7 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
     }(), "Stages must be an enum of 0 .. length in values and may have duplicates sequentially");
 
     ///
-    alias CoroutineResultType = CoroutineResult!(Stages, ResultType);
+    alias CoroutineResultType = CoroutineResult!(ResultType);
     ///
     alias FunctionPrototype = CoroutineResultType function(scope ref State) @safe nothrow @nogc;
 
@@ -152,10 +153,10 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
 }
 
 ///
-struct CoroutineResult(Stages, ResultType = void) {
+struct CoroutineResult(ResultType = void) {
     private {
         Tag tag;
-        Stages stage;
+        size_t stage;
         ErrorInfo error;
 
         CoroutineCondition condition;

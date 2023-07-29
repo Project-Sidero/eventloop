@@ -7,7 +7,7 @@ import sidero.base.allocators;
 
 ///
 struct GenericCoroutine {
-    private {
+    package(sidero.eventloop.coroutine) {
         CoroutineAPair pair;
     }
 
