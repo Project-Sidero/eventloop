@@ -36,7 +36,7 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
         FunctionPrototype[__traits(allMembers, Stages).length] functions;
     }
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     void opIndexAssign(FunctionPrototype func, Stages stage) scope {
@@ -94,7 +94,7 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
         static foreach(offset, Stage; __traits(allMembers, Stages)) {
             pair.descriptor.base.userFunctions[offset] = this.functions[__traits(getMember, Stages, Stage)];
             pair.descriptor.base.functions[offset] = (scope CoroutineAllocatorMemoryDescriptor* descriptor,
-                scope CoroutineAllocatorMemoryState* state) @trusted {
+                    scope CoroutineAllocatorMemoryState* state) @trusted {
                 CoroutineDescriptor!ResultType* actualDescriptor = cast(CoroutineDescriptor!ResultType*)descriptor;
                 CoroutineState2* actualState = cast(CoroutineState2*)state;
 
@@ -104,25 +104,24 @@ struct CoroutineBuilder(State, Stages, ResultType = void, Args...) {
                 CoroutineResultType result = actualFunction(actualState.userState);
 
                 final switch(result.tag) {
-                    case CoroutineResultType.Tag.Value:
-                        actualState.result = Result!ResultType(result.resultValue);
-                        atomicStore(actualState.base.isComplete, true);
-                        actualState.base.nextFunctionTag = -1;
-                        break;
-                    case CoroutineResultType.Tag.Error:
-                        actualState.result = Result!ResultType(result.error);
-                        atomicStore(actualState.base.isComplete, true);
-                        actualState.base.nextFunctionTag = -2;
-                        break;
-                    case CoroutineResultType.Tag.Stage:
-                        actualState.base.conditionToContinue = result.condition;
-                        actualState.base.nextFunctionTag = cast(ptrdiff_t)result.stage;
-                        break;
+                case CoroutineResultType.Tag.Value:
+                    actualState.result = Result!ResultType(result.resultValue);
+                    atomicStore(actualState.base.isComplete, true);
+                    actualState.base.nextFunctionTag = -1;
+                    break;
+                case CoroutineResultType.Tag.Error:
+                    actualState.result = Result!ResultType(result.error);
+                    atomicStore(actualState.base.isComplete, true);
+                    actualState.base.nextFunctionTag = -2;
+                    break;
+                case CoroutineResultType.Tag.Stage:
+                    actualState.base.conditionToContinue = result.condition;
+                    actualState.base.nextFunctionTag = cast(ptrdiff_t)result.stage;
+                    break;
                 }
             };
         }
 
-        pair.rc(true);
         InstantiableCoroutine!(ResultType, Args) ret;
         ret.pair = pair;
 
@@ -172,7 +171,7 @@ struct CoroutineResult(ResultType = void) {
         }
     }
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     this(scope ref CoroutineResult other) scope @trusted {
         this.tupleof = other.tupleof;
@@ -209,7 +208,7 @@ unittest {
         static struct State {
             int value;
 
-            @safe nothrow @nogc:
+        @safe nothrow @nogc:
 
             this(int value) {
                 this.value = value;
@@ -221,18 +220,19 @@ unittest {
             Add,
         }
 
-        CoroutineBuilder!(State, Stages, int, int) builder;
+        alias Builder = CoroutineBuilder!(State, Stages, int, int);
+        Builder builder;
 
         builder[Stages.Multiply] = (scope ref state) {
             state.value *= 3;
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
-            return typeof(builder).nextStage(Stages.Add);
+            return Builder.nextStage(Stages.Add);
         };
 
         builder[Stages.Add] = (scope ref state) {
             state.value += 2;
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
-            return typeof(builder).complete(state.value);
+            return Builder.complete(state.value);
         };
 
         auto got = builder.build();
@@ -265,7 +265,7 @@ unittest {
         static struct State {
             int value;
 
-            @safe nothrow @nogc:
+        @safe nothrow @nogc:
 
             this(int value) {
                 this.value = value;
@@ -277,18 +277,19 @@ unittest {
             Add,
         }
 
-        CoroutineBuilder!(State, Stages, int, int) builder;
+        alias Builder = CoroutineBuilder!(State, Stages, int, int);
+        Builder builder;
 
         builder[Stages.Multiply] = (scope ref state) {
             state.value *= 3;
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
-            return typeof(builder).nextStage(Stages.Add);
+            return Builder.nextStage(Stages.Add);
         };
 
         builder[Stages.Add] = (scope ref state) {
             state.value += 2;
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
-            return typeof(builder).complete(state.value);
+            return Builder.complete(state.value);
         };
 
         auto got = builder.build();
@@ -305,7 +306,7 @@ unittest {
 
             Future!int worker;
 
-            @safe nothrow @nogc:
+        @safe nothrow @nogc:
 
             this(int value) {
                 this.value = value;
@@ -356,25 +357,27 @@ unittest {
 
     while(!coI.isComplete) {
         final switch(coI.condition.waitingOn) {
-            case CoroutineCondition.WaitingOn.Nothing:
-                break;
-            case CoroutineCondition.WaitingOn.SystemHandle:
-                assert(!coI.condition.systemHandle.isNull);
-                assert(coI.condition.systemHandle.waitForEvent !is null);
+        case CoroutineCondition.WaitingOn.Nothing:
+            break;
+        case CoroutineCondition.WaitingOn.ExternalTrigger:
+            assert(0);
+        case CoroutineCondition.WaitingOn.SystemHandle:
+            assert(!coI.condition.systemHandle.isNull);
+            assert(coI.condition.systemHandle.waitForEvent !is null);
 
-                auto result = coI.condition.systemHandle.waitForEvent(coI.condition.systemHandle.handle);
-                assert(result);
-                break;
-            case CoroutineCondition.WaitingOn.Coroutine:
-                auto coI2 = coI.condition.coroutine;
+            auto result = coI.condition.systemHandle.waitForEvent(coI.condition.systemHandle.handle);
+            assert(result);
+            break;
+        case CoroutineCondition.WaitingOn.Coroutine:
+            auto coI2 = coI.condition.coroutine;
 
-                while(!coI2.isComplete) {
-                    assert(coI2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
+            while(!coI2.isComplete) {
+                assert(coI2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
 
-                    ErrorResult er = coI2.resume();
-                    assert(er);
-                }
-                break;
+                ErrorResult er = coI2.resume();
+                assert(er);
+            }
+            break;
         }
 
         ErrorResult er = coI.resume();

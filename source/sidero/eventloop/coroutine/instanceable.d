@@ -9,7 +9,7 @@ import sidero.base.internal.atomic;
 
 ///
 struct InstantiableCoroutine(ResultType, Args...) {
-    package(sidero.eventloop.coroutine) {
+    package(sidero.eventloop) {
         CoroutinePair!ResultType pair;
         ConstructionAStateWrapper constructionState;
     }
@@ -22,7 +22,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    ~this() {
+    ~this() scope {
     }
 
     ///

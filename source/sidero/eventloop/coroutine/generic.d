@@ -11,7 +11,7 @@ struct GenericCoroutine {
         CoroutineAPair pair;
     }
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     this(return scope ref GenericCoroutine other) scope {
@@ -19,7 +19,7 @@ struct GenericCoroutine {
     }
 
     ///
-    ~this() {
+    ~this() scope {
     }
 
     ///

@@ -18,7 +18,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    ~this() {
+    ~this() scope {
     }
 
     ///

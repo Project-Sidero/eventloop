@@ -105,3 +105,16 @@ void shutdownWorkers() @trusted {
     threadPool = typeof(threadPool).init;
     isInitialized = false;
 }
+
+bool isWorkerThread(Thread other) @trusted {
+    mutex.pureLock;
+    scope(exit)
+        mutex.unlock;
+
+    foreach(thread; threadPool) {
+        if(thread == other)
+            return true;
+    }
+
+    return false;
+}

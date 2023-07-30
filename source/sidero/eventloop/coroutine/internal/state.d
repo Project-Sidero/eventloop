@@ -4,6 +4,46 @@ import sidero.base.errors;
 import sidero.base.allocators;
 import sidero.base.internal.atomic;
 
+package(sidero.eventloop):
+
+CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)() {
+    assert(__ctfe);
+
+    CoroutinePair!ResultType pair;
+    pair.descriptor = new CoroutineDescriptor!ResultType;
+
+    alias CoroutineState2 = CoroutineState!ResultType;
+
+    pair.descriptor.base.createInstanceState = (RCAllocator allocator, void* args) @trusted nothrow @nogc {
+        CoroutineState2* ret = allocator.make!CoroutineState2;
+
+        ret.base.allocator = allocator;
+        ret.base.toDeallocate = (cast(void*)ret)[0 .. CoroutineState2.sizeof];
+        ret.base.deinit = (scope void[] memory) @trusted nothrow @nogc {
+            CoroutineState2* state = cast(CoroutineState2*)memory.ptr;
+            state.destroy;
+        };
+
+        auto arg = *cast(Result!ResultType***)args;
+        *arg = &ret.result;
+
+        ret.base.conditionToContinue.isExternalTrigger = true;
+        return &ret.base;
+    };
+
+    pair.descriptor.base.functions = new CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1];
+    pair.descriptor.base.functions[0] = (scope CoroutineAllocatorMemoryDescriptor* descriptor,
+            scope CoroutineAllocatorMemoryState* state) @trusted nothrow @nogc {
+        CoroutineState2* actualState = cast(CoroutineState2*)state;
+        actualState.base.conditionToContinue = CoroutineCondition.init;
+
+        atomicStore(actualState.base.isComplete, true);
+        actualState.base.nextFunctionTag = -1;
+    };
+
+    return pair;
+}
+
 package(sidero.eventloop.coroutine):
 
 struct CoroutinePair(ResultType) {
@@ -54,7 +94,7 @@ export @safe nothrow @nogc:
     }
 
     bool isWaiting() scope const {
-        return state !is null && !state.base.conditionToContinue.isNull;
+        return state !is null && state.base.conditionToContinue.waitingOn != CoroutineCondition.WaitingOn.Nothing;
     }
 
     CoroutineAPair asGeneric() scope @trusted {
@@ -95,7 +135,7 @@ export @safe nothrow @nogc:
             rc(true);
     }
 
-    ~this() {
+    ~this() scope {
         if(!this.isNull)
             rc(false);
     }
@@ -127,7 +167,7 @@ export @safe nothrow @nogc:
     }
 
     bool isWaiting() scope {
-        return state !is null && !state.conditionToContinue.isNull;
+        return state !is null && state.conditionToContinue.waitingOn != CoroutineCondition.WaitingOn.Nothing;
     }
 }
 
@@ -145,8 +185,10 @@ struct CoroutineAllocatorMemoryDescriptor {
 export @safe nothrow @nogc:
 
      ~this() {
-        parent.allocator.dispose(userFunctions);
-        parent.allocator.dispose(functions);
+        if(!parent.allocator.isNull) {
+            parent.allocator.dispose(userFunctions);
+            parent.allocator.dispose(functions);
+        }
     }
 }
 
@@ -162,7 +204,7 @@ struct CoroutineAllocatorMemoryState {
 
 struct CoroutineAllocatorMemory {
     RCAllocator allocator;
-    shared(ptrdiff_t) refCount;
+    shared(ptrdiff_t) refCount = 1;
     void[] toDeallocate;
 
     void function(scope void[] memory) @safe nothrow @nogc deinit;
@@ -177,7 +219,8 @@ export @safe nothrow @nogc:
             if(this.deinit !is null)
                 this.deinit(toDeallocate);
 
-            allocator.dispose(toDeallocate);
+            if(!allocator.isNull)
+                allocator.dispose(toDeallocate);
         } else if(add)
             atomicIncrementAndLoad(refCount, 1);
     }
