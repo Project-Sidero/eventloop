@@ -4,7 +4,7 @@ import sidero.eventloop.handles;
 
 ///
 struct CoroutineCondition {
-    package(sidero.eventloop.coroutine) {
+    package(sidero.eventloop) {
         SystemHandle systemHandle;
         GenericCoroutine coroutine;
         bool isExternalTrigger;

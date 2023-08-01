@@ -2,7 +2,6 @@ module sidero.eventloop.internal.windows.iocp;
 import sidero.eventloop.internal.workers;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.threads;
-import sidero.eventloop.coroutine.condition;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.internal.atomic;
@@ -141,33 +140,8 @@ version(Windows) {
                 auto workToDo = coroutinesForWorkers.pop;
 
                 if(workToDo && !workToDo.isNull) {
-                    auto errorResult = workToDo.resume;
-
-                    if(!errorResult) {
-                        logger.warning("Coroutine worker failed: ", errorResult, " on ", Thread.self);
-                    } else {
-                        final switch(workToDo.condition.waitingOn) {
-                        case CoroutineCondition.WaitingOn.Nothing:
-                            // nothing to wait on, yahoo!
-
-                            if(!workToDo.isComplete) {
-                                // is not complete, so we gotta put it in queue once again
-                                coroutinesForWorkers.push(workToDo);
-                                triggerACoroutineExecution(1);
-                            }
-                            break;
-                        case CoroutineCondition.WaitingOn.ExternalTrigger:
-                            // what? This shouldn't be possible (right now anyway).
-                            logger.error("Coroutine is waiting on an external trigger, but was ran ", Thread.self);
-                            assert(0);
-
-                        case CoroutineCondition.WaitingOn.Coroutine:
-                        case CoroutineCondition.WaitingOn.SystemHandle:
-                            // TODO: register coroutine as waiting on something
-                            break;
-                        }
-
-                    }
+                    auto errorResult = workToDo.unsafeResume;
+                    coroutineCompletedTask(workToDo, errorResult);
                 }
             } else {
                 logger.debug_("Got IOCP work ", numberOfBytesTransferred, " ", completionKey, " ", result, " ", Thread.self);

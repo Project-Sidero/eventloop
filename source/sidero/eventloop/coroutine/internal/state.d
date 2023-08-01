@@ -31,6 +31,15 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)() {
         return &ret.base;
     };
 
+    pair.descriptor.base.setErrorResult = (scope CoroutineAllocatorMemoryState* state, ErrorInfo errorInfo) @trusted nothrow @nogc {
+        CoroutineState2* actualState = cast(CoroutineState2*)state;
+        actualState.base.conditionToContinue = CoroutineCondition.init;
+        actualState.result = Result!ResultType(errorInfo.info, errorInfo.moduleName, errorInfo.line);
+
+        atomicStore(actualState.base.isComplete, true);
+        actualState.base.nextFunctionTag = -2;
+    };
+
     pair.descriptor.base.functions = new CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1];
     pair.descriptor.base.functions[0] = (scope CoroutineAllocatorMemoryDescriptor* descriptor,
             scope CoroutineAllocatorMemoryState* state) @trusted nothrow @nogc {
@@ -181,6 +190,7 @@ struct CoroutineAllocatorMemoryDescriptor {
     FunctionPrototype[] functions;
 
     CoroutineAllocatorMemoryState* function(RCAllocator allocator, void* args) @safe nothrow @nogc createInstanceState;
+    void function(scope CoroutineAllocatorMemoryState* state, ErrorInfo errorInfo) @safe nothrow @nogc setErrorResult;
 
 export @safe nothrow @nogc:
 

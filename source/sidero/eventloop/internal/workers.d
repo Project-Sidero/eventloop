@@ -1,12 +1,14 @@
 module sidero.eventloop.internal.workers;
 import sidero.eventloop.threads;
 import sidero.eventloop.coroutine.generic;
+import sidero.eventloop.coroutine.condition;
 import sidero.base.system : cpuCount;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.allocators;
+import sidero.base.errors;
 import sidero.base.synchronization.mutualexclusion;
 
 version(Windows) {
@@ -23,6 +25,9 @@ version(none) {
 
     bool initializeWorkerMechanism(size_t count) {
         return false;
+    }
+
+    void triggerACoroutineMechanism(size_t count) {
     }
 
     void workerProc() {
@@ -144,4 +149,65 @@ void triggerACoroutineExecution(size_t estimate = 0) @trusted {
         triggerACoroutineMechanism(coroutinesForWorkers.count);
     else
         triggerACoroutineMechanism(estimate);
+}
+
+void addCoroutineTask(GenericCoroutine coroutine) @trusted {
+    if(coroutine.isNull)
+        return;
+
+    final switch(coroutine.condition.waitingOn) {
+    case CoroutineCondition.WaitingOn.Nothing:
+        // nothing to wait on, yahoo!
+
+        if(!coroutine.isComplete) {
+            // is not complete, so we gotta put it in queue once again
+            coroutinesForWorkers.push(coroutine);
+            triggerACoroutineExecution(1);
+        }
+        break;
+    case CoroutineCondition.WaitingOn.ExternalTrigger:
+        // what? This shouldn't be possible (right now anyway).
+        logger.error("Coroutine is waiting on an external trigger, but was ran ", Thread.self);
+        assert(0);
+
+    case CoroutineCondition.WaitingOn.Coroutine:
+        // TODO: coroutinesWaitingOnOthers[coroutine.condition.coroutine] ~= coroutine;
+    break;
+
+    case CoroutineCondition.WaitingOn.SystemHandle:
+        // TODO: register coroutine as waiting on something
+        break;
+    }
+}
+
+void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult) @trusted {
+    mutex.pureLock;
+    scope(exit)
+        mutex.unlock;
+
+    if(errorResult) {
+        // ok no error
+
+        // TODO: unblock other coroutines, unblock
+        /*
+        foreach(co; coroutinesWaitingOnOthers[coroutine]) {
+            co.unblock;
+            coroutinesForWorkers.push(co);
+        }
+        coroutineWaitingOnOthers.remove(coroutine);
+         */
+
+        coroutinesForWorkers.push(coroutine);
+        triggerACoroutineMechanism(coroutinesForWorkers.count);
+    } else {
+        logger.warning("Coroutine worker failed: ", errorResult, " on ", Thread.self);
+
+        // TODO: complete dependent coroutines with error, setErrorResult
+        /*
+        foreach(co; coroutinesWaitingOnOthers[coroutine]) {
+            co.setErrorResult(errorResult);
+        }
+        coroutineWaitingOnOthers.remove(coroutine);
+         */
+    }
 }

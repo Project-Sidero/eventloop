@@ -91,6 +91,15 @@ export @safe nothrow @nogc:
             return &ret.parent.base;
         };
 
+        pair.descriptor.base.setErrorResult = (scope CoroutineAllocatorMemoryState* state, ErrorInfo errorInfo) @trusted nothrow @nogc {
+            CoroutineState2* actualState = cast(CoroutineState2*)state;
+            actualState.base.conditionToContinue = CoroutineCondition.init;
+            actualState.result = Result!ResultType(errorInfo.info, errorInfo.moduleName, errorInfo.line);
+
+            atomicStore(actualState.base.isComplete, true);
+            actualState.base.nextFunctionTag = -2;
+        };
+
         static foreach(offset, Stage; __traits(allMembers, Stages)) {
             pair.descriptor.base.userFunctions[offset] = this.functions[__traits(getMember, Stages, Stage)];
             pair.descriptor.base.functions[offset] = (scope CoroutineAllocatorMemoryDescriptor* descriptor,
@@ -245,12 +254,11 @@ unittest {
 
     auto co2 = co.makeInstance(RCAllocator.init, 4);
     assert(!co2.isNull);
-    assert(co2.isInstantiated);
 
     while(!co2.isComplete) {
         assert(co2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
 
-        ErrorResult er = co2.resume();
+        ErrorResult er = co2.unsafeResume();
         assert(er);
     }
 
@@ -353,7 +361,6 @@ unittest {
 
     auto coI = co.makeInstance(RCAllocator.init, 4);
     assert(!coI.isNull);
-    assert(coI.isInstantiated);
 
     while(!coI.isComplete) {
         final switch(coI.condition.waitingOn) {
@@ -374,13 +381,13 @@ unittest {
             while(!coI2.isComplete) {
                 assert(coI2.condition.waitingOn == CoroutineCondition.WaitingOn.Nothing);
 
-                ErrorResult er = coI2.resume();
+                ErrorResult er = coI2.unsafeResume();
                 assert(er);
             }
             break;
         }
 
-        ErrorResult er = coI.resume();
+        ErrorResult er = coI.unsafeResume();
         assert(er);
     }
 

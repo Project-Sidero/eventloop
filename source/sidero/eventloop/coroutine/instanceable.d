@@ -31,11 +31,6 @@ export @safe nothrow @nogc:
     }
 
     ///
-    bool isInstantiated() scope const {
-        return pair.state !is null;
-    }
-
-    ///
     bool canInstance() scope const {
         return pair.canInstance();
     }
@@ -101,11 +96,6 @@ export @safe nothrow @nogc:
         return ret;
     }
 
-    /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
-    ErrorResult resume() scope {
-        return pair.resume;
-    }
-
     ///
     bool isComplete() scope {
         return this.isNull() || pair.isComplete();
@@ -137,9 +127,14 @@ export @safe nothrow @nogc:
 
     ///
     Result!ResultType result() {
-        if(!isInstantiated)
+        if(isNull)
             return typeof(return)(NullPointerException("Coroutine not instantiated"));
         return this.pair.state.result;
+    }
+
+    /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
+    ErrorResult unsafeResume() scope @system {
+        return pair.resume;
     }
 }
 

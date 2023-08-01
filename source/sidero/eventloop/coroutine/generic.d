@@ -27,19 +27,9 @@ export @safe nothrow @nogc:
         return pair.isNull;
     }
 
-    /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
-    ErrorResult resume() scope {
-        return pair.resume;
-    }
-
     ///
     bool isComplete() scope {
         return this.isNull() || pair.isComplete();
-    }
-
-    ///
-    bool isInstantiated() scope const {
-        return pair.state !is null;
     }
 
     ///
@@ -48,5 +38,26 @@ export @safe nothrow @nogc:
             return pair.state.conditionToContinue;
         else
             return typeof(return).init;
+    }
+
+    /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
+    ErrorResult unsafeResume() scope @system {
+        return pair.resume;
+    }
+
+    /// Set the coroutine as having no condition to continue. Warning: consider an internal mechanism for eventloops.
+    void unsafeUnblock() scope @system {
+        if (isNull)
+            return;
+
+        pair.state.conditionToContinue = CoroutineCondition.init;
+    }
+
+    /// Set the coroutine as having an erroneous result. Warning: consider an internal mechanism for eventloops.
+    void unsafeSetErrorResult(ErrorInfo errorInfo) scope @system {
+        if (isNull)
+            return;
+
+        pair.descriptor.setErrorResult(pair.state, errorInfo);
     }
 }
