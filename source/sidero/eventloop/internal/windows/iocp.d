@@ -1,6 +1,8 @@
 module sidero.eventloop.internal.windows.iocp;
+import sidero.eventloop.internal.workers;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.threads;
+import sidero.eventloop.coroutine.condition;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.internal.atomic;
@@ -13,7 +15,7 @@ version(Windows) {
     private __gshared {
         LoggerReference logger;
         HANDLE completionPort;
-        ubyte shutdownByte;
+        ubyte shutdownByte, coroutineByte;
         uint requiredWorkers;
 
         shared(ptrdiff_t) runningWorkers;
@@ -69,6 +71,21 @@ version(Windows) {
         logger.notice("Shutdown IOCP context for workers successfully");
     }
 
+    void triggerACoroutineMechanism(size_t count) @trusted {
+        import core.sys.windows.windows : PostQueuedCompletionStatus, ULONG_PTR, GetLastError;
+
+        ULONG_PTR coroutineKey = cast(ULONG_PTR)&coroutineByte;
+
+        foreach(_; 0 .. count) {
+            auto result = PostQueuedCompletionStatus(completionPort, 0, coroutineKey, null);
+
+            if(result == 0) {
+                logger.warning("IOCP worker could not send coroutine execution message ", GetLastError());
+                return;
+            }
+        }
+    }
+
     bool associateWithIOCP(Socket socket) @trusted {
         import core.sys.windows.windows : CreateIoCompletionPort, INVALID_HANDLE_VALUE, WSAGetLastError, HANDLE;
 
@@ -118,6 +135,40 @@ version(Windows) {
             } else if(overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
                 logger.debug_("Stopping a IOCP worker procedure cleanly ", Thread.self);
                 return;
+            } else if(overlapped is null && completionKey is cast(ULONG_PTR)&coroutineByte) {
+                logger.debug_("Got coroutine work ", Thread.self);
+
+                auto workToDo = coroutinesForWorkers.pop;
+
+                if(workToDo && !workToDo.isNull) {
+                    auto errorResult = workToDo.resume;
+
+                    if(!errorResult) {
+                        logger.warning("Coroutine worker failed: ", errorResult, " on ", Thread.self);
+                    } else {
+                        final switch(workToDo.condition.waitingOn) {
+                        case CoroutineCondition.WaitingOn.Nothing:
+                            // nothing to wait on, yahoo!
+
+                            if(!workToDo.isComplete) {
+                                // is not complete, so we gotta put it in queue once again
+                                coroutinesForWorkers.push(workToDo);
+                                triggerACoroutineExecution(1);
+                            }
+                            break;
+                        case CoroutineCondition.WaitingOn.ExternalTrigger:
+                            // what? This shouldn't be possible (right now anyway).
+                            logger.error("Coroutine is waiting on an external trigger, but was ran ", Thread.self);
+                            assert(0);
+
+                        case CoroutineCondition.WaitingOn.Coroutine:
+                        case CoroutineCondition.WaitingOn.SystemHandle:
+                            // TODO: register coroutine as waiting on something
+                            break;
+                        }
+
+                    }
+                }
             } else {
                 logger.debug_("Got IOCP work ", numberOfBytesTransferred, " ", completionKey, " ", result, " ", Thread.self);
 

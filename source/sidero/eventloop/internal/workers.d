@@ -1,9 +1,12 @@
 module sidero.eventloop.internal.workers;
 import sidero.eventloop.threads;
+import sidero.eventloop.coroutine.generic;
 import sidero.base.system : cpuCount;
 import sidero.base.containers.dynamicarray;
+import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.logger;
 import sidero.base.text;
+import sidero.base.allocators;
 import sidero.base.synchronization.mutualexclusion;
 
 version(Windows) {
@@ -26,12 +29,18 @@ version(none) {
     }
 }
 
-private __gshared {
-    TestTestSetLockInline mutex;
-    bool isInitialized;
+__gshared {
+    private {
+        TestTestSetLockInline mutex;
+        bool isInitialized;
 
-    DynamicArray!Thread threadPool;
-    LoggerReference logger;
+        DynamicArray!Thread threadPool;
+        LoggerReference logger;
+    }
+
+    package(sidero.eventloop.internal) {
+        FiFoConcurrentQueue!GenericCoroutine coroutinesForWorkers;
+    }
 }
 
 bool startWorkers(size_t workerMultiplier) @trusted {
@@ -42,6 +51,10 @@ bool startWorkers(size_t workerMultiplier) @trusted {
     logger = Logger.forName(String_UTF8(__MODULE__));
     if(!logger)
         return false;
+
+    if(coroutinesForWorkers.isNull) {
+        coroutinesForWorkers = FiFoConcurrentQueue!GenericCoroutine(RCAllocator.init);
+    }
 
     const oldCount = threadPool.length;
     const newCount = workerMultiplier * cpuCount();
@@ -117,4 +130,18 @@ bool isWorkerThread(Thread other) @trusted {
     }
 
     return false;
+}
+
+void triggerACoroutineExecution(size_t estimate = 0) @trusted {
+    if(coroutinesForWorkers.empty)
+        return;
+
+    mutex.pureLock;
+    scope(exit)
+        mutex.unlock;
+
+    if(estimate == 0)
+        triggerACoroutineMechanism(coroutinesForWorkers.count);
+    else
+        triggerACoroutineMechanism(estimate);
 }
