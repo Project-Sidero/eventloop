@@ -13,13 +13,13 @@ struct FutureTrigger;
 /// The storage for a future trigger, matches internals of a coroutine return value.
 alias FutureTriggerStorage(ResultType) = Result!ResultType;
 
-InstantiableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireInstantiableFuture(ResultType)() @trusted {
+InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireInstantiableFuture(ResultType)() @trusted {
     __gshared typeof(return) storage = () {
         import sidero.eventloop.coroutine.internal.state : ctfeConstructExternalTriggerState;
 
         auto pair = ctfeConstructExternalTriggerState!ResultType;
 
-        InstantiableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) ret;
+        InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) ret;
         ret.pair = pair;
         return ret;
     }();
@@ -112,7 +112,7 @@ ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
 }
 
 unittest {
-    InstantiableCoroutine!(int, FutureTriggerStorage!int**) instantiable = acquireInstantiableFuture!int();
+    InstanceableCoroutine!(int, FutureTriggerStorage!int**) instantiable = acquireInstantiableFuture!int();
 
     FutureTriggerStorage!int* triggerStorage;
 

@@ -58,4 +58,38 @@ export @safe nothrow @nogc:
     ErrorResult unsafeResume() scope @system {
         return pair.resume;
     }
+
+
+    @disable auto opCast(T)();
+
+    ///
+    ulong toHash() scope const @trusted {
+        import sidero.base.hash.utils : hashOf;
+
+        const b = cast(size_t)pair.state, a = cast(size_t)pair.descriptor;
+        return hashOf(b, hashOf(a));
+    }
+
+    ///
+    alias equals = opEquals;
+
+    ///
+    bool opEquals(scope Future other) scope const {
+        return this.toHash() == other.toHash();
+    }
+
+    ///
+    alias compare = opCmp;
+
+    ///
+    int opCmp(scope Future other) scope const @trusted {
+        const a = this.toHash(), b = other.toHash();
+
+        if(a < b)
+            return -1;
+        else if(a > b)
+            return 1;
+        else
+            return 0;
+    }
 }

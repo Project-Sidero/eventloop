@@ -4,6 +4,7 @@ import sidero.eventloop.coroutine.generic;
 import sidero.eventloop.coroutine.condition;
 import sidero.base.system : cpuCount;
 import sidero.base.containers.dynamicarray;
+import sidero.base.containers.map.duplicatehashmap;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.logger;
 import sidero.base.text;
@@ -41,6 +42,8 @@ __gshared {
 
         DynamicArray!Thread threadPool;
         LoggerReference logger;
+
+        DuplicateHashMap!(GenericCoroutine, GenericCoroutine) coroutinesWaitingOnOthers;
     }
 
     package(sidero.eventloop.internal) {
@@ -171,8 +174,10 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
         assert(0);
 
     case CoroutineCondition.WaitingOn.Coroutine:
-        // TODO: coroutinesWaitingOnOthers[coroutine.condition.coroutine] ~= coroutine;
-    break;
+        mutex.pureLock;
+        coroutinesWaitingOnOthers[coroutine.condition.coroutine] ~= coroutine;
+        mutex.unlock;
+        break;
 
     case CoroutineCondition.WaitingOn.SystemHandle:
         // TODO: register coroutine as waiting on something
@@ -188,26 +193,31 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
     if(errorResult) {
         // ok no error
 
-        // TODO: unblock other coroutines, unblock
-        /*
         foreach(co; coroutinesWaitingOnOthers[coroutine]) {
-            co.unblock;
+            co.unsafeUnblock;
             coroutinesForWorkers.push(co);
         }
-        coroutineWaitingOnOthers.remove(coroutine);
-         */
+        coroutinesWaitingOnOthers.remove(coroutine);
 
         coroutinesForWorkers.push(coroutine);
         triggerACoroutineMechanism(coroutinesForWorkers.count);
     } else {
         logger.warning("Coroutine worker failed: ", errorResult, " on ", Thread.self);
 
-        // TODO: complete dependent coroutines with error, setErrorResult
-        /*
-        foreach(co; coroutinesWaitingOnOthers[coroutine]) {
-            co.setErrorResult(errorResult);
+        FiFoConcurrentQueue!GenericCoroutine queue;
+        queue.push(coroutine);
+
+        while(!queue.empty) {
+            auto todo = queue.pop;
+            if (!todo)
+                continue;
+
+            foreach(co; coroutinesWaitingOnOthers[todo]) {
+                co.unsafeSetErrorResult(errorResult.getError());
+                queue.push(co);
+            }
+
+            coroutinesWaitingOnOthers.remove(todo);
         }
-        coroutineWaitingOnOthers.remove(coroutine);
-         */
     }
 }

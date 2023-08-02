@@ -8,7 +8,7 @@ import sidero.base.allocators;
 import sidero.base.internal.atomic;
 
 ///
-struct InstantiableCoroutine(ResultType, Args...) {
+struct InstanceableCoroutine(ResultType, Args...) {
     package(sidero.eventloop) {
         CoroutinePair!ResultType pair;
         ConstructionAStateWrapper constructionState;
@@ -17,7 +17,7 @@ struct InstantiableCoroutine(ResultType, Args...) {
 export @safe nothrow @nogc:
 
     ///
-    this(scope ref InstantiableCoroutine other) scope {
+    this(scope ref InstanceableCoroutine other) scope {
         this.tupleof = other.tupleof;
     }
 
@@ -36,7 +36,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    InstantiableCoroutine!ResultType makeInstance(return scope RCAllocator allocator, return scope Args args) scope @trusted {
+    InstanceableCoroutine!ResultType makeInstance(return scope RCAllocator allocator, return scope Args args) scope @trusted {
         if(!pair.canInstance)
             return typeof(return).init;
 
@@ -46,7 +46,7 @@ export @safe nothrow @nogc:
         ArgsStorage!Args argsStorage;
         argsStorage.values = args;
 
-        InstantiableCoroutine!ResultType ret;
+        InstanceableCoroutine!ResultType ret;
 
         if(this.constructionState.isNull) {
             ret.pair.state = cast(CoroutineState!ResultType*)this.pair.descriptor.base.createInstanceState(allocator,
@@ -64,7 +64,7 @@ export @safe nothrow @nogc:
     }
 
     /// Partial providing for arguments to coroutine
-    InstantiableCoroutine!(ResultType, Args[PartialArgs.length .. $]) partial(PartialArgs...)(return scope RCAllocator allocator,
+    InstanceableCoroutine!(ResultType, Args[PartialArgs.length .. $]) partial(PartialArgs...)(return scope RCAllocator allocator,
             return scope PartialArgs partialArgs) {
         if(!pair.canInstance)
             return typeof(return).init;
@@ -72,7 +72,7 @@ export @safe nothrow @nogc:
         if(allocator.isNull)
             allocator = globalAllocator();
 
-        InstantiableCoroutine!(ResultType, Args[PartialArgs.length .. $]) ret;
+        InstanceableCoroutine!(ResultType, Args[PartialArgs.length .. $]) ret;
         alias ActualPartialArgs = Args[0 .. PartialArgs.length];
 
         ConstructionState!ActualPartialArgs* cstate;
@@ -135,6 +135,40 @@ export @safe nothrow @nogc:
     /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
     ErrorResult unsafeResume() scope @system {
         return pair.resume;
+    }
+
+
+    @disable auto opCast(T)();
+
+    ///
+    ulong toHash() scope const @trusted {
+        import sidero.base.hash.utils : hashOf;
+
+        const b = cast(size_t)pair.state, a = cast(size_t)pair.descriptor;
+        return hashOf(b, hashOf(a));
+    }
+
+    ///
+    alias equals = opEquals;
+
+    ///
+    bool opEquals(scope InstanceableCoroutine other) scope const {
+        return this.toHash() == other.toHash();
+    }
+
+    ///
+    alias compare = opCmp;
+
+    ///
+    int opCmp(scope InstanceableCoroutine other) scope const @trusted {
+        const a = this.toHash(), b = other.toHash();
+
+        if(a < b)
+            return -1;
+        else if(a > b)
+            return 1;
+        else
+            return 0;
     }
 }
 

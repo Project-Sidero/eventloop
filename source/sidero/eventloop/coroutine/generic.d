@@ -47,7 +47,7 @@ export @safe nothrow @nogc:
 
     /// Set the coroutine as having no condition to continue. Warning: consider an internal mechanism for eventloops.
     void unsafeUnblock() scope @system {
-        if (isNull)
+        if(isNull)
             return;
 
         pair.state.conditionToContinue = CoroutineCondition.init;
@@ -55,9 +55,42 @@ export @safe nothrow @nogc:
 
     /// Set the coroutine as having an erroneous result. Warning: consider an internal mechanism for eventloops.
     void unsafeSetErrorResult(ErrorInfo errorInfo) scope @system {
-        if (isNull)
+        if(isNull)
             return;
 
         pair.descriptor.setErrorResult(pair.state, errorInfo);
+    }
+
+    @disable auto opCast(T)();
+
+    ///
+    ulong toHash() scope const @trusted {
+        import sidero.base.hash.utils : hashOf;
+
+        const b = cast(size_t)pair.state, a = cast(size_t)pair.descriptor;
+        return hashOf(b, hashOf(a));
+    }
+
+    ///
+    alias equals = opEquals;
+
+    ///
+    bool opEquals(scope GenericCoroutine other) scope const {
+        return this.toHash() == other.toHash();
+    }
+
+    ///
+    alias compare = opCmp;
+
+    ///
+    int opCmp(scope GenericCoroutine other) scope const @trusted {
+        const a = this.toHash(), b = other.toHash();
+
+        if(a < b)
+            return -1;
+        else if(a > b)
+            return 1;
+        else
+            return 0;
     }
 }

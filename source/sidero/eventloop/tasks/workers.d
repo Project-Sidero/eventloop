@@ -1,14 +1,15 @@
 module sidero.eventloop.tasks.workers;
 import sidero.eventloop.threads;
-
+import sidero.eventloop.coroutine.generic;
+import sidero.eventloop.coroutine.future;
+import sidero.eventloop.coroutine.instanceable;
 import sidero.base.errors;
+import iw = sidero.eventloop.internal.workers;
 
 export @safe nothrow @nogc:
 
 ///
 ErrorResult startWorkers(size_t workerMultiplier) @trusted {
-    import iw = sidero.eventloop.internal.workers;
-
     if(iw.startWorkers(workerMultiplier))
         return ErrorResult.init;
 
@@ -17,21 +18,30 @@ ErrorResult startWorkers(size_t workerMultiplier) @trusted {
 
 ///
 void shutdownWorkers() @trusted {
-    import iw = sidero.eventloop.internal.workers;
-
     iw.shutdownWorkers();
 }
 
 ///
 bool isWorkerThread(Thread other) {
-    import iw = sidero.eventloop.internal.workers;
-
     return iw.isWorkerThread(other);
 }
 
 ///
 bool isOnWorkerThread() {
-    import iw = sidero.eventloop.internal.workers;
-
     return iw.isWorkerThread(Thread.self);
+}
+
+/// Register a coroutine as a task on to the worker threads pool
+void registerAsTask(GenericCoroutine coroutine) {
+    iw.addCoroutineTask(coroutine);
+}
+
+///
+void registerAsTask(ResultType)(Future!ResultType coroutine) {
+    iw.addCoroutineTask(coroutine.asGeneric());
+}
+
+///
+void registerAsTask(ResultType, Args...)(InstanceableCoroutine!(ResultType, Args) coroutine) {
+    iw.addCoroutineTask(coroutine.asGeneric());
 }

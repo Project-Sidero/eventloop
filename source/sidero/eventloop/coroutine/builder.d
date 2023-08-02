@@ -44,7 +44,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    Result!(InstantiableCoroutine!(ResultType, Args)) build(RCAllocator allocator = RCAllocator.init) scope @trusted {
+    Result!(InstanceableCoroutine!(ResultType, Args)) build(RCAllocator allocator = RCAllocator.init) scope @trusted {
         foreach(func; functions) {
             if(func is null)
                 return typeof(return)(NullPointerException("All functions in vtable must be filled"));
@@ -131,7 +131,7 @@ export @safe nothrow @nogc:
             };
         }
 
-        InstantiableCoroutine!(ResultType, Args) ret;
+        InstanceableCoroutine!(ResultType, Args) ret;
         ret.pair = pair;
 
         return typeof(return)(ret);
@@ -199,7 +199,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    CoroutineResult after(ResultType, Args...)(InstantiableCoroutine!(ResultType, Args) waitingOn) scope return @trusted {
+    CoroutineResult after(ResultType, Args...)(InstanceableCoroutine!(ResultType, Args) waitingOn) scope return @trusted {
         return this.after(waitingOn.asGeneric());
     }
 
@@ -213,7 +213,7 @@ export @safe nothrow @nogc:
 
 ///
 unittest {
-    InstantiableCoroutine!(int, int) createCo() {
+    InstanceableCoroutine!(int, int) createCo() {
         static struct State {
             int value;
 
@@ -269,7 +269,7 @@ unittest {
 
 ///
 unittest {
-    static InstantiableCoroutine!(int, int) createCo1() {
+    static InstanceableCoroutine!(int, int) createCo1() {
         static struct State {
             int value;
 
@@ -305,7 +305,7 @@ unittest {
         return got.get;
     }
 
-    static InstantiableCoroutine!(int, int) createCo2() {
+    static InstanceableCoroutine!(int, int) createCo2() {
         import sidero.eventloop.synchronization.system.lock;
 
         static struct State {
