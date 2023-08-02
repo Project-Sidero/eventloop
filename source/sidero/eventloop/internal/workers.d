@@ -178,10 +178,6 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
         coroutinesWaitingOnOthers[coroutine.condition.coroutine] ~= coroutine;
         mutex.unlock;
         break;
-
-    case CoroutineCondition.WaitingOn.SystemHandle:
-        // TODO: register coroutine as waiting on something
-        break;
     }
 }
 

@@ -80,7 +80,7 @@ export @safe nothrow @nogc:
     /// Warning: unsafe, you must handle reference counting and keeping this instance alive
     SystemHandle unsafeGetHandle() @system {
         setup;
-        return SystemHandle(mutex, MutexHandleIdentifier, &waitForLock);
+        return SystemHandle(mutex, MutexHandleIdentifier);
     }
 
     ///

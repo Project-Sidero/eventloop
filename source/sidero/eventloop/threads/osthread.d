@@ -143,7 +143,7 @@ export @safe nothrow @nogc:
                     return;
                 }
 
-                state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
+                state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
                 allThreads[cast(void*)GetThreadId(handle)] = state;
                 ResumeThread(handle);
             } else version(Posix) {
@@ -276,7 +276,7 @@ export @safe nothrow @nogc:
             Thread.State* state = cast(Thread.State*)(memory.ptr);
             *state = Thread.State.init;
 
-            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier, &waitForJoin);
+            state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
 
             Thread ret;
             ret.state = state;

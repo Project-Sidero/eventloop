@@ -4,14 +4,10 @@ import sidero.base.errors;
 
 ///
 struct SystemHandle {
-    alias WaitForEventFunction = ErrorResult function(scope void* handle) @safe nothrow @nogc;
-
     ///
     void* handle;
     ///
     SystemHandleType type;
-    ///
-    WaitForEventFunction waitForEvent;
 
 export @safe nothrow @nogc:
     bool isNull() scope const {

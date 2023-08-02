@@ -187,13 +187,6 @@ export @safe nothrow @nogc:
     }
 
     ///
-    CoroutineResult after(SystemHandle waitingOn) scope return @trusted {
-        assert(tag == Tag.Stage);
-        this.condition.systemHandle = waitingOn;
-        return this;
-    }
-
-    ///
     CoroutineResult after(ResultType)(Future!ResultType waitingOn) scope return @trusted {
         return this.after(waitingOn.asGeneric());
     }
@@ -322,18 +315,11 @@ unittest {
         }
 
         enum Stages {
-            INeedLock,
             INeedCoroutine,
             Done,
         }
 
         CoroutineBuilder!(State, Stages, int, int) builder;
-
-        builder[Stages.INeedLock] = (scope ref state) @trusted {
-            auto handle = state.lock.unsafeGetHandle();
-            // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
-            return typeof(builder).nextStage(Stages.INeedCoroutine).after(handle);
-        };
 
         builder[Stages.INeedCoroutine] = (scope ref state) @trusted {
             state.lock.unlock;
@@ -368,13 +354,6 @@ unittest {
             break;
         case CoroutineCondition.WaitingOn.ExternalTrigger:
             assert(0);
-        case CoroutineCondition.WaitingOn.SystemHandle:
-            assert(!coI.condition.systemHandle.isNull);
-            assert(coI.condition.systemHandle.waitForEvent !is null);
-
-            auto result = coI.condition.systemHandle.waitForEvent(coI.condition.systemHandle.handle);
-            assert(result);
-            break;
         case CoroutineCondition.WaitingOn.Coroutine:
             auto coI2 = coI.condition.coroutine;
 

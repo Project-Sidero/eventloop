@@ -5,7 +5,6 @@ import sidero.eventloop.handles;
 ///
 struct CoroutineCondition {
     package(sidero.eventloop) {
-        SystemHandle systemHandle;
         GenericCoroutine coroutine;
         bool isExternalTrigger;
     }
@@ -18,15 +17,13 @@ export @safe nothrow @nogc:
 
     ///
     bool isNull() scope const {
-        return systemHandle.isNull && coroutine.isNull;
+        return coroutine.isNull;
     }
 
     ///
     WaitingOn waitingOn() scope const {
         if (isExternalTrigger)
             return WaitingOn.ExternalTrigger;
-        else if(!systemHandle.isNull)
-            return WaitingOn.SystemHandle;
         else if(!coroutine.isNull)
             return WaitingOn.Coroutine;
         else
@@ -39,8 +36,6 @@ export @safe nothrow @nogc:
         Nothing,
         ///
         Coroutine,
-        ///
-        SystemHandle,
         ///
         ExternalTrigger,
     }
