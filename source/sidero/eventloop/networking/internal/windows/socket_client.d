@@ -205,8 +205,6 @@ version(Windows) {
                     logger.error("Error could not enumerate WSA network socket events with code ", error, " ", socketState.handle);
                 }
             } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
-                socketState.onShutdownReadWriteEverything(socketState);
-
                 logger.trace("Socket closed ", socketState.handle);
                 socketState.unpin();
             } else {

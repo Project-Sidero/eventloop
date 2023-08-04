@@ -103,13 +103,13 @@ version(Windows) {
             }
         }
 
-        void shutdown(scope SocketState* socketState) scope @trusted {
+        void shutdown(scope SocketState* socketState, bool haveReferences = true) scope @trusted {
             import sidero.eventloop.internal.event_waiting;
             import core.sys.windows.windows : CloseHandle, SD_BOTH, shutdown;
 
             if(cas(isShutdown, false, true)) {
                 logger.notice("Shutting down socket socket ", this.handle);
-                onShutdownReadWriteEverything(socketState);
+                onShutdownReadWriteEverything(socketState, haveReferences);
                 shutdown(handle, SD_BOTH);
 
                 if(onCloseEvent !is null) {
@@ -121,7 +121,7 @@ version(Windows) {
             }
         }
 
-        void onShutdownReadWriteEverything(scope SocketState* socketState) scope @trusted {
+        void onShutdownReadWriteEverything(scope SocketState* socketState, bool haveReferences) scope @trusted {
             import sidero.eventloop.networking.sockets : Socket;
             import core.sys.windows.windows : ERROR_IO_PENDING, SOCKET_ERROR, WSAESHUTDOWN;
 
@@ -131,7 +131,7 @@ version(Windows) {
             logger.debug_("On socket shutdown, trying to read and write everything before closing ", this.handle);
 
             bool somethingChanged = true;
-            bool notLikelyToRead = !socketState.readingState.inProgress(), notLikelyToWrite;
+            bool notLikelyToRead = !haveReferences, notLikelyToWrite;
 
             while(somethingChanged) {
                 somethingChanged = false;

@@ -134,7 +134,7 @@ package(sidero.eventloop):
                 inShutdownProcess = true;
 
                 encryptionState.cleanup;
-                platform.shutdown(&this);
+                platform.shutdown(&this, false);
                 platform.forceClose(&this);
 
                 RCAllocator alloc = this.allocator;
