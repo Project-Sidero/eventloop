@@ -7,6 +7,7 @@ import sidero.base.path.networking;
 import sidero.base.text;
 import sidero.base.errors;
 import sidero.base.internal.atomic;
+import sidero.base.allocators;
 
 @safe nothrow @nogc:
 
@@ -209,6 +210,7 @@ version(Windows) {
     }
 
     void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
+        import sidero.eventloop.tasks.workers : registerAsTask;
         import sidero.eventloop.internal.windows.iocp;
         import sidero.eventloop.networking.internal.windows.socket_client;
         import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
@@ -350,8 +352,7 @@ version(Windows) {
                     }
                 }
 
-                Socket acquiredSocket = Socket.fromListen(listenSocketState.onShutdownHandler,
-                        listenSocketState.protocol, localAddress, remoteAddress);
+                Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
                 acquiredSocket.state.handle = acceptedSocket;
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
                 acquiredSocket.state.cameFromServer = true;
@@ -391,7 +392,9 @@ version(Windows) {
 
                 addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);
                 acquiredSocket.state.pin();
-                listenSocketState.onAcceptHandler(acquiredSocket);
+
+                auto acceptSocketCO = listenSocketState.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
+                registerAsTask(acceptSocketCO);
             }
         }
     }

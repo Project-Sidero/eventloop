@@ -193,23 +193,27 @@ version(Windows) {
         SocketState* socketState = cast(SocketState*)user;
         WSANETWORKEVENTS wsaEvent;
 
-        if(WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
-            auto error = GetLastError();
+        if (socketState.onCloseEvent !is null) {
+            if (WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
+                auto error = GetLastError();
 
-            if(error == WSAENOTSOCK) {
-                logger.trace("Handle not socket message ", socketState.handle);
-                // ok just in case lets just unpin it
-                socketState.unpin;
+                if (error == WSAENOTSOCK) {
+                    logger.trace("Handle not socket message ", socketState.handle);
+                    // ok just in case lets just unpin it
+                    socketState.unpin;
+                } else {
+                    logger.error("Error could not enumerate WSA network socket events with code ", error, " ", socketState.handle);
+                }
+            } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
+                socketState.onShutdownReadWriteEverything(socketState);
+
+                logger.trace("Socket closed ", socketState.handle);
+                socketState.unpin();
             } else {
-                logger.error("Error could not enumerate WSA network socket events with code ", error, " ", socketState.handle);
+                logger.error("Error unknown socket event ", wsaEvent, socketState.handle);
             }
-        } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
-            socketState.onShutdownReadWriteEverything(socketState);
-
-            logger.trace("Socket closed ", socketState.handle);
-            socketState.unpin();
         } else {
-            logger.error("Error unknown socket event ", wsaEvent, socketState.handle);
+            logger.info("Socket got network event and shouldn't have (may indicate a bug) ", socketState.handle);
         }
     }
 }

@@ -48,7 +48,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    Result!ResultType result() {
+    Result!ResultType result() return scope {
         if(isNull)
             return typeof(return)(NullPointerException("Coroutine not instantiated"));
         return typeof(return)(this.pair.state.result);

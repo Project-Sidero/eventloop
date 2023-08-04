@@ -175,7 +175,17 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
 
     case CoroutineCondition.WaitingOn.Coroutine:
         mutex.pureLock;
-        coroutinesWaitingOnOthers[coroutine.condition.coroutine] ~= coroutine;
+
+        auto conditionToContinue = coroutine.condition.coroutine;
+
+        if (conditionToContinue.isComplete) {
+            // condition is complete (could be null)
+            coroutine.unsafeUnblock;
+            coroutinesForWorkers.push(coroutine);
+            triggerACoroutineExecution(1);
+        } else
+            coroutinesWaitingOnOthers[conditionToContinue] ~= coroutine;
+
         mutex.unlock;
         break;
     }
@@ -183,8 +193,6 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
 
 void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult) @trusted {
     mutex.pureLock;
-    scope(exit)
-        mutex.unlock;
 
     if(errorResult) {
         // ok no error
@@ -194,26 +202,20 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
             coroutinesForWorkers.push(co);
         }
         coroutinesWaitingOnOthers.remove(coroutine);
-
-        coroutinesForWorkers.push(coroutine);
         triggerACoroutineMechanism(coroutinesForWorkers.count);
+
+        mutex.unlock;
+        addCoroutineTask(coroutine);
     } else {
         logger.warning("Coroutine worker failed: ", errorResult, " on ", Thread.self);
 
-        FiFoConcurrentQueue!GenericCoroutine queue;
-        queue.push(coroutine);
-
-        while(!queue.empty) {
-            auto todo = queue.pop;
-            if (!todo)
-                continue;
-
-            foreach(co; coroutinesWaitingOnOthers[todo]) {
-                co.unsafeSetErrorResult(errorResult.getError());
-                queue.push(co);
-            }
-
-            coroutinesWaitingOnOthers.remove(todo);
+        foreach(co; coroutinesWaitingOnOthers[coroutine]) {
+            co.unsafeSetErrorResult(errorResult.getError());
+            coroutinesForWorkers.push(co);
         }
+        coroutinesWaitingOnOthers.remove(coroutine);
+
+        triggerACoroutineMechanism(coroutinesForWorkers.count);
+        mutex.unlock;
     }
 }

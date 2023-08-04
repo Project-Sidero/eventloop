@@ -123,7 +123,7 @@ void updateEventWaiterThreads() @trusted {
         // step one: cleanup old threads that are no longer alive
         foreach(threadState; eventWaiterThreads) {
             assert(threadState);
-            if(atomicLoad(threadState.isAlive))
+            if(!atomicLoad(threadState.isAlive))
                 eventWaiterThreads.remove(threadState.thread.toHash());
         }
     }

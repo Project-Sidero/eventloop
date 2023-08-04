@@ -130,6 +130,10 @@ struct CoroutineState(ResultType) {
 struct ArgsStorage(Args...) {
     Args values;
     alias values this;
+
+    this(ref return scope ArgsStorage other) scope @trusted {
+        this.tupleof = other.tupleof;
+    }
 }
 
 struct CoroutineAPair {

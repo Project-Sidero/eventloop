@@ -1,7 +1,10 @@
 module sidero.eventloop.networking.internal.state;
 import sidero.eventloop.networking.internal.encryption;
 import sidero.eventloop.networking.sockets;
+import sidero.eventloop.coroutine.instanceable;
+import sidero.eventloop.coroutine.future;
 import sidero.eventloop.certificates;
+import sidero.eventloop.tasks.future_completion;
 import sidero.base.synchronization.mutualexclusion;
 import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.containers.dynamicarray;
@@ -35,9 +38,7 @@ package(sidero.eventloop):
     Socket.EncryptionProtocol encryption;
     bool validateCertificates;
 
-    ListenSocketOnAccept onAcceptHandler;
-    SocketShutdownCallback onShutdownHandler;
-
+    InstanceableCoroutine!(void, Socket) onAccept;
     ConcurrentHashMap!(PlatformListenSocketKey, PlatformListenSocket) platformSockets;
 
 @safe nothrow @nogc:
@@ -106,9 +107,7 @@ package(sidero.eventloop):
     shared(bool) isAlive;
 
     bool cameFromServer;
-
     bool inShutdownProcess;
-    SocketShutdownCallback onShutdownHandler;
 
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
@@ -189,7 +188,8 @@ struct ReadingState {
     TestTestSetLockInline mutex;
     size_t wantedAmount;
     Slice!ubyte stopArray;
-    SocketReadCallback toCall;
+
+    FutureTriggerStorage!(Slice!ubyte)* triggerForHandler;
 
     // only needed if it takes multiple read responses to complete
     DynamicArray!ubyte appendingArray;
@@ -200,7 +200,18 @@ struct ReadingState {
         scope(exit)
             mutex.unlock;
 
-        return toCall !is null;
+        return triggerForHandler !is null;
+    }
+
+    void cleanup() scope {
+        mutex.pureLock;
+        scope(exit)
+            mutex.unlock;
+
+        if(triggerForHandler !is null) {
+            cast(void)trigger(triggerForHandler, UnknownPlatformBehaviorException("Socket needs cleaning up of in progress reads"));
+            triggerForHandler = null;
+        }
     }
 
     size_t getWantedAmount() {
@@ -214,9 +225,8 @@ struct ReadingState {
         return wantedAmount > 0 ? wantedAmount : size_t.max;
     }
 
-    bool requestFromUser(size_t amount, SocketReadCallback callback) scope {
+    bool requestFromUser(size_t amount, out Future!(Slice!ubyte) future) scope @trusted {
         assert(amount > 0);
-        assert(callback !is null);
 
         if(inProgress)
             return false;
@@ -225,15 +235,16 @@ struct ReadingState {
         scope(exit)
             mutex.unlock;
 
-        toCall = callback;
+        future = acquireInstantiableFuture!(Slice!ubyte).makeInstance(RCAllocator.init, &triggerForHandler).asFuture;
+        cast(void)waitOnTrigger(future, triggerForHandler);
+
         wantedAmount = amount;
         stopArray = typeof(stopArray).init;
         return true;
     }
 
-    bool requestFromUser(Slice!ubyte stopCondition, SocketReadCallback callback) scope {
+    bool requestFromUser(Slice!ubyte stopCondition, out Future!(Slice!ubyte) future) scope @trusted {
         assert(stopCondition.length > 0);
-        assert(callback !is null);
 
         if(inProgress)
             return false;
@@ -242,7 +253,9 @@ struct ReadingState {
         scope(exit)
             mutex.unlock;
 
-        toCall = callback;
+        future = acquireInstantiableFuture!(Slice!ubyte).makeInstance(RCAllocator.init, &triggerForHandler).asFuture;
+        cast(void)waitOnTrigger(future, triggerForHandler);
+
         stopArray = stopCondition;
         wantedAmount = 0;
 
@@ -254,11 +267,11 @@ struct ReadingState {
         // we work through the encryption API, so it can figure it out if we are reading directly or not
 
         bool success;
-        SocketReadCallback calling;
+        FutureTriggerStorage!(Slice!ubyte)* toTrigger;
         Slice!ubyte dataToCallWith;
 
         socketState.encryptionState.readData(socketState, (DynamicArray!ubyte availableData) @trusted {
-            if(toCall is null)
+            if(triggerForHandler is null)
                 return 0;
 
             size_t tryingToConsume;
@@ -330,9 +343,9 @@ struct ReadingState {
             }
 
             if(success) {
-                assert(toCall !is null);
-                calling = toCall;
-                toCall = null;
+                assert(triggerForHandler !is null);
+                toTrigger = triggerForHandler;
+                triggerForHandler = null;
 
                 dataToCallWith = appendingArray.asReadOnly();
                 appendingArray = typeof(appendingArray).init;
@@ -343,15 +356,11 @@ struct ReadingState {
         });
 
         if(success) {
-            assert(calling !is null);
+            assert(toTrigger !is null);
 
-            Socket socket;
-            socket.state = socketState;
-            socket.state.rc(true);
-
-            calling(socket, dataToCallWith);
+            cast(void)trigger(toTrigger, dataToCallWith);
         } else {
-            assert(calling is null);
+            assert(toTrigger is null);
 
             if(!socketState.rawReadingState.protectTriggeringOfRead(() {
                     return socketState.rawReadingState.currentlyTriggered;

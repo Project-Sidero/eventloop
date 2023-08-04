@@ -92,21 +92,14 @@ version(Windows) {
     @safe nothrow @nogc:
 
         void forceClose(scope SocketState* socketState) scope @trusted {
+            import sidero.eventloop.tasks.future_completion;
             import sidero.eventloop.networking.sockets : Socket;
             import core.sys.windows.windows : closesocket;
 
             if(cas(isClosed, false, true)) {
                 logger.debug_("Forcing closed socket ", this.handle);
                 closesocket(handle);
-
-                if(socketState.onShutdownHandler !is null) {
-                    Socket socket;
-                    socket.state = socketState;
-                    socketState.rc(true);
-
-                    socketState.onShutdownHandler(socket);
-                    socketState.onShutdownHandler = null;
-                }
+                socketState.readingState.cleanup;
             }
         }
 
@@ -118,12 +111,13 @@ version(Windows) {
                 logger.notice("Shutting down socket socket ", this.handle);
                 onShutdownReadWriteEverything(socketState);
                 shutdown(handle, SD_BOTH);
-            }
 
-            if(onCloseEvent !is null) {
-                removeEventWaiterHandle(onCloseEvent);
-                CloseHandle(onCloseEvent);
-                onCloseEvent = null;
+                if(onCloseEvent !is null) {
+                    logger.info("Removing on close event ", this.handle);
+                    removeEventWaiterHandle(onCloseEvent);
+                    CloseHandle(onCloseEvent);
+                    onCloseEvent = null;
+                }
             }
         }
 
@@ -250,15 +244,6 @@ version(Windows) {
 
                     socketState.readingState.tryFulfillRequest(socketState);
                 }
-            }
-
-            if(socketState.onShutdownHandler !is null) {
-                Socket socket;
-                socket.state = socketState;
-                socketState.rc(true);
-
-                socketState.onShutdownHandler(socket);
-                socketState.onShutdownHandler = null;
             }
         }
 

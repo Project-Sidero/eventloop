@@ -1,6 +1,8 @@
 module sidero.eventloop.networking.sockets;
 import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.certificates;
+import sidero.eventloop.coroutine.instanceable;
+import sidero.eventloop.coroutine.future;
 import sidero.base.containers.dynamicarray;
 import sidero.base.path.networking;
 import sidero.base.allocators;
@@ -11,13 +13,6 @@ import sidero.base.errors;
 import sidero.base.internal.atomic;
 
 export @safe nothrow @nogc:
-
-///
-alias ListenSocketOnAccept = void function(Socket) @safe nothrow @nogc;
-///
-alias SocketReadCallback = void function(Socket socket, Slice!ubyte data) @safe nothrow @nogc;
-///
-alias SocketShutdownCallback = void function(Socket socket) @safe nothrow @nogc;
 
 ///
 struct ListenSocket {
@@ -59,11 +54,14 @@ export @safe nothrow @nogc:
     }
 
     /// Listen on port
-    static Result!ListenSocket from(ListenSocketOnAccept onAcceptCallback, SocketShutdownCallback onShutdownCallback, NetworkAddress address,
-            Socket.Protocol protocol,
-            Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate certificate = Certificate.init,
-            bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true,
-            scope return RCAllocator allocator = RCAllocator.init) {
+    static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address,
+            Socket.Protocol protocol, Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None,
+            Certificate certificate = Certificate.init, bool reuseAddr = true, bool keepAlive = true,
+            bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) {
+
+        if(!onAccept.canInstance)
+            return typeof(return)(MalformedInputException("On accept coroutine cannot be null"));
+
         if(allocator.isNull)
             allocator = globalAllocator();
 
@@ -74,8 +72,7 @@ export @safe nothrow @nogc:
         ret.state = allocator.make!ListenSocketState;
         ret.state.allocator = allocator;
 
-        ret.state.onAcceptHandler = onAcceptCallback;
-        ret.state.onShutdownHandler = onShutdownCallback;
+        ret.state.onAccept = onAccept;
         ret.state.address = address;
         ret.state.protocol = protocol;
         ret.state.encryption = encryption;
@@ -134,31 +131,28 @@ export @safe nothrow @nogc:
     }
 
     ///
-    bool read(size_t amount, scope return SocketReadCallback onRecieve) scope @trusted {
-        if(isReadInProgress)
-            return false;
+    Future!(Slice!ubyte) read(size_t amount) scope @trusted {
+        Future!(Slice!ubyte) ret;
 
-        if(!state.readingState.requestFromUser(amount, onRecieve))
-            return false;
+        if(state.readingState.requestFromUser(amount, ret))
+            state.triggerRead(state);
 
-        return state.triggerRead(state);
+        return ret;
     }
 
     ///
-    bool readUntil(scope return DynamicArray!ubyte endCondition, scope return SocketReadCallback onRecieve) scope {
-        return this.readUntil(endCondition.asReadOnly(), onRecieve);
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition) scope {
+        return this.readUntil(endCondition.asReadOnly());
     }
 
     ///
-    bool readUntil(scope return Slice!ubyte endCondition, scope return SocketReadCallback onRecieve) scope @trusted {
-        if(isReadInProgress)
-            return false;
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
+        Future!(Slice!ubyte) ret;
 
-        if(!state.readingState.requestFromUser(endCondition, onRecieve))
-            return false;
+        if(state.readingState.requestFromUser(endCondition, ret))
+            state.triggerRead(state);
 
-        state.triggerRead(state);
-        return true;
+        return ret;
     }
 
     ///
@@ -213,8 +207,13 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Result!Socket connectTo(SocketShutdownCallback onShutdownCallback, NetworkAddress address,
+    static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
             Socket.Protocol protocol, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+        import sidero.eventloop.tasks.workers : registerAsTask;
+
+        if(!onConnect.canInstance)
+            return typeof(return)(MalformedInputException("On connect coroutine cannot be null"));
+
         if(allocator.isNull)
             allocator = globalAllocator();
 
@@ -224,7 +223,6 @@ export @safe nothrow @nogc:
         Socket ret;
         ret.state = allocator.make!SocketState;
         ret.state.allocator = allocator;
-        ret.state.onShutdownHandler = onShutdownCallback;
 
         ret.state.protocol = protocol;
 
@@ -233,18 +231,21 @@ export @safe nothrow @nogc:
         auto errorResult = ret.state.startUp(address, keepAlive);
         if(!errorResult)
             return typeof(return)(errorResult.getError());
+
+        auto connectSocketCO = onConnect.makeInstance(RCAllocator.init, ret);
+        registerAsTask(connectSocketCO);
+
         return typeof(return)(ret);
     }
 
-    package(sidero.eventloop) static Socket fromListen(SocketShutdownCallback onShutdownCallback, Protocol protocol,
-            NetworkAddress localAddress, NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
+    package(sidero.eventloop) static Socket fromListen(Protocol protocol, NetworkAddress localAddress,
+            NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
         if(allocator.isNull)
             allocator = globalAllocator();
 
         Socket ret;
         ret.state = allocator.make!SocketState;
         ret.state.allocator = allocator;
-        ret.state.onShutdownHandler = onShutdownCallback;
 
         ret.state.protocol = protocol;
         ret.state.localAddress = localAddress;

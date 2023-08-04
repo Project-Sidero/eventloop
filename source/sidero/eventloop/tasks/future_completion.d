@@ -79,7 +79,7 @@ ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType
 }
 
 ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
-    import sidero.eventloop.internal.workers : addCoroutineTask;
+    import sidero.eventloop.internal.workers : coroutineCompletedTask;
 
     if(trigger is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
@@ -107,7 +107,7 @@ ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
     if(!errorResult)
         return errorResult;
 
-    addCoroutineTask(coroutine);
+    coroutineCompletedTask(coroutine, ErrorResult.init);
     return ErrorResult.init;
 }
 

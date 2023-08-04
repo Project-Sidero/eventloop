@@ -114,7 +114,10 @@ export @safe nothrow @nogc:
 
                 final switch(result.tag) {
                 case CoroutineResultType.Tag.Value:
-                    actualState.result = Result!ResultType(result.resultValue);
+                    static if(!is(ResultType == void)) {
+                        actualState.result = Result!ResultType(result.resultValue);
+                    }
+
                     atomicStore(actualState.base.isComplete, true);
                     actualState.base.nextFunctionTag = -1;
                     break;
