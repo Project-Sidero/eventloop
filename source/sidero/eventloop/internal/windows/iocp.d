@@ -74,6 +74,7 @@ version(Windows) {
         import core.sys.windows.windows : PostQueuedCompletionStatus, ULONG_PTR, GetLastError;
 
         ULONG_PTR coroutineKey = cast(ULONG_PTR)&coroutineByte;
+        logger.debug_("Posting coroutine work with key ", coroutineKey, " times ", count);
 
         foreach(_; 0 .. count) {
             auto result = PostQueuedCompletionStatus(completionPort, 0, coroutineKey, null);

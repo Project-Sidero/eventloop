@@ -163,9 +163,13 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
         // nothing to wait on, yahoo!
 
         if(!coroutine.isComplete) {
+            logger.debug_("Adding coroutine task on ", Thread.self, " and is ready");
+
             // is not complete, so we gotta put it in queue once again
             coroutinesForWorkers.push(coroutine);
             triggerACoroutineExecution(1);
+        } else {
+            logger.debug_("Coroutine task on ", Thread.self, " is complete");
         }
         break;
     case CoroutineCondition.WaitingOn.ExternalTrigger:
@@ -179,12 +183,15 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
         auto conditionToContinue = coroutine.condition.coroutine;
 
         if (conditionToContinue.isComplete) {
+            logger.debug_("Adding coroutine task on ", Thread.self, " and condition is complete");
             // condition is complete (could be null)
             coroutine.unsafeUnblock;
             coroutinesForWorkers.push(coroutine);
-            triggerACoroutineExecution(1);
-        } else
+            triggerACoroutineMechanism(1);
+        } else {
+            logger.debug_("Adding coroutine task on ", Thread.self, " and condition is not complete");
             coroutinesWaitingOnOthers[conditionToContinue] ~= coroutine;
+        }
 
         mutex.unlock;
         break;
@@ -196,8 +203,10 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
 
     if(errorResult) {
         // ok no error
+        logger.debug_("Coroutine worker success on ", Thread.self);
 
         foreach(co; coroutinesWaitingOnOthers[coroutine]) {
+            logger.debug_("Got dependent on coroutine");
             co.unsafeUnblock;
             coroutinesForWorkers.push(co);
         }
@@ -207,7 +216,7 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
         mutex.unlock;
         addCoroutineTask(coroutine);
     } else {
-        logger.warning("Coroutine worker failed: ", errorResult, " on ", Thread.self);
+        logger.debug_("Coroutine worker failed: ", errorResult, " on ", Thread.self);
 
         foreach(co; coroutinesWaitingOnOthers[coroutine]) {
             co.unsafeSetErrorResult(errorResult.getError());

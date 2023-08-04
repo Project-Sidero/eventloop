@@ -237,6 +237,7 @@ struct ReadingState {
 
         future = acquireInstantiableFuture!(Slice!ubyte).makeInstance(RCAllocator.init, &triggerForHandler).asFuture;
         cast(void)waitOnTrigger(future, triggerForHandler);
+        assert(triggerForHandler !is null);
 
         wantedAmount = amount;
         stopArray = typeof(stopArray).init;
@@ -255,6 +256,7 @@ struct ReadingState {
 
         future = acquireInstantiableFuture!(Slice!ubyte).makeInstance(RCAllocator.init, &triggerForHandler).asFuture;
         cast(void)waitOnTrigger(future, triggerForHandler);
+        assert(triggerForHandler !is null);
 
         stopArray = stopCondition;
         wantedAmount = 0;
@@ -357,7 +359,6 @@ struct ReadingState {
 
         if(success) {
             assert(toTrigger !is null);
-
             cast(void)trigger(toTrigger, dataToCallWith);
         } else {
             assert(toTrigger is null);

@@ -131,7 +131,7 @@ version(Windows) {
             logger.debug_("On socket shutdown, trying to read and write everything before closing ", this.handle);
 
             bool somethingChanged = true;
-            bool notLikelyToRead, notLikelyToWrite;
+            bool notLikelyToRead = !socketState.readingState.inProgress(), notLikelyToWrite;
 
             while(somethingChanged) {
                 somethingChanged = false;
@@ -190,9 +190,8 @@ version(Windows) {
                     });
                 }
 
-                logger.debug_(socketState.readingState.inProgress(), " ", notLikelyToRead);
                 // if we are not in progress, don't waste memory and hence time
-                if(socketState.readingState.inProgress() && !notLikelyToRead) {
+                if(!notLikelyToRead) {
                     logger.debug_("Reading is in progress, attempting to resolve ", this.handle);
 
                     // reads
