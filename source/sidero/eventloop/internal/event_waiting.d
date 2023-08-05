@@ -141,8 +141,8 @@ void updateEventWaiterThreads() @trusted {
             assert(handle);
             assert(proc);
 
-            tempHandles[offset] = handle.assumeOkay;
-            tempProcs[offset] = proc.assumeOkay;
+            cast(void)(tempHandles[offset] = handle.assumeOkay);
+            cast(void)(tempProcs[offset] = proc.assumeOkay);
             offset++;
         }
     }
