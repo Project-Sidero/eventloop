@@ -34,7 +34,7 @@ package(sidero.eventloop):
     NetworkAddress address;
     Socket.Protocol protocol;
 
-    Certificate certificate;
+    Certificate fallbackCertificate;
     Socket.EncryptionProtocol encryption;
     bool validateCertificates;
 
@@ -413,7 +413,11 @@ struct RawReadingState {
 
     void dataWasReceived(size_t amount) scope @trusted {
         mutex.pureLock;
+        dataWasReceivedAlreadyProtected(amount);
+        mutex.unlock;
+    }
 
+    void dataWasReceivedAlreadyProtected(size_t amount) scope @trusted {
         amount += currentlyAvailableData.length;
         if(amount > bufferToReadInto.length)
             amount = bufferToReadInto.length;
@@ -423,7 +427,6 @@ struct RawReadingState {
         currentlyAvailableData = sliced;
 
         currentlyTriggered = false;
-        mutex.unlock;
     }
 
     void protectReadForEncryption(scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
@@ -442,6 +445,8 @@ struct RawReadingState {
             auto sliced = currentlyAvailableData[consumed .. $];
             assert(sliced);
             currentlyAvailableData = sliced.get;
+            import sidero.base.console;
+            writeln("consumed ", consumed, " and is now ", sliced.length);
         }
     }
 

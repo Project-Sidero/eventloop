@@ -6,11 +6,12 @@ import sidero.base.internal.atomic;
 
 package(sidero.eventloop):
 
-CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)() {
+CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return scope CoroutineDescriptor!ResultType* descriptorStorage,
+        return scope ref CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1] functionsStorage) {
     assert(__ctfe);
 
     CoroutinePair!ResultType pair;
-    pair.descriptor = new CoroutineDescriptor!ResultType;
+    pair.descriptor = descriptorStorage;
 
     alias CoroutineState2 = CoroutineState!ResultType;
 
@@ -40,7 +41,7 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)() {
         actualState.base.nextFunctionTag = -2;
     };
 
-    pair.descriptor.base.functions = new CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1];
+    pair.descriptor.base.functions = functionsStorage[];
     pair.descriptor.base.functions[0] = (scope CoroutineAllocatorMemoryDescriptor* descriptor,
             scope CoroutineAllocatorMemoryState* state) @trusted nothrow @nogc {
         CoroutineState2* actualState = cast(CoroutineState2*)state;
@@ -118,7 +119,7 @@ export @safe nothrow @nogc:
     }
 }
 
-struct CoroutineDescriptor(ResultType) {
+package(sidero.eventloop) struct CoroutineDescriptor(ResultType) {
     CoroutineAllocatorMemoryDescriptor base;
 }
 
@@ -184,9 +185,8 @@ export @safe nothrow @nogc:
     }
 }
 
-struct CoroutineAllocatorMemoryDescriptor {
+package(sidero.eventloop) struct CoroutineAllocatorMemoryDescriptor {
     alias FunctionPrototype = void function(scope CoroutineAllocatorMemoryDescriptor* descriptor, scope CoroutineAllocatorMemoryState* state) @safe nothrow @nogc;
-
     CoroutineAllocatorMemory parent;
     alias parent this;
 

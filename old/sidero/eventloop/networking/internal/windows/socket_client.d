@@ -4,6 +4,7 @@ import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.internal.event_waiting : addEventWaiterHandle;
 import sidero.eventloop.networking.sockets;
 import sidero.base.path.networking;
+import sidero.base.path.hostname;
 import sidero.base.text;
 import sidero.base.errors;
 
@@ -55,7 +56,7 @@ version(Windows) {
                 // any ipv4
             }, () @trusted {
                 // any ipv6
-            }, (scope String_ASCII hostname) {
+            }, (scope Hostname hostname) {
                 // needs to be have been already resolved
             }, () {});
 

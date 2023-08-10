@@ -14,16 +14,12 @@ struct FutureTrigger;
 alias FutureTriggerStorage(ResultType) = Result!ResultType;
 
 InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireInstantiableFuture(ResultType)() @trusted {
-    __gshared typeof(return) storage = () {
-        import sidero.eventloop.coroutine.internal.state : ctfeConstructExternalTriggerState;
+    import sidero.eventloop.coroutine.internal.state;
+    __gshared CoroutineDescriptor!ResultType descriptorStorage;
+    __gshared CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1] functionsStorage;
+    __gshared typeof(return) storage;
 
-        auto pair = ctfeConstructExternalTriggerState!ResultType;
-
-        InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) ret;
-        ret.pair = pair;
-        return ret;
-    }();
-
+    storage.pair = ctfeConstructExternalTriggerState!ResultType(&descriptorStorage, functionsStorage);
     return storage;
 }
 

@@ -113,6 +113,7 @@ version(Windows) {
             logger.info("Stopping IOCP worker ", Thread.self);
         }
 
+        logger.setLevel = LogLevel.Trace;
         logger.info("Starting IOCP worker ", Thread.self);
 
         for(;;) {
@@ -160,11 +161,6 @@ version(Windows) {
                         if(overlapped is &socket.state.readOverlapped)
                             handleSocketRead(socket);
                     }
-
-                    if(atomicLoad(socket.state.isShutdown) && socket.state.rawWritingState.protect(() {
-                            return !socket.state.rawWritingState.haveData;
-                        }) && !socket.state.readingState.inProgress)
-                        socket.state.platform.forceClose(socket.state);
                 }
             }
         }
@@ -192,8 +188,10 @@ version(Windows) {
             }
         } else {
             logger.debug_("Read from socket ", transferredBytes, " with flags ", flags, " for ", socket.state.handle, " on ", Thread.self);
-            socket.state.rawReadingState.dataWasReceived(transferredBytes);
-            socket.state.readingState.tryFulfillRequest(socket.state);
+            socket.state.guard(() {
+                socket.state.rawReading.complete(socket.state, transferredBytes);
+                socket.state.performReadWrite();
+            });
         }
     }
 
@@ -222,12 +220,16 @@ version(Windows) {
             logger.debug_("Written on socket ", transferredBytes, " with flags ", flags, " for ",
                     socket.state.handle, " on ", Thread.self);
 
-            socket.state.rawWritingState.protect(() {
-                socket.state.rawWritingState.complete(transferredBytes);
-                if(socket.state.rawWritingState.haveData)
-                    socket.state.triggerWrite(socket.state);
-                return true;
-            });
+            version(none) {
+                socket.state.rawWritingState.protect(() {
+                    socket.state.rawWritingState.complete(transferredBytes);
+                    if(socket.state.rawWritingState.haveData)
+                        socket.state.triggerWrite(socket.state);
+                    return true;
+                });
+            } else {
+                socket.state.guard(() { socket.state.rawWriting.complete(socket.state, transferredBytes); });
+            }
         }
     }
 }

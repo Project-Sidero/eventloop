@@ -10,6 +10,7 @@ import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.errors;
 import sidero.base.allocators;
 import sidero.base.synchronization.mutualexclusion;
+import sidero.base.path.hostname;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
@@ -51,6 +52,8 @@ version(Windows) {
             bool credentialHandleSet;
 
             uint encryptedPacketHeaderSize, encryptedMessageSize, encryptedPacketTrailerSize, maxEncryptedPacketSize;
+
+            String_UTF16 currentSniHostname;
         }
 
     @safe nothrow @nogc:
@@ -67,11 +70,14 @@ version(Windows) {
             }
         }
 
-        bool add(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol, bool validateCertificates) scope @trusted {
+        bool add(scope SocketState* socketState, Hostname sniHostname, Certificate certificate,
+                Socket.EncryptionProtocol protocol, bool validateCertificates, Slice!Certificate sniCertificates) scope @trusted {
             socketState.encryptionState.currentCertificate = certificate;
             socketState.encryptionState.currentProtocol = protocol;
             socketState.encryptionState.bufferSize = maxTokenSize;
             socketState.encryptionState.encryptionEngine = Certificate.Type.WinCrypt;
+            socketState.encryptionState.currentSNICertificates = sniCertificates;
+            currentSniHostname = sniHostname.decoded.byUTF16.asReadOnly;
 
             {
                 auto credDirection = socketState.cameFromServer ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND;
@@ -450,7 +456,15 @@ version(Windows) {
             bool ret;
             tokenLeft = maxTokenSize;
 
-            ULONG plAttributes = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+            logger.setLevel = LogLevel.Trace;
+
+            ULONG plAttributes =  ISC_REQ_SEQUENCE_DETECT |
+            ISC_REQ_REPLAY_DETECT |
+            ISC_REQ_CONFIDENTIALITY |
+            ISC_REQ_EXTENDED_ERROR |
+            ISC_REQ_ALLOCATE_MEMORY |
+            ISC_REQ_MANUAL_CRED_VALIDATION |
+            ISC_REQ_STREAM;
             logger.trace("starting negotation for client socket ", socketState.handle);
 
             SecBuffer[1] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null)];
@@ -460,22 +474,34 @@ version(Windows) {
             buffersDescriptionOut.cBuffers = 1;
             buffersDescriptionOut.pBuffers = buffersOut.ptr;
 
-            auto ss = InitializeSecurityContextW(&socketState.encryptionState.winCrypt.credentialHandle, null, null,
-                    plAttributes, 0, 0, null, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+            auto ss = InitializeSecurityContextW(&socketState.encryptionState.winCrypt.credentialHandle, null,
+                    cast(wchar*)socketState.encryptionState.winCrypt.currentSniHostname.ptr, plAttributes, 0, SECURITY_NATIVE_DREP, null,
+                    0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
             haveContextHandle = true;
+
+            import sidero.base.console;
+            debugWriteln(buffersOut, ss, socketState.encryptionState.winCrypt.currentSniHostname);
+
+            /+if(ss == SEC_I_COMPLETE_NEEDED || ss == SEC_I_COMPLETE_AND_CONTINUE) {
+                ss = CompleteAuthToken(&contextHandle, &buffersDescriptionOut);
+            }+/
+
+            //debugWriteln(buffersOut, ss);
 
             if(buffersOut[0].cbBuffer > 0) {
                 auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
+                logger.trace("sending data for client socket ", socketState.handle, " for length ", sliced.length);
+
+                writeln(sliced.unsafeGetLiteral);
+
                 socketState.rawWritingState.dataToSend(sliced.dup);
                 FreeContextBuffer(buffersOut[0].pvBuffer);
-
-                logger.trace("sending data for client socket ", socketState.handle);
             }
 
             logger.trace("Socket client handshake ", socketState.handle, " ", ss);
 
-            negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
-
+            negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE ||
+                ss == SEC_I_COMPLETE_AND_CONTINUE || ss == SEC_I_COMPLETE_NEEDED;
             if(!negotiating) {
                 updateStreamSizes(socketState);
             }
@@ -489,71 +515,106 @@ version(Windows) {
                 tokenLeft = maxTokenSize;
             }
 
-            ULONG plAttributes = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
-            logger.trace("starting negotation for client socket ", socketState.handle);
+            ULONG plAttributes = ISC_REQ_SEQUENCE_DETECT |
+            ISC_REQ_REPLAY_DETECT |
+            ISC_REQ_CONFIDENTIALITY |
+            ISC_REQ_EXTENDED_ERROR |
+            ISC_REQ_ALLOCATE_MEMORY |
+            ISC_REQ_MANUAL_CRED_VALIDATION |
+            ISC_REQ_STREAM;
+            logger.trace("negotation for client socket ", socketState.handle);
 
-            socketState.rawReadingState.protectReadForEncryption((DynamicArray!ubyte data) @trusted {
-                auto canDo = data.unsafeGetLiteral()[0 .. (data.length >= tokenLeft) ? tokenLeft: data.length];
-                logger.trace("socket client received data ", canDo.length);
+            bool gotExtra;
 
-                SecBuffer[2] buffersIn = [
-                    SecBuffer(cast(uint)canDo.length, SECBUFFER_TOKEN, canDo.ptr), SecBuffer(0, SECBUFFER_EMPTY, null)
-                ];
-                SecBuffer[1] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null)];
+            do {
+                gotExtra = false;
 
-                SecBufferDesc buffersDescriptionIn, buffersDescriptionOut;
+                socketState.rawReadingState.protectReadForEncryption((DynamicArray!ubyte data) @trusted {
+                    auto canDo = data.unsafeGetLiteral()[0 .. (data.length >= tokenLeft) ? tokenLeft: data.length];
+                    logger.trace("socket client received data ", canDo.length);
 
-                buffersDescriptionIn.ulVersion = SECBUFFER_VERSION;
-                buffersDescriptionIn.cBuffers = 2;
-                buffersDescriptionIn.pBuffers = buffersIn.ptr;
+                    import sidero.base.console;
+                    writeln(canDo);
 
-                buffersDescriptionOut.ulVersion = SECBUFFER_VERSION;
-                buffersDescriptionOut.cBuffers = 1;
-                buffersDescriptionOut.pBuffers = buffersOut.ptr;
+                    SecBuffer[2] buffersIn = [
+                        SecBuffer(cast(uint)canDo.length, SECBUFFER_TOKEN, canDo.ptr), SecBuffer(0, SECBUFFER_EMPTY, null)
+                    ];
+                    SecBuffer[1] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null)];
 
-                auto ss = InitializeSecurityContextW(&socketState.encryptionState.winCrypt.credentialHandle, haveContextHandle ?
-                    &contextHandle : null, null, plAttributes, 0, 0, &buffersDescriptionIn, 0, &contextHandle,
+                    SecBufferDesc buffersDescriptionIn, buffersDescriptionOut;
+
+                    buffersDescriptionIn.ulVersion = SECBUFFER_VERSION;
+                    buffersDescriptionIn.cBuffers = 2;
+                    buffersDescriptionIn.pBuffers = buffersIn.ptr;
+
+                    buffersDescriptionOut.ulVersion = SECBUFFER_VERSION;
+                    buffersDescriptionOut.cBuffers = 1;
+                    buffersDescriptionOut.pBuffers = buffersOut.ptr;
+
+                    auto ss = InitializeSecurityContextW(&socketState.encryptionState.winCrypt.credentialHandle, haveContextHandle ?
+                    &contextHandle : null, haveContextHandle ?
+                    null : cast(wchar*)socketState.encryptionState.winCrypt.currentSniHostname.ptr,
+                    plAttributes, 0, SECURITY_NATIVE_DREP, &buffersDescriptionIn, 0, null,
                     &buffersDescriptionOut, &plAttributes, null);
-                haveContextHandle = true;
+                    haveContextHandle = true;
 
-                if(buffersOut[0].cbBuffer > 0) {
-                    auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
-                    socketState.rawWritingState.dataToSend(sliced.dup);
-                    FreeContextBuffer(buffersOut[0].pvBuffer);
+                    import sidero.base.console;
 
-                    logger.trace("sending data for client socket ", socketState.handle);
-                }
+                    debugWriteln(buffersDescriptionIn, buffersIn[1], buffersDescriptionOut, ss);
 
-                logger.trace("Socket client handshake ", socketState.handle, " ", ss);
+                    /+if(ss == SEC_I_COMPLETE_NEEDED || ss == SEC_I_COMPLETE_AND_CONTINUE) {
+                    ss = CompleteAuthToken(&contextHandle, &buffersDescriptionOut);
+                }+/
 
-                negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
-                if(ss == SEC_E_INCOMPLETE_MESSAGE)
-                    return 0;
+                    //debugWriteln(buffersDescriptionIn, buffersIn[1], buffersDescriptionOut, ss);
 
-                if(!negotiating) {
-                    if(ss == SEC_E_WRONG_PRINCIPAL) {
-                        logger.warning("Unable to negotiate socket encryption possibly due to invalidate certificate ",
-                            socketState.handle, " ", ss);
-                        socketState.close(true);
-                    } else if(ss != SEC_E_OK) {
-                        logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
-                        socketState.close(true);
+                    if (buffersOut[0].cbBuffer > 0) {
+                        auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
+                        logger.trace("sending data for client socket ", socketState.handle, " for length ", sliced.length);
+                        writeln(sliced.unsafeGetLiteral);
+
+                        socketState.rawWritingState.dataToSend(sliced.dup);
+                        FreeContextBuffer(buffersOut[0].pvBuffer);
+                        gotExtra = true;
                     }
-                }
 
-                size_t consumed = canDo.length;
-                if(buffersIn[1].BufferType == SECBUFFER_EXTRA)
-                    consumed -= buffersIn[1].cbBuffer;
+                    logger.trace("Socket client handshake ", socketState.handle, " ", ss);
 
-                ret = consumed > 0;
-                return consumed;
-            });
+                    negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE ||
+                    ss == SEC_I_COMPLETE_AND_CONTINUE || ss == SEC_I_COMPLETE_NEEDED;
+                    if (ss == SEC_E_INCOMPLETE_MESSAGE)
+                        return 0;
+
+                    if (!negotiating) {
+                        if (ss == SEC_E_WRONG_PRINCIPAL) {
+                            logger.warning("Unable to negotiate socket encryption possibly due to invalidate certificate ",
+                            socketState.handle, " ", ss);
+                            socketState.close(true);
+                        } else if (ss != SEC_E_OK) {
+                            logger.warning("Unable to negotiate socket encryption ", socketState.handle, " ", ss);
+                            socketState.close(true);
+                        }
+                    }
+
+                    size_t consumed = canDo.length;
+                    if (buffersIn[1].BufferType == SECBUFFER_EXTRA) {
+                        consumed -= buffersIn[1].cbBuffer;
+                        gotExtra = true;
+                    }
+
+                    writeln("consuming ", consumed);
+
+                    ret = consumed > 0;
+                    return consumed;
+                });
+
+                socketState.triggerWrite(socketState);
+                socketState.triggerRead(socketState, false);
+            } while(gotExtra);
 
             if(!negotiating) {
                 updateStreamSizes(socketState);
             }
-
-            socketState.triggerWrite(socketState);
             return ret;
         }
     }

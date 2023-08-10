@@ -7,6 +7,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.errors;
 import sidero.base.synchronization.mutualexclusion;
+import sidero.base.path.hostname;
 
 struct EncryptionState {
     package(sidero.eventloop.networking.internal) {
@@ -14,6 +15,8 @@ struct EncryptionState {
         Certificate.Type encryptionEngine;
         Socket.EncryptionProtocol currentProtocol;
         size_t bufferSize;
+
+        Slice!Certificate currentSNICertificates;
 
         DecryptedState decryptedState;
 
@@ -42,8 +45,8 @@ struct EncryptionState {
         }
     }
 
-    bool addEncryption(scope SocketState* socketState, Certificate certificate, Socket.EncryptionProtocol protocol,
-            bool validateCertificates) scope @trusted {
+    bool addEncryption(scope SocketState* socketState, Hostname sniHostname, Certificate certificate, Socket.EncryptionProtocol protocol,
+            bool validateCertificates, Slice!Certificate sniCertificates = Slice!Certificate.init) scope @trusted {
         // wanted raw & is raw
         if(encryptionEngine == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None &&
                 certificate.type == Certificate.Type.None))
@@ -59,7 +62,12 @@ struct EncryptionState {
                 return false;
         case Certificate.Type.WinCrypt:
             version(Windows) {
-                return winCrypt.add(socketState, certificate, protocol, validateCertificates);
+                foreach(cert; sniCertificates) {
+                    if(cert.type != Certificate.Type.WinCrypt)
+                        return false;
+                }
+
+                return winCrypt.add(socketState, sniHostname, certificate, protocol, validateCertificates, sniCertificates);
             } else
                 return false;
         case Certificate.Type.Default:
@@ -68,13 +76,15 @@ struct EncryptionState {
     }
 
     size_t amountNeedToBeRead(scope SocketState* socketState) scope {
+        enum GoodAmount = 1024 * 1024;
+
         if(encryptionEngine == Certificate.Type.None || currentProtocol == Socket.EncryptionProtocol.None) {
             const amount = socketState.readingState.getWantedAmount();
-            return (amount > 0 && amount < uint.max) ? amount : 4096;
+            return (amount > 0 && amount < uint.max) ? amount : GoodAmount;
         }
 
         if(this.bufferSize == 0)
-            return 4096;
+            return GoodAmount;
         else
             return this.bufferSize;
     }

@@ -4,6 +4,7 @@ import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.networking.sockets;
 import sidero.base.path.networking;
+import sidero.base.path.hostname;
 import sidero.base.text;
 import sidero.base.errors;
 import sidero.base.internal.atomic;
@@ -92,7 +93,7 @@ version(Windows) {
                 saPtr.sin6_family = AF_INET6;
                 saPtr.sin6_addr = IN6ADDR_ANY;
                 saPtr.sin6_port = address.networkOrderPort();
-            }, (scope String_ASCII hostname) {
+            }, (scope Hostname hostname) {
                 assert(0); // already resolved
             }, () {
                 assert(0); // what?
@@ -381,9 +382,9 @@ version(Windows) {
                     logger.trace("Associated connection with IOCP", acceptedSocket, perSockState.handle);
                 }
 
-                if(!listenSocketState.certificate.isNull) {
-                    if(!acquiredSocket.state.encryptionState.addEncryption(acquiredSocket.state,
-                            listenSocketState.certificate, listenSocketState.encryption, listenSocketState.validateCertificates)) {
+                if(!listenSocketState.fallbackCertificate.isNull) {
+                    if(!acquiredSocket.state.encryptionState.addEncryption(acquiredSocket.state, Hostname.init,
+                            listenSocketState.fallbackCertificate, listenSocketState.encryption, listenSocketState.validateCertificates)) {
                         logger.error("Error could not initialize encryption on socket ", acceptedSocket, perSockState.handle);
                         closesocket(acceptedSocket);
                         return;

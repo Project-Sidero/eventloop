@@ -11,7 +11,7 @@ version(Windows) {
         SecPkgContext_StreamSizes, CtxtHandle, PSecHandle, SECPKG_ATTR_STREAM_SIZES, SecBuffer, SecBufferDesc, SECBUFFER_STREAM_HEADER,
         SECBUFFER_DATA, PCtxtHandle, SECBUFFER_STREAM_TRAILER, SECBUFFER_VERSION, SECBUFFER_EMPTY, SECBUFFER_EXTRA, SECBUFFER_TOKEN;
     public import core.sys.windows.security : SECURITY_STATUS, SEC_E_OK, SEC_I_RENEGOTIATE, SEC_I_CONTINUE_NEEDED,
-        SEC_E_WRONG_PRINCIPAL, SEC_E_INCOMPLETE_MESSAGE;
+        SEC_E_WRONG_PRINCIPAL, SEC_E_INCOMPLETE_MESSAGE, SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED;
     import core.stdc.config : c_long;
 
     alias WSAEVENT = HANDLE;
@@ -56,6 +56,7 @@ version(Windows) {
         SECURITY_STATUS DeleteSecurityContext(PCtxtHandle);
         SECURITY_STATUS InitializeSecurityContextW(CredHandle*, PCtxtHandle, wchar*, ULONG, ULONG, ULONG,
                 SecBufferDesc*, ULONG, PCtxtHandle, SecBufferDesc*, ULONG*, TimeStamp*);
+        SECURITY_STATUS CompleteAuthToken(PCtxtHandle, SecBufferDesc*);
     }
 
     enum {
@@ -87,8 +88,15 @@ version(Windows) {
         SCH_CREDENTIALS_VERSION = 5,
 
         SECURITY_NATIVE_DREP = 0x00000010,
+
+        ISC_REQ_REPLAY_DETECT = 0x00000004,
+        ISC_REQ_SEQUENCE_DETECT = 0x00000008,
+        ISC_REQ_CONFIDENTIALITY = 0x00000010,
+        ISC_REQ_USE_SUPPLIED_CREDS = 0x00000080,
         ISC_REQ_ALLOCATE_MEMORY = 0x00000100,
+        ISC_REQ_EXTENDED_ERROR = 0x00004000,
         ISC_REQ_STREAM = 0x00008000,
+        ISC_REQ_MANUAL_CRED_VALIDATION = 0x00080000,
 
         SP_PROT_SSL2_SERVER = 0x00000004,
         SP_PROT_SSL3_SERVER = 0x00000010,

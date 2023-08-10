@@ -1,10 +1,12 @@
 module sidero.eventloop.networking.sockets;
 import sidero.eventloop.networking.internal.state;
+import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.certificates;
 import sidero.eventloop.coroutine.instanceable;
 import sidero.eventloop.coroutine.future;
 import sidero.base.containers.dynamicarray;
 import sidero.base.path.networking;
+import sidero.base.path.hostname;
 import sidero.base.allocators;
 import sidero.base.attributes;
 import sidero.base.containers.readonlyslice;
@@ -50,14 +52,14 @@ export @safe nothrow @nogc:
 
     ///
     bool isAlive() scope {
-        return !isNull && atomicLoad(state.isAlive);
+        return !isNull && atomicLoad(state.isAlive) > 0;
     }
 
     /// Listen on port
-    static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address,
-            Socket.Protocol protocol, Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None,
-            Certificate certificate = Certificate.init, bool reuseAddr = true, bool keepAlive = true,
-            bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) {
+    static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address, Socket.Protocol protocol,
+            Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
+            bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true,
+            scope return RCAllocator allocator = RCAllocator.init) {
 
         if(!onAccept.canInstance)
             return typeof(return)(MalformedInputException("On accept coroutine cannot be null"));
@@ -69,15 +71,8 @@ export @safe nothrow @nogc:
             return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         ListenSocket ret;
-        ret.state = allocator.make!ListenSocketState;
-        ret.state.allocator = allocator;
-
-        ret.state.onAccept = onAccept;
-        ret.state.address = address;
-        ret.state.protocol = protocol;
-        ret.state.encryption = encryption;
-        ret.state.certificate = certificate;
-        ret.state.validateCertificates = validateCertificates;
+        ret.state = allocator.make!ListenSocketState(allocator, onAccept, address, protocol, encryption,
+                fallbackCertificate, validateCertificates);
 
         if(!ret.state.startUp(reuseAddr, keepAlive))
             return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
@@ -120,7 +115,16 @@ export @safe nothrow @nogc:
 
     ///
     bool isReadInProgress() scope {
-        return isAlive() && state.readingState.inProgress;
+        if (!isAlive)
+            return false;
+
+        bool ret;
+
+        state.guard(() {
+            ret = state.reading.inProgress;
+        });
+
+        return ret;
     }
 
     /// Stop sending & receiving of data
@@ -134,8 +138,10 @@ export @safe nothrow @nogc:
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
         Future!(Slice!ubyte) ret;
 
-        if(state.readingState.requestFromUser(amount, ret))
-            state.triggerRead(state);
+        state.guard(() {
+            if(state.reading.requestFromUser(amount, ret))
+                state.performReadWrite;
+        });
 
         return ret;
     }
@@ -149,8 +155,10 @@ export @safe nothrow @nogc:
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
         Future!(Slice!ubyte) ret;
 
-        if(state.readingState.requestFromUser(endCondition, ret))
-            state.triggerRead(state);
+        state.guard(() @safe {
+            if(state.reading.requestFromUser(endCondition, ret))
+                state.performReadWrite;
+        });
 
         return ret;
     }
@@ -165,19 +173,45 @@ export @safe nothrow @nogc:
         if(!isAlive())
             return Expected(data.length, 0);
 
-        auto expected = state.encryptionState.writeData(state, data);
-        if(expected)
-            state.triggerWrite(state);
-        return expected;
+        state.guard(() @safe {
+            // TODO: writeData!
+            /+if(state.writing.writeData(data))
+                state.performReadWrite;+/
+        });
+
+        //return expected;
+        assert(0);
     }
 
-    ///
-    ErrorResult addEncryption(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
+    /// Add encryption to socket, uses client API by default
+    alias addEncryption = addEncryptionClient;
+
+    /**
+        Adds encryption to socket, supply a certificate to represent this request and if you want to validate the servers' certificate.
+
+        See_Also: addEncryption, addEncryptionServer
+    */
+    ErrorResult addEncryptionClient(Hostname sniHostname = Hostname.init, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
             Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
         if(!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if(!state.encryptionState.addEncryption(this.state, certificate, encryption, validateCertificates))
+        if(!state.encryption.addEncryption(this.state, sniHostname, certificate, encryption, validateCertificates))
+            return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
+        return ErrorResult.init;
+    }
+
+    /**
+        Adds encryption to listening socket, supply a certificate to represent this host for fallback purposes and a list of all SNI certificates.
+
+        See_Also: addEncryption, addEncryptionClient
+    */
+    ErrorResult addEncryptionServer(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
+            Certificate fallbackCertificate = Certificate.init, Slice!Certificate sniCertificates = Slice!Certificate.init) scope {
+        if(!isAlive())
+            return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
+
+        if(!state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate, encryption, true, sniCertificates))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
@@ -221,12 +255,7 @@ export @safe nothrow @nogc:
             return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         Socket ret;
-        ret.state = allocator.make!SocketState;
-        ret.state.allocator = allocator;
-
-        ret.state.protocol = protocol;
-
-        assert(!ret.state.allocator.isNull);
+        ret.state = allocator.make!SocketState(allocator, protocol, false);
 
         auto errorResult = ret.state.startUp(address, keepAlive);
         if(!errorResult)
@@ -244,10 +273,7 @@ export @safe nothrow @nogc:
             allocator = globalAllocator();
 
         Socket ret;
-        ret.state = allocator.make!SocketState;
-        ret.state.allocator = allocator;
-
-        ret.state.protocol = protocol;
+        ret.state = allocator.make!SocketState(allocator, protocol, true);
         ret.state.localAddress = localAddress;
         ret.state.remoteAddress = remoteAddress;
 
