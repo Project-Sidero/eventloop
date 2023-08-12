@@ -164,23 +164,18 @@ export @safe nothrow @nogc:
     }
 
     ///
-    Expected write(scope return DynamicArray!ubyte data) scope {
-        return this.write(data.asReadOnly());
+    void write(scope return DynamicArray!ubyte data) scope {
+        this.write(data.asReadOnly());
     }
 
     ///
-    Expected write(scope return Slice!ubyte data) scope @trusted {
-        if(!isAlive())
-            return Expected(data.length, 0);
-
-        state.guard(() @safe {
-            // TODO: writeData!
-            /+if(state.writing.writeData(data))
-                state.performReadWrite;+/
-        });
-
-        //return expected;
-        assert(0);
+    void write(scope return Slice!ubyte data) scope {
+        if(isAlive()) {
+            state.guard(() @trusted {
+                state.writing.appendToQueue(state, data);
+                state.performReadWrite;
+            });
+        }
     }
 
     /// Add encryption to socket, uses client API by default

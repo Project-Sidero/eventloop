@@ -1,6 +1,7 @@
 module sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.networking.internal.state.defs;
 import sidero.eventloop.networking.internal.state.reading;
+import sidero.eventloop.networking.internal.state.writing;
 import sidero.eventloop.networking.internal.state.encryption;
 import sidero.eventloop.networking.internal.state.rawreading;
 import sidero.eventloop.networking.internal.state.rawwriting;
@@ -28,6 +29,7 @@ struct SocketState {
     bool cameFromServer;
 
     ReadingState reading;
+    WritingState writing;
     EncryptionState encryption;
     RawReadingState rawReading;
     RawWritingState rawWriting;
@@ -125,7 +127,9 @@ struct SocketState {
                 didSomeWork = didSomeWork || this.encryption.negotiate(&this);
             }
 
-            if(this.encryption.enabled && !this.encryption.negotiating) {
+            if(!this.encryption.enabled) {
+
+            } else if(this.encryption.enabled && !this.encryption.negotiating) {
                 didSomeWork = didSomeWork || this.encryption.encryptDecrypt(&this);
             }
 

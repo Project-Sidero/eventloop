@@ -1,28 +1,29 @@
 module sidero.eventloop.networking.internal.state.rawwriting;
-//import sidero.eventloop.networking.internal.state.defs;
+import sidero.eventloop.networking.internal.state.defs;
 import sidero.eventloop.networking.internal.state.socket;
-/+import sidero.eventloop.threads.osthread;
+import sidero.eventloop.threads.osthread;
 import sidero.base.containers.queue.concurrentqueue;
-import sidero.base.containers.readonlyslice;+/
+import sidero.base.containers.readonlyslice;
 
 struct RawWritingState {
-    /+private {
-        bool triggered;
-
+    package(sidero.eventloop.networking.internal.state) {
         FiFoConcurrentQueue!(Slice!ubyte) queue;
+    }
+
+    private {
+        bool triggered;
         size_t amountFromFirst;
-    }+/
+    }
 
 @safe nothrow @nogc:
 
     // NOTE: this needs guarding
     bool inProgress() scope {
-        //return triggered || !queue.empty;
-        assert(0);
+        return triggered || !queue.empty;
     }
 
     package(sidero.eventloop.networking.internal.state) bool tryWrite(scope SocketState* socketState) scope @trusted {
-        /+if(triggered)
+        if(triggered)
             return false;
 
         for(;;) {
@@ -53,13 +54,13 @@ struct RawWritingState {
                     }
                 }
             }
-        }+/
+        }
         assert(0);
     }
 
     // NOTE: this needs guarding
     void complete(scope SocketState* socketState, size_t completedAmount) scope @trusted {
-        /+auto firstItem = queue.peek;
+        auto firstItem = queue.peek;
 
         if(!firstItem) {
             logger.info("Received notification of written data but no data was waiting for write ", completedAmount,
@@ -79,6 +80,6 @@ struct RawWritingState {
             amountFromFirst = 0;
         }
 
-        triggered = false;+/
+        triggered = false;
     }
 }

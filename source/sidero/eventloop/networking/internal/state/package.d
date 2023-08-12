@@ -6,3 +6,4 @@ public import sidero.eventloop.networking.internal.state.rawreading;
 public import sidero.eventloop.networking.internal.state.rawwriting;
 public import sidero.eventloop.networking.internal.state.reading;
 public import sidero.eventloop.networking.internal.state.socket;
+public import sidero.eventloop.networking.internal.state.writing;
