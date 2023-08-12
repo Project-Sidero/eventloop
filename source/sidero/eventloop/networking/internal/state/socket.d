@@ -128,7 +128,11 @@ struct SocketState {
             }
 
             if(!this.encryption.enabled) {
-
+                while(!writing.queue.empty) {
+                    auto got = writing.queue.pop;
+                    if (got)
+                        rawWriting.queue.push(got);
+                }
             } else if(this.encryption.enabled && !this.encryption.negotiating) {
                 didSomeWork = didSomeWork || this.encryption.encryptDecrypt(&this);
             }
