@@ -71,8 +71,12 @@ bool startWorkers(size_t workerMultiplier) @trusted {
         if(newCount > oldCount) {
             logger.notice("Starting additional workers, using multiplier ", workerMultiplier, " for an additional ",
                     newCount - oldCount, " to form ", newCount, " workers");
+        } else if(newCount == oldCount) {
+            logger.debug_("Not starting additional workers as the old count is the same as the new one with a multipler ",
+                    workerMultiplier, " for a total of ", newCount, " workers");
+            return true;
         } else {
-            logger.notice("Attempted to start additional workers, but the calculated new workers were less than the old ones ",
+            logger.debug_("Attempted to start additional workers, but the calculated new workers were less than the old ones ",
                     newCount, " but was ", oldCount);
             return true;
         }
@@ -182,7 +186,7 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
 
         auto conditionToContinue = coroutine.condition.coroutine;
 
-        if (conditionToContinue.isComplete) {
+        if(conditionToContinue.isComplete) {
             logger.debug_("Adding coroutine task on ", Thread.self, " and condition is complete");
             // condition is complete (could be null)
             coroutine.unsafeUnblock;

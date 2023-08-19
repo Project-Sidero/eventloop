@@ -29,14 +29,19 @@ version(Windows) {
 @safe nothrow @nogc:
 
     bool initializeWorkerMechanism(size_t numberOfWorkers) @trusted {
-        import core.sys.windows.windows : CreateIoCompletionPort, INVALID_HANDLE_VALUE, GetLastError;
+        import sidero.eventloop.internal.windows.bindings;
 
         logger = Logger.forName(String_UTF8(__MODULE__));
         if(!logger || logger.isNull)
             return false;
 
         requiredWorkers = cast(uint)numberOfWorkers;
-        completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, null, 0, requiredWorkers);
+
+        // the reason we ignore the required number of workers for IOCP allowed to keep awake is because
+        //  it won't actually benefit us to have more threads than cpu cores + HT.
+        // it would only increase the number of context switches and kill performance
+        // see: programming server-side applications for Microsoft Windows 2000 page 57 and 61.
+        completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, null, 0, 0);
 
         if(completionPort is null) {
             logger.error("Failed to initialize IOCP context ", GetLastError());
@@ -48,7 +53,7 @@ version(Windows) {
     }
 
     void shutdownWorkerMechanism() @trusted {
-        import core.sys.windows.windows : PostQueuedCompletionStatus, ULONG_PTR, GetLastError, CloseHandle;
+        import sidero.eventloop.internal.windows.bindings;
 
         ULONG_PTR shutdownKey = cast(ULONG_PTR)&shutdownByte;
 
@@ -71,7 +76,7 @@ version(Windows) {
     }
 
     void triggerACoroutineMechanism(size_t count) @trusted {
-        import core.sys.windows.windows : PostQueuedCompletionStatus, ULONG_PTR, GetLastError;
+        import sidero.eventloop.internal.windows.bindings;
 
         ULONG_PTR coroutineKey = cast(ULONG_PTR)&coroutineByte;
         logger.debug_("Posting coroutine work with key ", coroutineKey, " times ", count);
@@ -87,7 +92,7 @@ version(Windows) {
     }
 
     bool associateWithIOCP(Socket socket) @trusted {
-        import core.sys.windows.windows : CreateIoCompletionPort, INVALID_HANDLE_VALUE, WSAGetLastError, HANDLE;
+        import sidero.eventloop.internal.windows.bindings;
 
         socket.state.iocpWork.key = cast(ubyte[4])"SOCK";
         socket.state.iocpWork.ptr = socket.state;
@@ -104,7 +109,7 @@ version(Windows) {
     }
 
     void workerProc() @trusted {
-        import core.sys.windows.windows : GetQueuedCompletionStatus, DWORD, ULONG_PTR, OVERLAPPED, INFINITE, GetLastError, WAIT_TIMEOUT;
+        import sidero.eventloop.internal.windows.bindings;
 
         atomicIncrementAndLoad(startedWorkers, 1);
         atomicIncrementAndLoad(runningWorkers, 1);

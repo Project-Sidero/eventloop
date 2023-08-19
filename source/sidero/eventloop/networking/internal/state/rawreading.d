@@ -47,7 +47,7 @@ struct RawReadingState {
         auto slice = buffer.unsafeGetLiteral;
 
         triggered = true;
-        if(socketState.tryReadMechanism(socketState, slice[amountFilled .. $])) {
+        if(socketState.tryRead(slice[amountFilled .. $])) {
             logger.debug_("Successfully set up raw reading for socket with a buffer of ", toRead, " for a length of ",
                     buffer.length, " from ", oldLength, " for socket ", socketState.handle, " on thread ", Thread.self);
             return true;

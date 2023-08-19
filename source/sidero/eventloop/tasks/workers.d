@@ -8,8 +8,8 @@ import iw = sidero.eventloop.internal.workers;
 
 export @safe nothrow @nogc:
 
-///
-ErrorResult startWorkers(size_t workerMultiplier) @trusted {
+/// Params: workerMultiplier = Default is 2, recommended by Jeffrey Richter and Jason D. Clark for Windows IOCP.
+ErrorResult startWorkers(size_t workerMultiplier = 2) @trusted {
     if(iw.startWorkers(workerMultiplier))
         return ErrorResult.init;
 

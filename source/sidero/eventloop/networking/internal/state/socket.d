@@ -57,7 +57,7 @@ struct SocketState {
             } else if(refCount == 0) {
                 inShutdownProcess = true;
 
-                encryption.cleanup;
+                encryption.cleanup(&this);
                 shutdown(&this, false);
                 forceClose(&this);
 
@@ -117,7 +117,7 @@ struct SocketState {
     }
 
     // NOTE: this needs guarding
-    package(sidero.eventloop) void performReadWrite() scope @trusted {
+    void performReadWrite() scope @trusted {
         bool didSomeWork;
 
         do {
@@ -130,7 +130,7 @@ struct SocketState {
             if(!this.encryption.enabled) {
                 while(!writing.queue.empty) {
                     auto got = writing.queue.pop;
-                    if (got)
+                    if(got)
                         rawWriting.queue.push(got);
                 }
             } else if(this.encryption.enabled && !this.encryption.negotiating) {
@@ -151,5 +151,17 @@ struct SocketState {
         socket.state = &this;
         this.rc(true);
         return connectToSpecificAddress(socket, address, keepAlive);
+    }
+
+    package(sidero.eventloop.networking.internal) {
+        // NOTE: this needs guarding
+        bool tryWrite(ubyte[] buffer) scope @trusted {
+            return tryWriteMechanism(&this, buffer);
+        }
+
+        // NOTE: this needs guarding
+        bool tryRead(ubyte[] buffer) scope @trusted {
+            return tryReadMechanism(&this, buffer);
+        }
     }
 }

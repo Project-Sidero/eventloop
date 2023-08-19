@@ -321,7 +321,7 @@ bool ensureItIsSetup() {
 
     if(!startUpNetworking)
         return false;
-    else if(!startWorkers(1))
+    else if(!startWorkers())
         return false;
 
     return true;

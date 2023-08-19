@@ -1,9 +1,9 @@
 module sidero.eventloop.internal.windows.bindings;
 
 version(Windows) {
-    public import core.sys.windows.windows : SOCKET, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT, OVERLAPPED, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR,
-        PLUID, WSAENOTSOCK, getsockname, GetLastError;
+    public import core.sys.windows.windows : SOCKET, WORD, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
+        WAIT_TIMEOUT, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR, ULONG_PTR,
+        PLUID, WSAENOTSOCK, getsockname, GetLastError, MAKEWORD;
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
@@ -57,6 +57,14 @@ version(Windows) {
         SECURITY_STATUS InitializeSecurityContextW(CredHandle*, PCtxtHandle, wchar*, ULONG, ULONG, ULONG,
                 SecBufferDesc*, ULONG, PCtxtHandle, SecBufferDesc*, ULONG*, TimeStamp*);
         SECURITY_STATUS CompleteAuthToken(PCtxtHandle, SecBufferDesc*);
+
+        HANDLE CreateIoCompletionPort(HANDLE, HANDLE, ULONG_PTR, DWORD);
+        BOOL PostQueuedCompletionStatus(HANDLE, DWORD, ULONG_PTR, OVERLAPPED*);
+        BOOL CloseHandle(HANDLE);
+        int WSAGetLastError();
+        BOOL GetQueuedCompletionStatus(HANDLE, DWORD*, ULONG_PTR*, OVERLAPPED**, DWORD);
+        int WSAStartup(WORD, WSADATA*);
+        int WSACleanup();
     }
 
     enum {
@@ -119,7 +127,20 @@ version(Windows) {
         SCH_CRED_AUTO_CRED_VALIDATION = 0x00000020,
         SCH_CRED_MANUAL_CRED_VALIDATION = 0x00000008,
         SCH_CRED_NO_SERVERNAME_CHECK = 0x00000004,
+
+        INVALID_HANDLE_VALUE = cast(HANDLE)-1,
+        NO_ERROR = 0,
     }
+
+    struct OVERLAPPED {
+        ULONG_PTR Internal;
+        ULONG_PTR InternalHigh;
+        DWORD Offset;
+        DWORD OffsetHigh;
+        HANDLE hEvent;
+    }
+
+    alias LPOVERLAPPED = OVERLAPPED*;
 
     struct WSAPROTOCOLCHAIN {
         int ChainLen;
@@ -252,5 +273,29 @@ version(Windows) {
         DWORD dwSessionLifespan;
         DWORD dwFlags;
         DWORD dwCredFormat;
+    }
+
+    enum {
+        WSADESCRIPTION_LEN = 256,
+        WSASYS_STATUS_LEN = 128,
+    }
+
+    struct WSADATA {
+        WORD wVersion;
+        WORD wHighVersion;
+
+        version(Win64) {
+            ushort iMaxSockets;
+            ushort iMaxUdpDg;
+            char* lpVendorInfo;
+            char[WSADESCRIPTION_LEN + 1] szDescription;
+            char[WSASYS_STATUS_LEN + 1] szSystemStatus;
+        } else {
+            char[WSADESCRIPTION_LEN + 1] szDescription;
+            char[WSASYS_STATUS_LEN + 1] szSystemStatus;
+            ushort iMaxSockets;
+            ushort iMaxUdpDg;
+            char* lpVendorInfo;
+        }
     }
 }

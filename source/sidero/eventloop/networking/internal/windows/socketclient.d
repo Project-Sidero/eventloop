@@ -20,14 +20,6 @@ struct PlatformSocket {
     shared(bool) isShutdown, isClosed;
 
 @safe nothrow @nogc:
-
-    bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) scope {
-        assert(0);
-    }
-
-    bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) scope {
-        assert(0);
-    }
 }
 
 ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) {
@@ -39,5 +31,13 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) scope 
 }
 
 void forceClose(scope SocketState* socketState) scope {
+    assert(0);
+}
+
+bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) {
+    assert(0);
+}
+
+bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) {
     assert(0);
 }

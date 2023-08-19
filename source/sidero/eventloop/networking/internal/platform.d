@@ -24,15 +24,7 @@ version(Windows) {
     struct PlatformSocket {
         void* handle;
 
-        @safe nothrow @nogc:
-
-        bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) scope {
-            assert(0);
-        }
-
-        bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) scope {
-            assert(0);
-        }
+    @safe nothrow @nogc:
     }
 
     ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) {
@@ -46,6 +38,14 @@ version(Windows) {
     void forceClose(scope SocketState* socketState) scope {
         assert(0);
     }
+
+    bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) {
+        assert(0);
+    }
+
+    bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) {
+        assert(0);
+    }
 }
 
 version(Windows) {
@@ -56,8 +56,7 @@ version(Windows) {
     struct PlatformListenSocket {
         shared(ptrdiff_t) isAlive;
 
-        @safe nothrow @nogc:
-
+    @safe nothrow @nogc:
     }
 
     bool listenOnAddress(scope ListenSocket* listenSocket, bool reuseAddr, bool keepAlive) {

@@ -39,7 +39,7 @@ struct RawWritingState {
                     } else {
                         logger.debug_("Attempting to write ", firstItem.length, " items to socket ",
                                 socketState.handle, " on thread ", Thread.self);
-                        bool result = socketState.tryWriteMechanism(socketState, cast(ubyte[])firstItem.unsafeGetLiteral);
+                        bool result = socketState.tryWrite(cast(ubyte[])firstItem.unsafeGetLiteral);
 
                         if(result) {
                             logger.debug_("Have triggered ", firstItem.length, " items to socket ", socketState.handle,
