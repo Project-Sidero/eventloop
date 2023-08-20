@@ -2,8 +2,8 @@ module sidero.eventloop.internal.windows.bindings;
 
 version(Windows) {
     public import core.sys.windows.windows : SOCKET, WORD, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT, ULONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL, LPCWSTR, ULONG_PTR,
-        PLUID, WSAENOTSOCK, getsockname, GetLastError, MAKEWORD;
+        WAIT_TIMEOUT, ULONG, LONG, LONGLONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL,
+        LPCWSTR, ULONG_PTR, PLUID, WSAENOTSOCK, GetLastError, MAKEWORD;
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
@@ -65,6 +65,17 @@ version(Windows) {
         BOOL GetQueuedCompletionStatus(HANDLE, DWORD*, ULONG_PTR*, OVERLAPPED**, DWORD);
         int WSAStartup(WORD, WSADATA*);
         int WSACleanup();
+
+        HANDLE CreateWaitableTimerW(SECURITY_ATTRIBUTES*, BOOL, wchar*);
+        BOOL SetWaitableTimer(HANDLE, LARGE_INTEGER*, LONG, void*, void*, BOOL);
+
+        int setsockopt(SOCKET s, int level, int optname, const(void)* optval, int optlen);
+        int closesocket(SOCKET s);
+        int connect(SOCKET s, const(sockaddr)* name, int namelen);
+        int bind(SOCKET s, const(sockaddr)* name, int namelen);
+        SOCKET accept(SOCKET s, sockaddr* addr, int* addrlen);
+        int listen(SOCKET s, int backlog);
+        int getsockname(SOCKET s, sockaddr* name, int* namelen);
     }
 
     enum {
@@ -72,16 +83,40 @@ version(Windows) {
         MAX_PROTOCOL_CHAIN = 7,
         WSA_FLAG_OVERLAPPED = 1,
         SOMAXCONN = 0x7fffffff,
-        WSA_INVALID_EVENT = cast(WSAEVENT)null,
         FD_ACCEPT_BIT = 3,
         FD_ACCEPT = 1 << FD_ACCEPT_BIT,
         FD_CLOSE_BIT = 5,
         FD_CLOSE = 1 << FD_CLOSE_BIT,
+        FD_MAX_EVENTS = 10,
+
+        SD_RECEIVE = 0,
+        SD_SEND = 1,
+        SD_BOTH = 2,
+
+        WSA_INVALID_EVENT = cast(WSAEVENT)null,
         WSA_INFINITE = INFINITE,
         WSA_WAIT_EVENT_0 = WAIT_OBJECT_0,
         WSA_WAIT_TIMEOUT = WAIT_TIMEOUT,
-        FD_MAX_EVENTS = 10,
         WSA_IO_INCOMPLETE = ERROR_IO_INCOMPLETE,
+        WSA_OPERATION_ABORTED = 995,
+        WSA_IO_PENDING = 997,
+        WSAEINTR = 10004,
+        WSAEFAULT = 10014,
+        WSAEINVAL = 10022,
+        WSAEWOULDBLOCK = 10035,
+        WSAEINPROGRESS = 10036,
+        WSAEMSGSIZE = 10040,
+        WSAEOPNOTSUPP = 10045,
+        WSAENETDOWN = 10050,
+        WSAENETRESET = 10052,
+        WSAECONNABORTED = 10053,
+        WSAECONNRESET = 10054,
+        WSAENOBUFS = 10055,
+        WSAENOTCONN = 10057,
+        WSAESHUTDOWN = 10058,
+        WSAETIMEDOUT = 10060,
+        WSANOTINITIALISED = 10093,
+        WSAEDISCON = 10101,
 
         szOID_COMMON_NAME = "2.5.4.3",
         szOID_PKCS_12_FRIENDLY_NAME_ATTR = "1.2.840.113549.1.9.20",
@@ -130,6 +165,18 @@ version(Windows) {
 
         INVALID_HANDLE_VALUE = cast(HANDLE)-1,
         NO_ERROR = 0,
+
+        AF_INET = 2,
+        AF_INET6 = 23,
+        IPPROTO_TCP = 6,
+        IPPROTO_UDP = 41,
+        SOCKET_ERROR = -1,
+        INVALID_SOCKET = ~0,
+        SOCK_STREAM = 1,
+        SOCK_DGRAM = 2,
+        SOL_SOCKET = 0xFFFF,
+        SO_KEEPALIVE = 0x0008,
+
     }
 
     struct OVERLAPPED {
@@ -297,5 +344,59 @@ version(Windows) {
             ushort iMaxUdpDg;
             char* lpVendorInfo;
         }
+    }
+
+    struct SECURITY_ATTRIBUTES {
+        DWORD nLength;
+        void* lpSecurityDescriptor;
+        BOOL bInheritHandle;
+    }
+
+    union LARGE_INTEGER {
+        struct {
+            DWORD LowPart;
+            LONG HighPart;
+        }
+
+        LONGLONG QuadPart;
+    }
+
+    struct sockaddr {
+        short sa_family;
+        ubyte[14] sa_data;
+    }
+
+    union in_addr {
+        struct {
+            ubyte s_b1;
+            ubyte s_b2;
+            ubyte s_b3;
+            ubyte s_b4;
+        }
+        struct {
+            ushort s_w1;
+            ushort s_w2;
+        }
+        uint s_addr;
+    }
+
+    union in6_addr {
+        ubyte[16] Byte;
+        ushort[8] Word;
+    }
+
+    struct sockaddr_in {
+        short sin_family;
+        ushort sin_port;
+        in_addr sin_addr;
+        ubyte[8] sin_zero;
+    }
+
+    struct sockaddr_in6 {
+        short sin6_family;
+        ushort sin6_port;
+        uint sin6_flowinfo;
+        in6_addr sin6_addr;
+        uint sin6_scope_id;
     }
 }

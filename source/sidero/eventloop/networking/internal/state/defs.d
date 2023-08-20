@@ -15,9 +15,8 @@ package(sidero.eventloop.networking.internal.state) {
         initLock.pureLock;
 
         if(!logger || logger.isNull) {
-            logger = logger.forName(String_UTF8(__MODULE__));
+            logger = Logger.forName(String_UTF8(__MODULE__));
             assert(logger);
-
         }
 
         initLock.unlock;

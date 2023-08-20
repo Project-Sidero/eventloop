@@ -56,6 +56,12 @@ bool startWorkers(size_t workerMultiplier) @trusted {
     scope(exit)
         mutex.unlock;
 
+    if (workerMultiplier == 0) {
+        if (isInitialized)
+            return true;
+        workerMultiplier = 2;
+    }
+
     logger = Logger.forName(String_UTF8(__MODULE__));
     if(!logger)
         return false;

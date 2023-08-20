@@ -59,7 +59,7 @@ export @safe nothrow @nogc:
     static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address, Socket.Protocol protocol,
             Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
             bool reuseAddr = true, bool keepAlive = true, bool validateCertificates = true,
-            scope return RCAllocator allocator = RCAllocator.init) {
+            scope return RCAllocator allocator = RCAllocator.init) @trusted {
 
         if(!onAccept.canInstance)
             return typeof(return)(MalformedInputException("On accept coroutine cannot be null"));
@@ -115,14 +115,12 @@ export @safe nothrow @nogc:
 
     ///
     bool isReadInProgress() scope {
-        if (!isAlive)
+        if(!isAlive)
             return false;
 
         bool ret;
 
-        state.guard(() {
-            ret = state.reading.inProgress;
-        });
+        state.guard(() { ret = state.reading.inProgress; });
 
         return ret;
     }
@@ -136,10 +134,15 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
         Future!(Slice!ubyte) ret;
 
         state.guard(() {
-            if(state.reading.requestFromUser(amount, ret))
+            const cond = state.reading.requestFromUser(amount, ret);
+
+            if(cond)
                 state.performReadWrite;
         });
 
@@ -153,13 +156,16 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
         Future!(Slice!ubyte) ret;
 
         state.guard(() @safe {
-            if(state.reading.requestFromUser(endCondition, ret))
+            const cond = state.reading.requestFromUser(endCondition, ret);
+            if(cond)
                 state.performReadWrite;
         });
-
         return ret;
     }
 
@@ -171,10 +177,7 @@ export @safe nothrow @nogc:
     ///
     void write(scope return Slice!ubyte data) scope {
         if(isAlive()) {
-            state.guard(() @trusted {
-                state.writing.appendToQueue(state, data);
-                state.performReadWrite;
-            });
+            state.guard(() @trusted { state.writing.appendToQueue(state, data); state.performReadWrite; });
         }
     }
 
@@ -237,7 +240,7 @@ export @safe nothrow @nogc:
 
     ///
     static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
-            Socket.Protocol protocol, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) {
+            Socket.Protocol protocol, bool keepAlive = true, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
         if(!onConnect.canInstance)
@@ -321,7 +324,7 @@ bool ensureItIsSetup() {
 
     if(!startUpNetworking)
         return false;
-    else if(!startWorkers())
+    else if(!startWorkers(0))
         return false;
 
     return true;

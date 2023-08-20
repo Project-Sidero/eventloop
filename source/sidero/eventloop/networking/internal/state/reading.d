@@ -27,6 +27,14 @@ struct ReadingState {
 
 @safe nothrow @nogc:
 
+    void cleanup() scope {
+        import sidero.base.errors;
+
+        if (triggerForHandler !is null) {
+            cast(void)trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
+        }
+    }
+
     // NOTE: needs guarding
     bool inProgress() scope {
         return triggerForHandler !is null;
@@ -66,7 +74,7 @@ struct ReadingState {
     }
 
     package(sidero.eventloop.networking.internal.state) bool tryFulfillRequest(scope SocketState* socketState) scope {
-        if(inProgress)
+        if(!inProgress)
             return false;
 
         bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) @trusted {

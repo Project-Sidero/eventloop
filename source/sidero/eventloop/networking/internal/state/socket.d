@@ -58,6 +58,7 @@ struct SocketState {
                 inShutdownProcess = true;
 
                 encryption.cleanup(&this);
+                reading.cleanup;
                 shutdown(&this, false);
                 forceClose(&this);
 

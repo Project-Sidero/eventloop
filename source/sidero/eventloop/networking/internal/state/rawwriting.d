@@ -35,10 +35,11 @@ struct RawWritingState {
                 if(firstItem) {
                     if(firstItem.length == 0) {
                         cast(void)queue.pop;
+                        amountFromFirst = 0;
                         continue;
                     } else {
-                        logger.debug_("Attempting to write ", firstItem.length, " items to socket ",
-                                socketState.handle, " on thread ", Thread.self);
+                        logger.debug_("Attempting to write ", firstItem.length, " with offset ", amountFromFirst,
+                                " items to socket ", socketState.handle, " on thread ", Thread.self);
                         bool result = socketState.tryWrite(cast(ubyte[])firstItem.unsafeGetLiteral);
 
                         if(result) {
@@ -52,20 +53,23 @@ struct RawWritingState {
                             return false;
                         }
                     }
-                }
-            }
+                } else
+                    return false;
+            } else
+                return false;
         }
+
         assert(0);
     }
 
     // NOTE: this needs guarding
     void complete(scope SocketState* socketState, size_t completedAmount) scope @trusted {
         auto firstItem = queue.peek;
+        triggered = false;
 
         if(!firstItem) {
             logger.info("Received notification of written data but no data was waiting for write ", completedAmount,
                     " on socket ", socketState.handle, " on thread ", Thread.self);
-            triggered = false;
             amountFromFirst = 0;
             return;
         }
@@ -73,13 +77,13 @@ struct RawWritingState {
         logger.debug_("Received notification of written data for amount ", completedAmount, " on socket ",
                 socketState.handle, " on thread ", Thread.self);
 
-        if(amountFromFirst + completedAmount < firstItem.length) {
+        const proposedAmount = amountFromFirst + completedAmount;
+
+        if(proposedAmount < firstItem.length) {
             amountFromFirst += completedAmount;
         } else {
             cast(void)queue.pop;
             amountFromFirst = 0;
         }
-
-        triggered = false;
     }
 }

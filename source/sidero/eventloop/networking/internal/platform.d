@@ -35,7 +35,7 @@ version(Windows) {
         assert(0);
     }
 
-    void forceClose(scope SocketState* socketState) scope {
+    void forceClose(scope SocketState* socketState) {
         assert(0);
     }
 

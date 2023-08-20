@@ -8,8 +8,6 @@ package(sidero.eventloop):
 
 CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return scope CoroutineDescriptor!ResultType* descriptorStorage,
         return scope ref CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1] functionsStorage) {
-    assert(__ctfe);
-
     CoroutinePair!ResultType pair;
     pair.descriptor = descriptorStorage;
 
@@ -159,8 +157,10 @@ export @safe nothrow @nogc:
     }
 
     void rc(bool add) scope {
-        state.rc(add);
-        descriptor.rc(add);
+        if(state !is null)
+            state.rc(add);
+        if(descriptor !is null)
+            descriptor.rc(add);
     }
 
     ErrorResult resume() scope {

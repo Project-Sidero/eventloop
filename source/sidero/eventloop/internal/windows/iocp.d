@@ -118,7 +118,6 @@ version(Windows) {
             logger.info("Stopping IOCP worker ", Thread.self);
         }
 
-        logger.setLevel = LogLevel.Trace;
         logger.info("Starting IOCP worker ", Thread.self);
 
         for(;;) {
@@ -166,6 +165,8 @@ version(Windows) {
                         if(overlapped is &socket.state.readOverlapped)
                             handleSocketRead(socket);
                     }
+
+                    socket.state.guard(&socket.state.performReadWrite);
                 }
             }
         }
