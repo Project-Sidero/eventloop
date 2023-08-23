@@ -39,7 +39,7 @@ export @safe nothrow @nogc:
     ///
     ~this() scope @trusted {
         if(this.state !is null && atomicDecrementAndLoad(state.refCount, 1) == 0 && !this.isRunning) {
-            mutex.pureLock;
+            mutex.lock.assumeOkay;
             allThreads.remove(state.handle.handle);
 
             if(state.owns) {
@@ -97,7 +97,7 @@ export @safe nothrow @nogc:
         Result!Thread ret;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
-            mutex.pureLock;
+            mutex.lock.assumeOkay;
 
             void[] memory = threadAllocator.allocate(Thread.State.sizeof);
             assert(memory.length == Thread.State.sizeof);
@@ -238,7 +238,7 @@ export @safe nothrow @nogc:
 
     ///
     static Thread self() @trusted {
-        mutex.pureLock;
+        mutex.lock.assumeOkay;
 
         version(Windows) {
             import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
@@ -403,17 +403,17 @@ private:
 
 private:
 import sidero.eventloop.threads.registration;
+import sidero.eventloop.synchronization.system.lock;
 import sidero.base.allocators.predefined;
-import sidero.base.synchronization.mutualexclusion;
 import sidero.base.containers.map.hashmap;
 
 __gshared {
-    TestTestSetLockInline mutex;
+    SystemLock mutex;
     HashMap!(void*, Thread.State*) allThreads;
     HouseKeepingAllocator!() threadAllocator;
 }
 
-export void accessGlobals(scope void delegate(ref TestTestSetLockInline mutex, ref HashMap!(void*,
+export void accessGlobals(scope void delegate(ref SystemLock mutex, ref HashMap!(void*,
         Thread.State*) allThreads, ref HouseKeepingAllocator!() threadAllocator) nothrow @nogc del) nothrow @nogc {
     del(mutex, allThreads, threadAllocator);
 }
@@ -455,7 +455,7 @@ version(Windows) {
         Thread self;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
-            mutex.pureLock;
+            mutex.lock.assumeOkay;
             auto got = allThreads[handle];
             if(got && got !is null) {
                 self.state = got;
