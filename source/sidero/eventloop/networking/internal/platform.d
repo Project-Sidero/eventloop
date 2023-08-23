@@ -57,13 +57,13 @@ version(Windows) {
         shared(ptrdiff_t) isAlive;
 
     @safe nothrow @nogc:
+
+        this(return scope ref PlatformListenSocket other) scope {
+            this.tupleof = other.tupleof;
+        }
     }
 
     bool listenOnAddress(scope ListenSocket* listenSocket, bool reuseAddr, bool keepAlive) {
-        assert(0);
-    }
-
-    void shutdown(scope PlatformListenSocket* socketState, bool haveReferences = true) {
         assert(0);
     }
 

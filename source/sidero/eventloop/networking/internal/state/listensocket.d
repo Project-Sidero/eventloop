@@ -70,14 +70,6 @@ struct ListenSocketState {
 
                 RCAllocator allocator = this.allocator;
                 allocator.dispose(&this);
-            } else if(refCount == 1 && atomicLoad(isAlive) > 0) {
-                // we are pinned, but nobody knows about this socket anymore, ugh oh...
-                foreach(pls; platformSockets) {
-                    if(pls) {
-                        if(atomicLoad(pls.isAlive))
-                            shutdown(&pls.get());
-                    }
-                }
             }
         }
     }
