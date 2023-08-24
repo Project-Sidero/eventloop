@@ -43,7 +43,6 @@ export @safe nothrow @nogc:
     GenericCoroutine asGeneric() return scope {
         GenericCoroutine ret;
         ret.pair = this.pair.asGeneric();
-        ret.pair.rc(true);
         return ret;
     }
 

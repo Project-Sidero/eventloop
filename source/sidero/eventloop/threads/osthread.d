@@ -123,8 +123,8 @@ export @safe nothrow @nogc:
             }
 
             void cleanup() {
-                efa.destroy;
-                state.destroy;
+                (*efa).destroy;
+                (*state).destroy;
 
                 retThread.state = null;
 
@@ -238,14 +238,8 @@ export @safe nothrow @nogc:
 
     ///
     static Thread self() @trusted {
-        mutex.lock.assumeOkay;
-
         version(Windows) {
-            import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
-                HANDLE, GetCurrentThread, DuplicateHandle, GetCurrentThreadId;
-
-            HANDLE handle = GetCurrentThread();
-            DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
+            import core.sys.windows.windows : GetCurrentThreadId;
 
             auto lookupKey = GetCurrentThreadId();
         } else version(Posix) {
@@ -263,13 +257,21 @@ export @safe nothrow @nogc:
                 Thread ret;
                 ret.state = ifExists.get;
                 ret.__ctor(ret);
-
-                mutex.unlock;
                 return ret;
             }
         }
 
         {
+            mutex.lock.assumeOkay;
+
+            version(Windows) {
+                import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS,
+                    FALSE, HANDLE, GetCurrentThread, DuplicateHandle;
+
+                HANDLE handle = GetCurrentThread();
+                DuplicateHandle(GetCurrentProcess(), handle, null, &handle, 0, FALSE, DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
+            }
+
             void[] memory = threadAllocator.allocate(Thread.State.sizeof);
             assert(memory.length == Thread.State.sizeof);
 
@@ -413,8 +415,8 @@ __gshared {
     HouseKeepingAllocator!() threadAllocator;
 }
 
-export void accessGlobals(scope void delegate(ref SystemLock mutex, ref HashMap!(void*,
-        Thread.State*) allThreads, ref HouseKeepingAllocator!() threadAllocator) nothrow @nogc del) nothrow @nogc {
+export void accessGlobals(scope void delegate(ref SystemLock mutex, ref HashMap!(void*, Thread.State*) allThreads,
+        ref HouseKeepingAllocator!() threadAllocator) nothrow @nogc del) nothrow @nogc {
     del(mutex, allThreads, threadAllocator);
 }
 

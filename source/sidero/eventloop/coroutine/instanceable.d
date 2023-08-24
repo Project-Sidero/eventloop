@@ -47,6 +47,8 @@ export @safe nothrow @nogc:
         argsStorage.values = args;
 
         InstanceableCoroutine!ResultType ret;
+        ret.pair.descriptor = this.pair.descriptor;
+        ret.pair.rc(true);
 
         if(this.constructionState.isNull) {
             ret.pair.state = cast(CoroutineState!ResultType*)this.pair.descriptor.base.createInstanceState(allocator,
@@ -58,8 +60,6 @@ export @safe nothrow @nogc:
             }, cast(void*)&argsStorage);
         }
 
-        ret.pair.descriptor = this.pair.descriptor;
-        ret.pair.rc(true);
         return ret;
     }
 
@@ -113,7 +113,6 @@ export @safe nothrow @nogc:
     Future!ResultType asFuture() return scope @trusted {
         Future!ResultType ret;
         ret.pair = this.pair;
-        ret.pair.rc(true);
         return ret;
     }
 
@@ -121,7 +120,6 @@ export @safe nothrow @nogc:
     GenericCoroutine asGeneric() return scope {
         GenericCoroutine ret;
         ret.pair = this.pair.asGeneric();
-        ret.pair.rc(true);
         return ret;
     }
 

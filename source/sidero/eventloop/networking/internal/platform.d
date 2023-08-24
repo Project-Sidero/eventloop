@@ -63,15 +63,15 @@ version(Windows) {
         }
     }
 
-    bool listenOnAddress(scope ListenSocket* listenSocket, bool reuseAddr, bool keepAlive) {
+    bool listenOnAddress(scope ListenSocket* listenSocketState, bool reuseAddr, bool keepAlive) {
         assert(0);
     }
 
-    void forceClose(scope PlatformListenSocket* socketState) scope {
+    void forceClose(scope PlatformListenSocket* listenSocketState) scope {
         assert(0);
     }
 
-    void cleanup(scope PlatformListenSocket* socketState) scope {
+    void cleanup(scope PlatformListenSocket* listenSocketState) scope {
         assert(0);
     }
 }

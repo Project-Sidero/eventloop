@@ -165,6 +165,7 @@ version(Windows) {
 
         INVALID_HANDLE_VALUE = cast(HANDLE)-1,
         NO_ERROR = 0,
+        ERROR_IO_PENDING = 997,
 
         AF_INET = 2,
         AF_INET6 = 23,
@@ -175,7 +176,11 @@ version(Windows) {
         SOCK_STREAM = 1,
         SOCK_DGRAM = 2,
         SOL_SOCKET = 0xFFFF,
+        SO_REUSEADDR = 0x0004,
         SO_KEEPALIVE = 0x0008,
+
+        INADDR_ANY = 0,
+        IN6ADDR_ANY = in6_addr.init,
 
     }
 

@@ -237,7 +237,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
         import core.sys.windows.windows : shutdown;
 
         if(cas(socketState.isShutdown, false, true)) {
-            logger.notice("Shutting down socket socket ", socketState.handle, " on ", Thread.self);
+            logger.notice("Shutting down socket ", socketState.handle, " on ", Thread.self);
             socketState.performReadWrite();
             shutdown(socketState.handle, SD_SEND);
 
@@ -397,8 +397,6 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
         assert(0);
 }
 
-private:
-
 void handleSocketEvent(void* handle, void* user) @trusted {
     version(Windows) {
         SocketState* socketState = cast(SocketState*)user;
@@ -419,6 +417,7 @@ void handleSocketEvent(void* handle, void* user) @trusted {
             } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
                 socketState.unpin();
+                socketState.reading.cleanup;
             } else {
                 logger.info("Unknown socket event ", wsaEvent, " for ", socketState.handle, " on ", Thread.self);
             }

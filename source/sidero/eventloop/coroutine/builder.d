@@ -60,7 +60,7 @@ export @safe nothrow @nogc:
         pair.descriptor.base.toDeallocate = (cast(void*)pair.descriptor)[0 .. CoroutineDescriptor!ResultType.sizeof];
         pair.descriptor.base.deinit = (scope void[] memory) @trusted {
             CoroutineDescriptor!ResultType* descriptor = cast(CoroutineDescriptor!ResultType*)memory.ptr;
-            descriptor.destroy;
+            (*descriptor).destroy;
         };
 
         pair.descriptor.base.userFunctions = allocator.makeArray!(void*)(this.functions.length);
@@ -80,7 +80,7 @@ export @safe nothrow @nogc:
             ret.base.toDeallocate = (cast(void*)ret)[0 .. CoroutineState2.sizeof];
             ret.base.deinit = (scope void[] memory) @trusted {
                 CoroutineState2* state = cast(CoroutineState2*)memory.ptr;
-                state.destroy;
+                (*state).destroy;
             };
 
             static if(Args.length > 0) {

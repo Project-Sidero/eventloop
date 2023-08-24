@@ -65,10 +65,7 @@ export @safe nothrow @nogc:
 
     ///
     ulong toHash() scope const @trusted {
-        import sidero.base.hash.utils : hashOf;
-
-        const b = cast(size_t)pair.state, a = cast(size_t)pair.descriptor;
-        return hashOf(b, hashOf(a));
+        return cast(size_t)pair.state;
     }
 
     ///

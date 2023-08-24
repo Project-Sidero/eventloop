@@ -32,6 +32,7 @@ struct ReadingState {
 
         if (triggerForHandler !is null) {
             cast(void)trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
+            triggerForHandler = null;
         }
     }
 

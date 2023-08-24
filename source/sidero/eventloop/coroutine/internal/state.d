@@ -20,7 +20,7 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return sc
         ret.base.toDeallocate = (cast(void*)ret)[0 .. CoroutineState2.sizeof];
         ret.base.deinit = (scope void[] memory) @trusted nothrow @nogc {
             CoroutineState2* state = cast(CoroutineState2*)memory.ptr;
-            state.destroy;
+            (*state).destroy;
         };
 
         auto arg = *cast(Result!ResultType***)args;
@@ -63,14 +63,11 @@ struct CoroutinePair(ResultType) {
 export @safe nothrow @nogc:
     this(scope ref CoroutinePair other) scope {
         this.tupleof = other.tupleof;
-
-        if(!this.isNull)
-            rc(true);
+        rc(true);
     }
 
     ~this() {
-        if(!this.isNull)
-            rc(false);
+        rc(false);
     }
 
     bool isNull() scope const {
@@ -113,6 +110,7 @@ export @safe nothrow @nogc:
         if(state !is null)
             ret.state = &this.state.base;
 
+        ret.rc(true);
         return ret;
     }
 }
@@ -142,21 +140,18 @@ struct CoroutineAPair {
 export @safe nothrow @nogc:
     this(return scope ref CoroutineAPair other) scope {
         this.tupleof = other.tupleof;
-
-        if(!this.isNull)
-            rc(true);
+        rc(true);
     }
 
     ~this() scope {
-        if(!this.isNull)
-            rc(false);
+        rc(false);
     }
 
     bool isNull() scope const {
         return state is null || descriptor is null;
     }
 
-    void rc(bool add) scope {
+    void rc(bool add) scope @trusted {
         if(state !is null)
             state.rc(add);
         if(descriptor !is null)
@@ -226,8 +221,11 @@ struct CoroutineAllocatorMemory {
 export @safe nothrow @nogc:
 
     void rc(bool add) scope {
-        if(!add && atomicDecrementAndLoad(refCount, 1) == 0) {
+        if(add) {
+            atomicIncrementAndLoad(refCount, 1);
+        } else if(atomicDecrementAndLoad(refCount, 1) == 0) {
             RCAllocator allocator = this.allocator;
+            void[] toDeallocate = toDeallocate;
 
             // run destructors ext.
             if(this.deinit !is null)
@@ -235,7 +233,6 @@ export @safe nothrow @nogc:
 
             if(!allocator.isNull)
                 allocator.dispose(toDeallocate);
-        } else if(add)
-            atomicIncrementAndLoad(refCount, 1);
+        }
     }
 }

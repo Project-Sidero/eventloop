@@ -66,7 +66,7 @@ struct SocketState {
                 alloc.dispose(&this);
             } else if(refCount == 1 && atomicLoad(isAlive)) {
                 // we are pinned, but nobody knows about this socket anymore, ugh oh...
-                shutdown(&this);
+                unpin;
             }
         }
     }
