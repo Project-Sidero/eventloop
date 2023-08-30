@@ -209,6 +209,7 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
 }
 
 void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult) @trusted {
+    startWorkers(0);
     mutex.pureLock;
 
     if(errorResult) {
