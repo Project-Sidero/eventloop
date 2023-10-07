@@ -32,18 +32,21 @@ struct NegotationState {
     bool negotiateServer(scope SocketState* socketState) scope @trusted {
         version(Windows) {
             bool didSomething;
-            ULONG plAttributes = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+            ULONG plAttributes = ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM;
 
             logger.debug_("Negotation for server socket ", socketState.handle, " on ", Thread.self);
 
             socketState.rawReading.readRaw((data) @trusted {
+                if (data.length == 0)
+                    return 0;
+
                 auto canDo = data.unsafeGetLiteral()[0 .. (data.length >= maxTokenSize) ? maxTokenSize: data.length];
                 logger.trace("socket server received data ", socketState.handle, " for ", canDo.length, " on ", Thread.self);
 
                 SecBuffer[2] buffersIn = [
                     SecBuffer(cast(uint)canDo.length, SECBUFFER_TOKEN, canDo.ptr), SecBuffer(0, SECBUFFER_EMPTY, null)
                 ];
-                SecBuffer[1] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null)];
+                SecBuffer[2] buffersOut = [SecBuffer(0, SECBUFFER_TOKEN, null), SecBuffer(0, SECBUFFER_EMPTY, null)];
 
                 SecBufferDesc buffersDescriptionIn, buffersDescriptionOut;
 
@@ -59,10 +62,10 @@ struct NegotationState {
 
                 if(haveContextHandle) {
                     ss = AcceptSecurityContext(&socketState.encryption.winCrypt.credentialHandle, &contextHandle, &buffersDescriptionIn,
-                        plAttributes, SECURITY_NATIVE_DREP, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+                        plAttributes, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
                 } else {
                     ss = AcceptSecurityContext(&socketState.encryption.winCrypt.credentialHandle, null, &buffersDescriptionIn,
-                        plAttributes, SECURITY_NATIVE_DREP, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+                        plAttributes, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
                     haveContextHandle = true;
                 }
 
@@ -71,7 +74,7 @@ struct NegotationState {
                 if(buffersOut[0].cbBuffer > 0) {
                     auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                     logger.debug_("Sending data for server socket ", socketState.handle, " for length ", sliced.length,
-                    " on ", Thread.self);
+                        " on ", Thread.self);
 
                     socketState.rawWriting.queue.push(sliced.dup);
                     FreeContextBuffer(buffersOut[0].pvBuffer);
@@ -92,8 +95,8 @@ struct NegotationState {
                 }
 
                 size_t consumed = canDo.length;
-                if(buffersIn[1].BufferType == SECBUFFER_EXTRA) {
-                    consumed -= buffersIn[1].cbBuffer;
+                if(buffersOut[1].BufferType == SECBUFFER_EXTRA) {
+                    consumed -= buffersOut[1].cbBuffer;
                 }
 
                 didSomething = consumed > 0;

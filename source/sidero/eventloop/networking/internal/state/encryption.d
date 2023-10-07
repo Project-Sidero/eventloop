@@ -90,29 +90,40 @@ struct EncryptionState {
         assert(enabled);
         assert(negotiating);
 
-        bool acquireContext;
+        bool acquireContext, noDataForSNI;
 
         if(this.encryptionEngine == Certificate.Type.None || this.encryptionEngine == Certificate.Type.Default) {
             if(socketState.cameFromServer) {
-                socketState.rawReading.readRaw((data) @trusted {
-                    import sidero.eventloop.networking.internal.utils.tls;
+                if (socketState.encryption.acquireCertificateForSNI.isNull) {
+                    this.currentCertificate = this.fallbackCertificate;
+                } else {
+                    socketState.rawReading.readRaw((data) @trusted {
+                        import sidero.eventloop.networking.internal.utils.tls;
 
-                    TLS_Packet_Info tlsPacket = TLS_Packet_Info(data.unsafeGetLiteral);
+                        if (data.length == 0) {
+                            noDataForSNI = true;
+                        } else {
+                            TLS_Packet_Info tlsPacket = TLS_Packet_Info(data.unsafeGetLiteral);
 
-                    if(tlsPacket.handshakeType == TLS_HandShake_ClientHello) {
-                        const useSNI = !tlsPacket.sni.isNull;
+                            import sidero.base.console;
+                            debugWriteln(tlsPacket);
 
-                        if(useSNI && !socketState.encryption.acquireCertificateForSNI.isNull) {
-                            // we need to use this value as the basis for our certificate if possible
-                            this.currentCertificate = socketState.encryption.acquireCertificateForSNI(tlsPacket.sni);
+                            if (tlsPacket.handshakeType == TLS_HandShake_ClientHello) {
+                                const useSNI = !tlsPacket.sni.isNull;
+
+                                if (useSNI && !socketState.encryption.acquireCertificateForSNI.isNull) {
+                                    // we need to use this value as the basis for our certificate if possible
+                                    this.currentCertificate = socketState.encryption.acquireCertificateForSNI(tlsPacket.sni);
+                                }
+
+                                if (this.currentCertificate.isNull)
+                                    this.currentCertificate = this.fallbackCertificate;
+                            }
                         }
 
-                        if(this.currentCertificate.isNull)
-                            this.currentCertificate = this.fallbackCertificate;
-                    }
-
-                    return 0;
-                });
+                        return 0;
+                    });
+                }
 
                 this.encryptionEngine = this.currentCertificate.type;
             } else if(fallbackCertificate.isNull) {
@@ -130,6 +141,13 @@ struct EncryptionState {
 
             acquireContext = true;
         }
+
+        if (acquireContext) {
+            logger.debug_("Acquiring encryption context for socket ", socketState.handle, " for ", encryptionEngine, " on ", Thread.self);
+        }
+
+        if (noDataForSNI)
+            return false;
 
         final switch(encryptionEngine) {
         case Certificate.Type.None:

@@ -66,8 +66,10 @@ struct RawReadingState {
         }
 
         auto available = buffer[toConsume .. toConsume + amountFilled];
-        if(!available)
+        if(!available) {
+            del(DynamicArray!ubyte.init);
             return;
+        }
 
         size_t consumed = del(available);
         if(consumed > available.length)
