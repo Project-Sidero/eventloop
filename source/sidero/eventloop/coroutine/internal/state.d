@@ -49,6 +49,7 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return sc
         actualState.base.nextFunctionTag = -1;
     };
 
+    pair.rc(true);
     return pair;
 }
 
@@ -213,14 +214,14 @@ struct CoroutineAllocatorMemoryState {
 
 struct CoroutineAllocatorMemory {
     RCAllocator allocator;
-    shared(ptrdiff_t) refCount = 1;
+    shared(ptrdiff_t) refCount;
     void[] toDeallocate;
 
     void function(scope void[] memory) @safe nothrow @nogc deinit;
 
 export @safe nothrow @nogc:
 
-    void rc(bool add) scope {
+    void rc(bool add) scope @trusted {
         if(add) {
             atomicIncrementAndLoad(refCount, 1);
         } else if(atomicDecrementAndLoad(refCount, 1) == 0) {

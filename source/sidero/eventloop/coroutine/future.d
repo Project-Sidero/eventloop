@@ -22,6 +22,12 @@ export @safe nothrow @nogc:
     }
 
     ///
+    void opAssign(return scope Future other) scope {
+        this.destroy;
+        this.__ctor(other);
+    }
+
+    ///
     bool isNull() scope const {
         return pair.isNull;
     }
@@ -58,7 +64,6 @@ export @safe nothrow @nogc:
         return pair.resume;
     }
 
-
     @disable auto opCast(T)();
 
     ///
@@ -90,5 +95,16 @@ export @safe nothrow @nogc:
             return 1;
         else
             return 0;
+    }
+
+    package(sidero.eventloop) {
+        void debugMe(string prefix) {
+            if (pair.state !is null) {
+                import sidero.base.console;
+                import sidero.base.internal.atomic;
+
+                writeln(prefix, " debug ", cast(void*)pair.state, " rc ", atomicLoad(pair.state.base.refCount));
+            }
+        }
     }
 }

@@ -239,3 +239,21 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
         mutex.unlock;
     }
 }
+
+void debugWorkers() @trusted {
+    mutex.pureLock;
+
+    import sidero.base.console;
+    writeln("\\/---- workers ---- \\/");
+
+    foreach(from; coroutinesWaitingOnOthers) {
+        from.debugMe("from");
+
+        foreach (on; coroutinesWaitingOnOthers[from]) {
+            on.debugMe("-");
+        }
+    }
+
+    writeln("/\\---- workers ---- /\\");
+    mutex.unlock;
+}

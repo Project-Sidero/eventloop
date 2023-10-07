@@ -59,9 +59,11 @@ struct RawReadingState {
         }
     }
 
-    package(sidero.eventloop.networking.internal.state) void readRaw(scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
-        if(amountFilled == 0)
+    package(sidero.eventloop.networking.internal) void readRaw(scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
+        if(amountFilled == 0) {
+            del(DynamicArray!ubyte.init);
             return;
+        }
 
         auto available = buffer[toConsume .. toConsume + amountFilled];
         if(!available)
@@ -79,6 +81,7 @@ struct RawReadingState {
 
     // NOTE: this needs guarding
     void complete(scope SocketState* socketState, size_t completedAmount) scope @trusted {
+        import sidero.base.internal.atomic;
         triggered = false;
 
         if(completedAmount > amountPrepared) {

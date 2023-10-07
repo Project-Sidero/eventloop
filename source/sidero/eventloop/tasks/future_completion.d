@@ -15,6 +15,7 @@ alias FutureTriggerStorage(ResultType) = Result!ResultType;
 
 InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireInstantiableFuture(ResultType)() @trusted {
     import sidero.eventloop.coroutine.internal.state;
+
     __gshared CoroutineDescriptor!ResultType descriptorStorage;
     __gshared CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1] functionsStorage;
     __gshared typeof(return) storage;
@@ -28,7 +29,8 @@ ErrorResult waitOnTrigger(ResultType, TriggerStorage = FutureTriggerStorage!Resu
     if(triggerStorage is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
 
-    return waitOnTrigger(coroutine.asGeneric(), cast(FutureTrigger*)triggerStorage);
+    auto co = coroutine.asGeneric();
+    return waitOnTrigger(co, cast(FutureTrigger*)triggerStorage);
 }
 
 ErrorResult waitOnTrigger(GenericCoroutine coroutine, FutureTrigger* trigger) @trusted {
@@ -96,7 +98,8 @@ ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
         coroutine = got.get;
     }
 
-    triggerableCoroutines.remove(trigger);
+    const removed = triggerableCoroutines.remove(trigger);
+    assert(removed);
     mutex.unlock;
 
     ErrorResult errorResult = coroutine.unsafeResume();
@@ -128,6 +131,24 @@ unittest {
     auto got = future.result();
     assert(got);
     assert(got == 3);
+}
+
+package(sidero.eventloop) {
+    void debugFutureCompletions() @trusted {
+        mutex.pureLock;
+
+        import sidero.base.console;
+
+        writeln("\\/====future completions====\\/");
+
+        foreach(trigger, co; triggerableCoroutines) {
+            assert(co);
+            co.debugMe("fc");
+        }
+
+        writeln("/\\==========/\\");
+        mutex.unlock;
+    }
 }
 
 private:

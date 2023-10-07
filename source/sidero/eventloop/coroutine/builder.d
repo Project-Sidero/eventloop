@@ -136,6 +136,7 @@ export @safe nothrow @nogc:
 
         InstanceableCoroutine!(ResultType, Args) ret;
         ret.pair = pair;
+        ret.pair.rc(true);
 
         return typeof(return)(ret);
     }

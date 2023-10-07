@@ -21,7 +21,7 @@ struct PlatformSocket {
         IOCPwork iocpWork;
     }
 
-    shared(bool) isShutdown, isClosed;
+    shared(bool) isClosed;
     bool isWaitingForRetrigger;
 
 @safe nothrow @nogc:
@@ -247,8 +247,14 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
                 CloseHandle(socketState.onCloseEvent);
                 socketState.onCloseEvent = null;
             }
-        }
 
+            if (socketState.rawReading.inProgress) {
+                CancelIoEx(socketState.handle, &socketState.readOverlapped);
+            }
+
+            socketState.reading.cleanup();
+            socketState.performReadWrite();
+        }
     } else
         assert(0);
 }
@@ -306,7 +312,7 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
                 // these are all failure modes for a socket
                 // we must make sure to tell the socket that we are no longer connected
                 logger.info("Failed to write initiate closing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
-                socketState.unpin;
+                socketState.unpinGuarded;
                 break;
 
             case WSAEWOULDBLOCK:
@@ -417,7 +423,6 @@ void handleSocketEvent(void* handle, void* user) @trusted {
             } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
                 socketState.unpin();
-                socketState.reading.cleanup;
             } else {
                 logger.info("Unknown socket event ", wsaEvent, " for ", socketState.handle, " on ", Thread.self);
             }

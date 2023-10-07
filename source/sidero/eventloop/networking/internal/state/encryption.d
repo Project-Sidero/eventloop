@@ -1,17 +1,20 @@
 module sidero.eventloop.networking.internal.state.encryption;
+import sidero.eventloop.networking.internal.state.defs;
 import sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.certificates;
+import sidero.eventloop.closure.callable;
+import sidero.eventloop.threads;
 import sidero.base.path.hostname;
 import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
+import sidero.base.text;
 
 version(none) {
     struct EncryptionStateImpl {
     @safe nothrow @nogc:
 
-        bool add(scope SocketState* socketState, Hostname sniHostname, Certificate certificate,
-                Socket.EncryptionProtocol protocol, bool validateCertificates, Slice!Certificate sniCertificates) scope @trusted {
+        void acquireCredentials(scope SocketState* socketState) scope {
             assert(0);
         }
 
@@ -36,11 +39,12 @@ version(none) {
 struct EncryptionState {
     package(sidero.eventloop.networking.internal) {
         Certificate.Type encryptionEngine;
-        Certificate currentCertificate;
+        Certificate currentCertificate, fallbackCertificate;
         Socket.EncryptionProtocol currentProtocol;
-        size_t bufferSize;
+        Closure!(Certificate, String_UTF8) acquireCertificateForSNI;
 
-        Slice!Certificate currentSNICertificates;
+        bool validateCertificates;
+        size_t bufferSize;
 
         version(Windows) {
             import sidero.eventloop.networking.internal.windows.encryption.state;
@@ -49,6 +53,7 @@ struct EncryptionState {
         }
     }
 
+    Hostname sniHostname;
     bool enabled;
     bool negotiating;
 
@@ -58,8 +63,8 @@ struct EncryptionState {
         return bufferSize > 0 ? bufferSize : 4096;
     }
 
-    bool addEncryption(scope SocketState* socketState, Hostname sniHostname, Certificate certificate,
-            Socket.EncryptionProtocol protocol, bool validateCertificates, Slice!Certificate sniCertificates = Slice!Certificate.init) scope @trusted {
+    bool addEncryption(scope SocketState* socketState, Hostname sniHostname, Certificate certificate, Closure!(Certificate,
+            String_UTF8) acquireCertificateForSNI, Socket.EncryptionProtocol protocol, bool validateCertificates) scope @trusted {
         // wanted raw & is raw
         if(encryptionEngine == Certificate.Type.None && (protocol == Socket.EncryptionProtocol.None &&
                 certificate.type == Certificate.Type.None))
@@ -67,42 +72,91 @@ struct EncryptionState {
         else if(!currentCertificate.isNull || currentProtocol != Socket.EncryptionProtocol.None)
             return false;
 
-        final switch(certificate.type) {
-        case Certificate.Type.None:
-            version(Windows) {
-                goto case Certificate.Type.WinCrypt;
-            } else
-                return false;
-        case Certificate.Type.WinCrypt:
-            version(Windows) {
-                foreach(cert; sniCertificates) {
-                    if(cert.type != Certificate.Type.WinCrypt)
-                        return false;
-                }
+        this.encryptionEngine = Certificate.Type.Default;
+        this.currentCertificate = Certificate.init;
 
-                return winCrypt.add(socketState, sniHostname, certificate, protocol, validateCertificates, sniCertificates);
-            } else
-                return false;
-        case Certificate.Type.Default:
-            assert(0);
-        }
+        this.fallbackCertificate = certificate;
+        this.currentProtocol = protocol;
+        this.acquireCertificateForSNI = acquireCertificateForSNI;
+        this.validateCertificates = validateCertificates;
+        this.sniHostname = sniHostname;
+
+        this.enabled = true;
+        this.negotiating = true;
+        return true;
     }
 
-    bool negotiate(scope SocketState* socketState) scope {
+    bool negotiate(scope SocketState* socketState) scope @trusted {
         assert(enabled);
         assert(negotiating);
+
+        bool acquireContext;
+
+        if(this.encryptionEngine == Certificate.Type.None || this.encryptionEngine == Certificate.Type.Default) {
+            if(socketState.cameFromServer) {
+                socketState.rawReading.readRaw((data) @trusted {
+                    import sidero.eventloop.networking.internal.utils.tls;
+
+                    TLS_Packet_Info tlsPacket = TLS_Packet_Info(data.unsafeGetLiteral);
+
+                    if(tlsPacket.handshakeType == TLS_HandShake_ClientHello) {
+                        const useSNI = !tlsPacket.sni.isNull;
+
+                        if(useSNI && !socketState.encryption.acquireCertificateForSNI.isNull) {
+                            // we need to use this value as the basis for our certificate if possible
+                            this.currentCertificate = socketState.encryption.acquireCertificateForSNI(tlsPacket.sni);
+                        }
+
+                        if(this.currentCertificate.isNull)
+                            this.currentCertificate = this.fallbackCertificate;
+                    }
+
+                    return 0;
+                });
+
+                this.encryptionEngine = this.currentCertificate.type;
+            } else if(fallbackCertificate.isNull) {
+                // we don't have a fallback certificate, for clients this isn't an issue
+
+                version(Windows) {
+                    this.encryptionEngine = Certificate.Type.WinCrypt;
+                } else {
+                    this.encryptionEngine = Certificate.Type.None;
+                }
+            } else {
+                this.currentCertificate = this.fallbackCertificate;
+                this.encryptionEngine = this.currentCertificate.type;
+            }
+
+            acquireContext = true;
+        }
 
         final switch(encryptionEngine) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
+            this.enabled = false;
+            this.negotiating = false;
+
+            if(sniHostname.isNull)
+                logger.info("Could not acquire a certificate for encrypting socket ", socketState.handle, " on ", Thread.self);
+            else
+                logger.info("Could not acquire a certificate for encrypting socket ", socketState.handle,
+                        " with SNI hostname ", sniHostname, " on ", Thread.self);
+
+            socketState.close(true);
             return false;
 
         case Certificate.Type.WinCrypt:
+            if(acquireContext) {
+                winCrypt.acquireCredentials(socketState);
+                assert(winCrypt.credentialHandleSet);
+            }
+
             return winCrypt.negotiate(socketState);
         }
     }
 
-    bool encryptDecrypt(scope SocketState* socketState) scope {
+    bool encryptDecrypt(scope SocketState* socketState) scope @trusted {
         assert(enabled);
         assert(!negotiating);
         bool ret, didSomething;
@@ -120,10 +174,21 @@ struct EncryptionState {
                         break;
 
                     case Certificate.Type.WinCrypt:
-                        auto encrypted = winCrypt.encrypt(socketState, got.get);
+                        size_t consumed;
+                        auto encrypted = winCrypt.encrypt(socketState, got.get, consumed);
+
                         if(encrypted.length > 0) {
+                            logger.debug_("Encrypted data for socket ", socketState.handle, " as ", encrypted.length, " from ", got.length, " and consumed ", consumed, " on ", Thread.self);
                             socketState.rawWriting.queue.push(encrypted);
                             didSomething = true;
+                        } else if (got.get.length > 0) {
+                            logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ", got.get.length, " on ", Thread.self);
+                        }
+
+                        if(consumed > 0 && consumed < got.length) {
+                            socketState.writing.reappendToQueue(socketState, got.get[consumed .. $]);
+                        } else if(consumed < got.length) {
+                            socketState.writing.reappendToQueue(socketState, got.get);
                         }
                         break;
                     }
@@ -131,7 +196,7 @@ struct EncryptionState {
             }
 
             {
-                socketState.rawReading.readRaw((encrypted) {
+                socketState.rawReading.readRaw((encrypted) @trusted {
                     size_t consumed;
 
                     final switch(encryptionEngine) {
@@ -142,8 +207,12 @@ struct EncryptionState {
                     case Certificate.Type.WinCrypt:
                         auto decrypted = winCrypt.decrypt(socketState, encrypted, consumed);
                         if(consumed > 0) {
+                            logger.debug_("Decrypted data for socket ", socketState.handle, " with ", decrypted.length, " from ", encrypted.length, " and consumed ", consumed, " on ", Thread.self);
+
                             socketState.reading.queue.push(decrypted);
                             didSomething = true;
+                        } else if (encrypted.length > 0) {
+                            logger.debug_("Failed to decrypt data for socket ", socketState.handle, " with ", encrypted.length, " on ", Thread.self);
                         }
                         break;
                     }

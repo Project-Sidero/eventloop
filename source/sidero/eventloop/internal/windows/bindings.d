@@ -31,6 +31,7 @@ version(Windows) {
         int WSARecv(SOCKET, WSABUF*, DWORD, DWORD*, DWORD*, OVERLAPPED*, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
         bool WSAGetOverlappedResult(SOCKET, OVERLAPPED*, DWORD*, bool, DWORD*);
         int WSASend(SOCKET, WSABUF*, DWORD, DWORD*, DWORD, OVERLAPPED*, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+        bool CancelIoEx(SOCKET, OVERLAPPED*);
 
         PCCERT_CONTEXT CertDuplicateCertificateContext(PCCERT_CONTEXT);
         PCCERT_CONTEXT CertEnumCertificatesInStore(HCERTSTORE, PCCERT_CONTEXT);
@@ -378,10 +379,12 @@ version(Windows) {
             ubyte s_b3;
             ubyte s_b4;
         }
+
         struct {
             ushort s_w1;
             ushort s_w2;
         }
+
         uint s_addr;
     }
 

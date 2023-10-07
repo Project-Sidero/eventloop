@@ -5,10 +5,13 @@ import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.internal.windows.bindings;
 import sidero.eventloop.threads;
+import sidero.eventloop.certificates;
+import sidero.eventloop.closure.callable;
 import sidero.base.path.networking;
 import sidero.base.path.hostname;
 import sidero.base.errors;
 import sidero.base.allocators;
+import sidero.base.text;
 
 @safe nothrow @nogc:
 
@@ -429,7 +432,8 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
 
                 if(!listenSocketState.fallbackCertificate.isNull) {
                     if(!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
-                            listenSocketState.fallbackCertificate, listenSocketState.encryption, listenSocketState.validateCertificates)) {
+                            listenSocketState.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
+                            listenSocketState.encryption, listenSocketState.validateCertificates)) {
                         logger.notice("Could not initialize encryption on socket ", acceptedSocket, " for ",
                                 perSockState.handle, " on ", Thread.self);
                         closesocket(acceptedSocket);

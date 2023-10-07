@@ -23,7 +23,7 @@ struct SocketState {
         bool inShutdownProcess;
     }
 
-    shared(bool) isAlive;
+    shared(bool) isAlive, isShutdown;
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
     bool cameFromServer;
@@ -93,6 +93,21 @@ struct SocketState {
         rc(false);
     }
 
+    bool haveBeenShutdown() scope {
+        return atomicLoad(this.isShutdown);
+    }
+
+    package(sidero.eventloop.networking.internal) void unpinGuarded() scope @trusted {
+        if(!atomicLoad(isAlive)) {
+            return;
+        }
+
+        atomicStore(isAlive, false);
+        shutdown(&this);
+
+        rc(false);
+    }
+
     void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope {
         mutex.pureLock;
         del(args);
@@ -125,7 +140,7 @@ struct SocketState {
             didSomeWork = this.rawReading.tryRead(&this);
 
             if(this.encryption.enabled && this.encryption.negotiating) {
-                didSomeWork = didSomeWork || this.encryption.negotiate(&this);
+                didSomeWork = this.encryption.negotiate(&this) || didSomeWork;
             }
 
             if(!this.encryption.enabled) {
@@ -135,13 +150,13 @@ struct SocketState {
                         rawWriting.queue.push(got);
                 }
             } else if(this.encryption.enabled && !this.encryption.negotiating) {
-                didSomeWork = didSomeWork || this.encryption.encryptDecrypt(&this);
+                didSomeWork = this.encryption.encryptDecrypt(&this) || didSomeWork;
             }
 
-            didSomeWork = didSomeWork || this.rawWriting.tryWrite(&this);
+            didSomeWork = this.rawWriting.tryWrite(&this) || didSomeWork;
 
             if(!this.encryption.negotiating) {
-                didSomeWork = didSomeWork || this.reading.tryFulfillRequest(&this);
+                didSomeWork = this.reading.tryFulfillRequest(&this) || didSomeWork;
             }
         }
         while(didSomeWork);

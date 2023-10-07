@@ -6,7 +6,7 @@ import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.readonlyslice;
 
 struct RawWritingState {
-    package(sidero.eventloop.networking.internal.state) {
+    package(sidero.eventloop.networking.internal) {
         FiFoConcurrentQueue!(Slice!ubyte) queue;
     }
 

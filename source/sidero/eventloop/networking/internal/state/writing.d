@@ -16,4 +16,13 @@ struct WritingState {
             socketState.rawWriting.queue.push(slice);
         }
     }
+
+    // NOTE: this needs guarding
+    void reappendToQueue(scope SocketState* socketState, return scope Slice!ubyte slice) scope @trusted {
+        if (socketState.encryption.enabled) {
+            queue.push(slice, false);
+        } else {
+            socketState.rawWriting.queue.push(slice);
+        }
+    }
 }

@@ -27,11 +27,12 @@ struct ReadingState {
 
 @safe nothrow @nogc:
 
+    // this is last resort, cleanup routine
     void cleanup() scope {
         import sidero.base.errors;
 
-        if (triggerForHandler !is null) {
-            cast(void)trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
+        if(triggerForHandler !is null) {
+            auto got = trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
             triggerForHandler = null;
         }
     }
@@ -60,6 +61,8 @@ struct ReadingState {
     // NOTE: needs guarding
     bool requestFromUser(return scope Slice!ubyte stopCondition, out Future!(Slice!ubyte) future) scope @trusted {
         assert(stopCondition.length > 0);
+        logger.trace("Trying to add a request from user if ", !inProgress, " with ", queue.empty, " via ",
+                stopCondition.unsafeGetLiteral);
 
         if(inProgress)
             return false;
@@ -70,11 +73,13 @@ struct ReadingState {
 
         stopArray = stopCondition;
         wantedAmount = 0;
-
         return true;
     }
 
-    package(sidero.eventloop.networking.internal.state) bool tryFulfillRequest(scope SocketState* socketState) scope {
+    package(sidero.eventloop.networking.internal) bool tryFulfillRequest(scope SocketState* socketState) scope @trusted {
+        logger.trace("Trying to fulfill a request for ", socketState.handle, " if ", inProgress, " with ", queue.empty,
+                " on ", Thread.self);
+
         if(!inProgress)
             return false;
 
@@ -164,10 +169,11 @@ struct ReadingState {
             size_t tryingToConsume;
 
             auto firstItem = queue.peek;
+            assert(firstItem);
             auto availableData = firstItem.get[amountFromFirst .. $];
             assert(availableData);
 
-            handleWithData(availableData, tryingToConsume);
+            handleWithData(availableData.get, tryingToConsume);
 
             if(success) {
                 if(tryingToConsume < availableData.length) {

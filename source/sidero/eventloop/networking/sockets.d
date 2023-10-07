@@ -4,6 +4,7 @@ import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.certificates;
 import sidero.eventloop.coroutine.instanceable;
 import sidero.eventloop.coroutine.future;
+import sidero.eventloop.closure.callable;
 import sidero.base.containers.dynamicarray;
 import sidero.base.path.networking;
 import sidero.base.path.hostname;
@@ -13,6 +14,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
 import sidero.base.errors;
 import sidero.base.internal.atomic;
+import sidero.base.text;
 
 export @safe nothrow @nogc:
 
@@ -141,9 +143,15 @@ export @safe nothrow @nogc:
 
         state.guard(() {
             const cond = state.reading.requestFromUser(amount, ret);
+            const nowOrNever = state.haveBeenShutdown;
 
-            if(cond)
+            if(cond) {
                 state.performReadWrite;
+
+                if(nowOrNever && !ret.isComplete()) {
+                    state.reading.cleanup();
+                }
+            }
         });
 
         return ret;
@@ -156,6 +164,7 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
+        assert(!isNull);
         if(isNull)
             return typeof(return).init;
 
@@ -163,9 +172,17 @@ export @safe nothrow @nogc:
 
         state.guard(() @safe {
             const cond = state.reading.requestFromUser(endCondition, ret);
-            if(cond)
+            const nowOrNever = state.haveBeenShutdown;
+
+            if(cond) {
                 state.performReadWrite;
+
+                if(nowOrNever && !ret.isComplete()) {
+                    state.reading.cleanup();
+                }
+            }
         });
+
         return ret;
     }
 
@@ -194,22 +211,23 @@ export @safe nothrow @nogc:
         if(!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if(!state.encryption.addEncryption(this.state, sniHostname, certificate, encryption, validateCertificates))
+        if(!state.encryption.addEncryption(this.state, sniHostname, certificate, Closure!(Certificate, String_UTF8)
+                .init, encryption, validateCertificates))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
 
     /**
-        Adds encryption to listening socket, supply a certificate to represent this host for fallback purposes and a list of all SNI certificates.
+        Adds encryption to listening socket, supply a certificate to represent this host for fallback purposes and a closure that'll provide SNI certificates.
 
         See_Also: addEncryption, addEncryptionClient
     */
     ErrorResult addEncryptionServer(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
-            Certificate fallbackCertificate = Certificate.init, Slice!Certificate sniCertificates = Slice!Certificate.init) scope {
+            Certificate fallbackCertificate = Certificate.init, Closure!(Certificate, String_UTF8) acquireCertificateForSNI) scope {
         if(!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if(!state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate, encryption, true, sniCertificates))
+        if(!state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate, acquireCertificateForSNI, encryption, true))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }

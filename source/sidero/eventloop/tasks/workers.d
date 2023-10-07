@@ -38,10 +38,12 @@ void registerAsTask(GenericCoroutine coroutine) {
 
 ///
 void registerAsTask(ResultType)(Future!ResultType coroutine) {
-    iw.addCoroutineTask(coroutine.asGeneric());
+    auto co = coroutine.asGeneric();
+    iw.addCoroutineTask(co);
 }
 
 ///
 void registerAsTask(ResultType, Args...)(InstanceableCoroutine!(ResultType, Args) coroutine) {
-    iw.addCoroutineTask(coroutine.asGeneric());
+    auto co = coroutine.asGeneric();
+    iw.addCoroutineTask(co);
 }

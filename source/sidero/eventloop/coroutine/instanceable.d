@@ -48,7 +48,6 @@ export @safe nothrow @nogc:
 
         InstanceableCoroutine!ResultType ret;
         ret.pair.descriptor = this.pair.descriptor;
-        ret.pair.rc(true);
 
         if(this.constructionState.isNull) {
             ret.pair.state = cast(CoroutineState!ResultType*)this.pair.descriptor.base.createInstanceState(allocator,
@@ -60,6 +59,7 @@ export @safe nothrow @nogc:
             }, cast(void*)&argsStorage);
         }
 
+        ret.pair.rc(true);
         return ret;
     }
 
@@ -134,7 +134,6 @@ export @safe nothrow @nogc:
     ErrorResult unsafeResume() scope @system {
         return pair.resume;
     }
-
 
     @disable auto opCast(T)();
 
