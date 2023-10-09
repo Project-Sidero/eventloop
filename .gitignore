@@ -15,3 +15,5 @@ eventloop-test-*
 .idea/
 eventloop.iml
 *.exp
+openssl/cert.pem
+openssl/key.pem
