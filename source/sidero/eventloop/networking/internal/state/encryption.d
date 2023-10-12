@@ -150,27 +150,30 @@ struct EncryptionState {
             return false;
 
         final switch(encryptionEngine) {
-        case Certificate.Type.None:
-        case Certificate.Type.Default:
-            this.enabled = false;
-            this.negotiating = false;
+            case Certificate.Type.None:
+            case Certificate.Type.Default:
+                this.enabled = false;
+                this.negotiating = false;
 
-            if(sniHostname.isNull)
-                logger.info("Could not acquire a certificate for encrypting socket ", socketState.handle, " on ", Thread.self);
-            else
-                logger.info("Could not acquire a certificate for encrypting socket ", socketState.handle,
-                        " with SNI hostname ", sniHostname, " on ", Thread.self);
+                if (sniHostname.isNull)
+                    logger.info("Could not acquire a certificate for encrypting socket ", socketState.handle, " on ", Thread.self);
+                else
+                    logger.info("Could not acquire a certificate for encrypting socket ", socketState.handle,
+                    " with SNI hostname ", sniHostname, " on ", Thread.self);
 
-            socketState.close(true);
-            return false;
+                socketState.close(true);
+                return false;
 
-        case Certificate.Type.WinCrypt:
-            if(acquireContext) {
-                winCrypt.acquireCredentials(socketState);
-                assert(winCrypt.credentialHandleSet);
-            }
+            case Certificate.Type.WinCrypt:
+                if (acquireContext) {
+                    winCrypt.acquireCredentials(socketState);
+                    assert(winCrypt.credentialHandleSet);
+                }
 
-            return winCrypt.negotiate(socketState);
+                return winCrypt.negotiate(socketState);
+
+            case Certificate.Type.OpenSSL:
+                return false; // TODO: OpenSSL socket encryption
         }
     }
 
@@ -209,6 +212,9 @@ struct EncryptionState {
                             socketState.writing.reappendToQueue(socketState, got.get);
                         }
                         break;
+
+                    case Certificate.Type.OpenSSL:
+                        break; // TODO: OpenSSL socket encryption
                     }
                 }
             }
@@ -233,6 +239,9 @@ struct EncryptionState {
                             logger.debug_("Failed to decrypt data for socket ", socketState.handle, " with ", encrypted.length, " on ", Thread.self);
                         }
                         break;
+
+                    case Certificate.Type.OpenSSL:
+                        break; // TODO: OpenSSL socket encryption
                     }
 
                     return consumed;
@@ -253,6 +262,9 @@ struct EncryptionState {
         case Certificate.Type.WinCrypt:
             winCrypt.cleanup(socketState);
             break;
+
+        case Certificate.Type.OpenSSL:
+            break; // TODO: OpenSSL socket encryption
         }
     }
 }

@@ -14,6 +14,9 @@ export @safe nothrow @nogc:
 static immutable WinCryptCertificateHandleType = SystemHandleType.from("wictcert");
 
 ///
+alias OpenSSLPasswordDelegate = uint delegate(FilePath fileToLoad, scope ubyte[] toFillIn) @safe nothrow @nogc;
+
+///
 struct Certificate {
     private {
         State* state;
@@ -61,6 +64,8 @@ export @safe nothrow @nogc:
 
         case Certificate.Type.WinCrypt:
             return SystemHandle(cast(void*)state.winCryptCertificateContext, WinCryptCertificateHandleType);
+        case Certificate.Type.OpenSSL:
+            return SystemHandle.init; // does not have a single handle to return
         }
     }
 
@@ -87,6 +92,35 @@ export @safe nothrow @nogc:
                     auto spki = &state.winCryptCertificateContext.pCertInfo.SubjectPublicKeyInfo.PublicKey;
                     state.copiedPublicKey = Slice!ubyte(spki.pbData[0 .. spki.cbData]).dup(allocator);
                     return state.copiedPublicKey;
+                }
+            }
+
+            return typeof(return).init;
+
+        case Certificate.Type.OpenSSL:
+            import sidero.base.bindings.openssl.libcrypto;
+
+            assert(state.opensslPEMChain.certificates !is null);
+
+            auto firstCert = state.opensslPEMChain.first;
+
+            if(firstCert.x509 !is null) {
+                EVP_PKEY* key = X509_get0_pubkey(firstCert.x509);
+
+                if (key !is null) {
+                    BIO* outputBIO = BIO_new(BIO_s_mem());
+                    scope(exit)
+                    BIO_free(outputBIO);
+
+                    PEM_write_bio_PUBKEY(outputBIO, key);
+
+                    ubyte* outputPtr;
+                    const length = BIO_get_mem_data(outputBIO, outputPtr);
+
+                    if (length > 0) {
+                        state.copiedPublicKey = Slice!ubyte(outputPtr[0 .. length]).dup;
+                        return state.copiedPublicKey;
+                    }
                 }
             }
 
@@ -122,6 +156,29 @@ export @safe nothrow @nogc:
             }
 
             return typeof(return).init;
+
+        case Certificate.Type.OpenSSL:
+            import sidero.base.bindings.openssl.libcrypto;
+
+            assert(state.opensslPEMChain.certificates !is null);
+
+            if(state.opensslPEMChain.privateKey !is null && state.opensslPEMChain.privateKey.dec_pkey !is null) {
+                BIO* outputBIO = BIO_new(BIO_s_mem());
+                scope(exit)
+                    BIO_free(outputBIO);
+
+                PEM_write_bio_PrivateKey_traditional(outputBIO, state.opensslPEMChain.privateKey.dec_pkey, null, null, 0, null, null);
+
+                ubyte* outputPtr;
+                const length = BIO_get_mem_data(outputBIO, outputPtr);
+
+                if(length > 0) {
+                    state.copiedPrivateKey = Slice!ubyte(outputPtr[0 .. length]).dup;
+                    return state.copiedPrivateKey;
+                }
+            }
+
+            return typeof(return).init;
         }
     }
 
@@ -148,6 +205,29 @@ export @safe nothrow @nogc:
             }
 
             return typeof(return).init;
+
+        case Certificate.Type.OpenSSL:
+            import sidero.base.bindings.openssl.libcrypto;
+
+            assert(state.opensslPEMChain.certificates !is null);
+
+            auto firstCert = state.opensslPEMChain.first;
+
+            if(firstCert.x509 !is null) {
+                const(ASN1_TIME)* notBefore = X509_get0_notBefore(firstCert.x509);
+
+                char* notBeforeZ;
+                int notBeforeError = ASN1_STRING_to_UTF8(notBeforeZ, notBefore);
+                assert(notBeforeError >= 0);
+
+                auto got = parseRFC5280(String_UTF8(notBeforeZ[0 .. notBeforeError]));
+                OPENSSL_free(notBeforeZ);
+
+                if(got)
+                    return got.get;
+            }
+
+            return typeof(return).init;
         }
     }
 
@@ -171,6 +251,29 @@ export @safe nothrow @nogc:
                                 cast(ubyte)systemTime.wMinute, cast(ubyte)systemTime.wSecond)));
                     }
                 }
+            }
+
+            return typeof(return).init;
+
+        case Certificate.Type.OpenSSL:
+            import sidero.base.bindings.openssl.libcrypto;
+
+            assert(state.opensslPEMChain.certificates !is null);
+
+            auto firstCert = state.opensslPEMChain.first;
+
+            if(firstCert.x509 !is null) {
+                const(ASN1_TIME)* notAfter = X509_get0_notAfter(firstCert.x509);
+
+                char* notAfterZ;
+                int notAfterError = ASN1_STRING_to_UTF8(notAfterZ, notAfter);
+                assert(notAfterError >= 0);
+
+                auto got = parseRFC5280(String_UTF8(notAfterZ[0 .. notAfterError]));
+                OPENSSL_free(notAfterZ);
+
+                if(got)
+                    return got.get;
             }
 
             return typeof(return).init;
@@ -212,6 +315,9 @@ export @safe nothrow @nogc:
             }
 
             return String_UTF8.init;
+
+        case Certificate.Type.OpenSSL:
+            return typeof(return).init; // PEM file format does not stores PKCS #8 tags
         }
     }
 
@@ -249,6 +355,39 @@ export @safe nothrow @nogc:
             }
 
             return String_UTF8.init;
+
+        case Certificate.Type.OpenSSL:
+            import sidero.base.bindings.openssl.libcrypto;
+
+            assert(state.opensslPEMChain.certificates !is null);
+
+            auto firstCert = state.opensslPEMChain.first;
+
+            if(firstCert.x509 !is null) {
+                X509_NAME* names = X509_get_issuer_name(firstCert.x509);
+
+                foreach(i; 0 .. X509_NAME_entry_count(names)) {
+                    X509_NAME_ENTRY* nameEntry = X509_NAME_get_entry(names, i);
+
+                    ASN1_OBJECT* nameEntryObject = X509_NAME_ENTRY_get_object(nameEntry);
+                    if(OBJ_obj2nid(nameEntryObject) != NID_commonName)
+                        continue;
+
+                    ASN1_STRING* nameEntryASN1 = X509_NAME_ENTRY_get_data(nameEntry);
+
+                    char* nameZ;
+                    int nameError = ASN1_STRING_to_UTF8(nameZ, nameEntryASN1);
+                    assert(nameError >= 0);
+
+                    scope(exit)
+                        OPENSSL_free(nameZ);
+
+                    state.copiedIssuedTo = String_UTF8(nameZ[0 .. nameError]).dup;
+                    return state.copiedIssuedTo;
+                }
+            }
+
+            return typeof(return).init;
         }
     }
 
@@ -286,6 +425,39 @@ export @safe nothrow @nogc:
             }
 
             return String_UTF8.init;
+
+        case Certificate.Type.OpenSSL:
+            import sidero.base.bindings.openssl.libcrypto;
+
+            assert(state.opensslPEMChain.certificates !is null);
+
+            auto firstCert = state.opensslPEMChain.first;
+
+            if(firstCert.x509 !is null) {
+                X509_NAME* names = X509_get_subject_name(firstCert.x509);
+
+                foreach(i; 0 .. X509_NAME_entry_count(names)) {
+                    X509_NAME_ENTRY* nameEntry = X509_NAME_get_entry(names, i);
+
+                    ASN1_OBJECT* nameEntryObject = X509_NAME_ENTRY_get_object(nameEntry);
+                    if(OBJ_obj2nid(nameEntryObject) != NID_commonName)
+                        continue;
+
+                    ASN1_STRING* nameEntryASN1 = X509_NAME_ENTRY_get_data(nameEntry);
+
+                    char* nameZ;
+                    int nameError = ASN1_STRING_to_UTF8(nameZ, nameEntryASN1);
+                    assert(nameError >= 0);
+
+                    scope(exit)
+                        OPENSSL_free(nameZ);
+
+                    state.copiedIssuedTo = String_UTF8(nameZ[0 .. nameError]).dup;
+                    return state.copiedIssuedTo;
+                }
+            }
+
+            return typeof(return).init;
         }
     }
 
@@ -303,8 +475,8 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Certificate loadFromWinCrypt(return FilePath path, bool useX509_ASN_Encoding = true,
-            bool usePKCS7_ASN_Encoding = true, return RCAllocator allocator = RCAllocator.init) @trusted {
+    static Certificate loadFromWinCrypt(FilePath path, bool useX509_ASN_Encoding = true, bool usePKCS7_ASN_Encoding = true,
+            return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.base.internal.filesystem : readFile;
 
         version(Windows) {
@@ -314,6 +486,57 @@ export @safe nothrow @nogc:
                     cast(DWORD)encodedBytes.length), allocator);
         } else
             return Certificate.init;
+    }
+
+    /// File type PEM, private key may be in same file as public key
+    static Certificate loadFromOpenSSL(FilePath path, scope OpenSSLPasswordDelegate passwordDelegate = null,
+            return RCAllocator allocator = RCAllocator.init) @trusted {
+        import sidero.base.bindings.openssl.libcrypto;
+
+        if(!path.couldPointToEntry() || !loadLibCrypto())
+            return Certificate.init;
+        if(allocator.isNull)
+            allocator = globalAllocator();
+
+        Certificate ret;
+        ret.state = allocator.make!State();
+        ret.state.allocator = allocator;
+        ret.state.type = Type.OpenSSL;
+
+        ret.state.opensslPEMChain.loadFrom(path, passwordDelegate);
+
+        if(ret.state.opensslPEMChain.have && ret.state.opensslPEMChain.numberOfCertificates > 0)
+            return ret;
+        else
+            return Certificate.init;
+    }
+
+    /// File type PEM, with private key in separate file
+    static Certificate loadFromOpenSSL(FilePath publicKey, FilePath privateKey,
+            scope OpenSSLPasswordDelegate passwordDelegate = null, return RCAllocator allocator = RCAllocator.init) @trusted {
+        import sidero.base.bindings.openssl.libcrypto;
+
+        // step 1. do loadFromOpenSSL with just publicKey
+        Certificate ret = Certificate.loadFromOpenSSL(publicKey, passwordDelegate, allocator);
+        if(ret.isNull || privateKey.isNull)
+            return ret;
+
+        // step 2. load another PEM certificate chain from privateKey
+        // the first X509_INFO must have its private key (x_pkey) member
+        // we'll load the chain from both public and private, but ignore any public key in first private key as well as private in public chain.
+
+        ret.state.opensslPEMChainPrivate.loadFrom(privateKey, passwordDelegate);
+
+        if(ret.state.opensslPEMChainPrivate.privateKey !is null) {
+            if(ret.state.opensslPEMChain.privateKey !is null) {
+                X509_PKEY_free(ret.state.opensslPEMChain.privateKey);
+            }
+
+            ret.state.opensslPEMChain.privateKey = ret.state.opensslPEMChainPrivate.privateKey;
+            ret.state.opensslPEMChainPrivate.privateKey = null;
+        }
+
+        return ret;
     }
 
     package(sidero.eventloop.certificates) {
@@ -343,6 +566,8 @@ export @safe nothrow @nogc:
         None,
         ///
         WinCrypt,
+        ///
+        OpenSSL,
 
         /// WinCrypt on Windows
         Default,
@@ -365,6 +590,8 @@ struct State {
         PCCERT_CONTEXT winCryptCertificateContext;
     }
 
+    OpenSSLPEMChain opensslPEMChain, opensslPEMChainPrivate;
+
     Slice!ubyte copiedPublicKey;
     Slice!ubyte copiedPrivateKey;
     String_UTF8 copiedFriendlyName;
@@ -383,6 +610,97 @@ struct State {
             if(winCryptCertificateContext !is null)
                 CertFreeCertificateContext(winCryptCertificateContext);
             break;
+
+        case Certificate.Type.OpenSSL:
+            opensslPEMChain.destroy;
+            opensslPEMChainPrivate.destroy;
+            break;
+        }
+    }
+}
+
+struct OpenSSLPEMChain {
+    import sidero.base.bindings.openssl.libcrypto;
+
+    size_t numberOfCertificates;
+    STACK_OF!X509_INFO* certificates;
+
+    X509_PKEY* privateKey;
+
+export nothrow @nogc:
+
+    @disable this(this);
+
+    ~this() @trusted {
+        if(certificates is null)
+            return;
+
+        sk_X509_INFO_pop_free(certificates, cast(f_OPENSSL_sk_pop_free_freefunc)X509_INFO_free);
+
+        if(privateKey !is null)
+            X509_PKEY_free(privateKey);
+
+        certificates = null;
+        privateKey = null;
+        numberOfCertificates = 0;
+    }
+
+    bool have() {
+        return privateKey !is null || certificates !is null;
+    }
+
+    X509_INFO* first() @trusted {
+        if(certificates !is null && numberOfCertificates > 0)
+            return sk_X509_INFO_value(this.certificates, 0);
+        else
+            return null;
+    }
+
+    void loadFrom(FilePath filePath, scope OpenSSLPasswordDelegate passwordDelegate) @trusted {
+        //https://stackoverflow.com/a/60123583
+        //https://cpp.hotexamples.com/examples/-/-/sk_X509_INFO_value/cpp-sk_x509_info_value-function-examples.html
+
+        static struct PasswordContext {
+            FilePath filePath;
+            OpenSSLPasswordDelegate passwordDelegate;
+
+        nothrow @nogc:
+
+            static extern (C) int handle(ubyte* buf, int size, int rwflag, void* userdata) {
+                PasswordContext* self = cast(PasswordContext*)userdata;
+
+                if(self.passwordDelegate !is null) {
+                    return self.passwordDelegate(self.filePath, buf[0 .. size]);
+                }
+
+                return 0;
+            }
+        }
+
+        PasswordContext passwordContext = PasswordContext(filePath, passwordDelegate);
+
+        auto fileName = filePath.toString();
+        BIO* fileReader = BIO_new_file(fileName.ptr, "r");
+        if(fileReader is null)
+            return;
+        scope(exit)
+            BIO_free(fileReader);
+
+        certificates = PEM_X509_INFO_read_bio(fileReader, null, &PasswordContext.handle, cast(void*)&passwordContext);
+        if(certificates is null)
+            return;
+
+        numberOfCertificates = sk_X509_INFO_num(certificates);
+
+        if(numberOfCertificates > 0) {
+            X509_INFO* xi = sk_X509_INFO_value(certificates, 0);
+
+            if(xi.x_pkey !is null) {
+                this.privateKey = xi.x_pkey;
+                xi.x_pkey = null;
+            }
+        } else {
+            this.destroy;
         }
     }
 }

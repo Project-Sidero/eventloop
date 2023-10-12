@@ -43,6 +43,9 @@ struct CertificateStore {
                     }
                 }
                 break;
+
+            case Certificate.Type.OpenSSL:
+                break; // OpenSSL does not provide a keychain
             }
 
             return ret;
@@ -121,6 +124,9 @@ export:
                 }
             }
             break;
+
+        case Certificate.Type.OpenSSL:
+            break; // OpenSSL does not provide a keychain
         }
 
         return ret;
@@ -168,6 +174,9 @@ export:
                 }
             }
             break;
+
+        case Certificate.Type.OpenSSL:
+            break; // OpenSSL does not provide a keychain
         }
 
         return ret;
@@ -215,6 +224,9 @@ export:
                 }
             }
             break;
+
+        case Certificate.Type.OpenSSL:
+            break; // OpenSSL does not provide a keychain
         }
 
         return ret;
@@ -261,6 +273,9 @@ export:
             if(!ret.state.loadWinCrypt(WinCryptStore.Personal))
                 return CertificateStore.init;
             break;
+
+        case Certificate.Type.OpenSSL:
+            break; // OpenSSL does not provide a keychain
 
         case Certificate.Type.Default:
         case Certificate.Type.None:
@@ -332,6 +347,9 @@ struct State {
                     CertCloseStore(winCryptCertificateStore, 0);
             }
             break;
+
+        case Certificate.Type.OpenSSL:
+            break; // OpenSSL does not provide a keychain
 
         case Certificate.Type.Default:
         case Certificate.Type.None:
