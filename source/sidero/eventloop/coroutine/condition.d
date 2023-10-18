@@ -30,6 +30,18 @@ export @safe nothrow @nogc:
             return WaitingOn.Nothing;
     }
 
+    export @safe nothrow @nogc:
+
+    ///
+    ulong toHash() const {
+        return coroutine.toHash() ^ isExternalTrigger;
+    }
+
+    ///
+    bool opEquals(scope ref CoroutineCondition other) const {
+        return other.isExternalTrigger == isExternalTrigger && coroutine == other.coroutine;
+    }
+
     ///
     enum WaitingOn {
         ///

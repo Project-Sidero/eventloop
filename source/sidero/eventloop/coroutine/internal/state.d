@@ -200,6 +200,14 @@ export @safe nothrow @nogc:
             parent.allocator.dispose(functions);
         }
     }
+
+    ulong toHash() const {
+        return 0;
+    }
+
+    bool opEquals(scope ref CoroutineAllocatorMemoryDescriptor other) const {
+        return false;
+    }
 }
 
 struct CoroutineAllocatorMemoryState {
@@ -210,6 +218,16 @@ struct CoroutineAllocatorMemoryState {
     CoroutineCondition conditionToContinue;
 
     shared(bool) isComplete;
+
+export @safe nothrow @nogc:
+
+    ulong toHash() const {
+        return 0;
+    }
+
+    bool opEquals(scope ref CoroutineAllocatorMemoryState other) const {
+        return false;
+    }
 }
 
 struct CoroutineAllocatorMemory {

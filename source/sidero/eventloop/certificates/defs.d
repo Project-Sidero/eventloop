@@ -7,6 +7,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.typecons : Optional;
 import sidero.base.path.file;
 import sidero.base.internal.atomic;
+import sidero.base.bindings.openssl.libcrypto : X509_INFO, X509_PKEY, STACK_OF;
 
 export @safe nothrow @nogc:
 
@@ -107,17 +108,17 @@ export @safe nothrow @nogc:
             if(firstCert.x509 !is null) {
                 EVP_PKEY* key = X509_get0_pubkey(firstCert.x509);
 
-                if (key !is null) {
+                if(key !is null) {
                     BIO* outputBIO = BIO_new(BIO_s_mem());
                     scope(exit)
-                    BIO_free(outputBIO);
+                        BIO_free(outputBIO);
 
                     PEM_write_bio_PUBKEY(outputBIO, key);
 
                     ubyte* outputPtr;
                     const length = BIO_get_mem_data(outputBIO, outputPtr);
 
-                    if (length > 0) {
+                    if(length > 0) {
                         state.copiedPublicKey = Slice!ubyte(outputPtr[0 .. length]).dup;
                         return state.copiedPublicKey;
                     }
@@ -167,7 +168,7 @@ export @safe nothrow @nogc:
                 scope(exit)
                     BIO_free(outputBIO);
 
-                PEM_write_bio_PrivateKey_traditional(outputBIO, state.opensslPEMChain.privateKey.dec_pkey, null, null, 0, null, null);
+                PEM_write_bio_PKCS8PrivateKey(outputBIO, state.opensslPEMChain.privateKey.dec_pkey, null, null, 0, null, null);
 
                 ubyte* outputPtr;
                 const length = BIO_get_mem_data(outputBIO, outputPtr);
@@ -458,6 +459,17 @@ export @safe nothrow @nogc:
             }
 
             return typeof(return).init;
+        }
+    }
+
+    ///
+    void unsafeGetOpenSSLHandles(scope void delegate(X509_INFO* publicKey, X509_PKEY* privateKey,
+            STACK_OF!X509_INFO* chain) @system nothrow @nogc del) @system {
+        if(!isNull && this.state.type == Certificate.Type.OpenSSL) {
+            auto publicKey = state.opensslPEMChain.first();
+
+            if(publicKey !is null || state.opensslPEMChain.privateKey !is null || state.opensslPEMChain.certificates !is null)
+                del(publicKey, state.opensslPEMChain.privateKey, state.opensslPEMChain.certificates);
         }
     }
 

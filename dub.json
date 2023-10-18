@@ -23,7 +23,6 @@
     "libs-posix": [
         "pthread"
     ],
-    "mainSourceFile": "source/app.d",
     "configurations": [
         {
             "name": "library",
@@ -51,7 +50,8 @@
         },
         {
             "name": "executable",
-            "targetType": "executable"
+            "targetType": "executable",
+            "sourceFiles": ["examples/networking/app.d"]
         }
     ]
 }

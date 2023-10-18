@@ -1,0 +1,8 @@
+{
+    "name": "example_networking",
+    "dependencies": {
+        "sidero_eventloop": {
+            "path": "../.."
+        }
+    }
+}
