@@ -64,7 +64,8 @@ struct EncryptionState {
 @safe nothrow @nogc:
 
     size_t amountOfBytesToRead() {
-        return bufferSize > 0 ? bufferSize : 4096;
+        // openssl uses 16kb for TLS packet size, so we'll use that here
+        return bufferSize > 0 ? bufferSize : (16 * 1024);
     }
 
     bool addEncryption(scope SocketState* socketState, Hostname sniHostname, Certificate certificate, Closure!(Certificate,
@@ -172,7 +173,7 @@ struct EncryptionState {
                 return true;
             }
 
-            return false;
+            return winCrypt.negotiate(socketState);
 
         case Certificate.Type.OpenSSL:
             if(acquireContext) {
@@ -198,6 +199,7 @@ struct EncryptionState {
 
                 size_t consumed;
                 Slice!ubyte encrypted;
+                bool canEncrypt;
 
                 if(got) {
                     final switch(encryptionEngine) {
@@ -207,6 +209,7 @@ struct EncryptionState {
 
                     case Certificate.Type.WinCrypt:
                         encrypted = winCrypt.encrypt(socketState, got.get, consumed);
+                        canEncrypt = true;
                         break;
 
                     case Certificate.Type.OpenSSL:
@@ -214,21 +217,24 @@ struct EncryptionState {
                         assert(encrypted.isNull); // never set
                         break;
                     }
-                }
 
-                if(encrypted.length > 0) {
-                    logger.debug_("Encrypted data for socket ", socketState.handle, " as ", encrypted.length, " from ",
-                            got.length, " and consumed ", consumed, " on ", Thread.self);
-                    socketState.rawWriting.queue.push(encrypted);
-                    didSomething = true;
-                } else if(got.get.length > 0) {
-                    logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ", got.get.length, " on ", Thread.self);
-                }
+                    if(canEncrypt) {
+                        if(encrypted.length > 0) {
+                            logger.debug_("Encrypted data for socket ", socketState.handle, " as ", encrypted.length,
+                                    " from ", got.length, " and consumed ", consumed, " on ", Thread.self);
+                            socketState.rawWriting.queue.push(encrypted);
+                            didSomething = true;
+                        } else if(got.get.length > 0) {
+                            logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ",
+                                    got.get.length, " on ", Thread.self);
+                        }
+                    }
 
-                if(consumed > 0 && consumed < got.length) {
-                    socketState.writing.reappendToQueue(socketState, got.get[consumed .. $]);
-                } else if(consumed < got.length) {
-                    socketState.writing.reappendToQueue(socketState, got.get);
+                    if(consumed > 0 && consumed < got.length) {
+                        socketState.writing.reappendToQueue(socketState, got.get[consumed .. $]);
+                    } else if(consumed < got.length) {
+                        socketState.writing.reappendToQueue(socketState, got.get);
+                    }
                 }
             }
 
@@ -256,7 +262,9 @@ struct EncryptionState {
                     return consumed;
                 });
 
-                if(consumed > 0) {
+                if(encryptedLength == 0) {
+                    assert(decrypted.isNull);
+                } else if(consumed > 0) {
                     logger.debug_("Decrypted data for socket ", socketState.handle, " with ", decrypted.length,
                             " from ", encryptedLength, " and consumed ", consumed, " on ", Thread.self);
 
