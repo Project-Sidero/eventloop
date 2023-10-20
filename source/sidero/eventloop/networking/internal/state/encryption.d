@@ -37,7 +37,7 @@ version(none) {
 }
 
 struct EncryptionState {
-    import sidero.eventloop.networking.internal.openssl.state : OpenSSLEncryptionStateImpl;
+    import sidero.eventloop.networking.internal.openssl : OpenSSLEncryptionStateImpl;
 
     package(sidero.eventloop.networking.internal) {
         Certificate.Type encryptionEngine;
@@ -225,7 +225,7 @@ struct EncryptionState {
                                 " from ", got.length, " and consumed ", consumed, " on ", Thread.self);
                         socketState.rawWriting.queue.push(encrypted);
                         didSomething = true;
-                    } else if(got.get.length > 0) {
+                    } else if(encrypted.length > 0) {
                         logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ",
                                 toEncrypt.length, " on ", Thread.self);
                     }

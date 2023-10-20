@@ -1,4 +1,4 @@
-module sidero.eventloop.networking.internal.openssl.state;
+module sidero.eventloop.networking.internal.openssl;
 import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.threads;
 import sidero.base.bindings.openssl.libcrypto;
@@ -82,6 +82,8 @@ struct OpenSSLEncryptionStateImpl {
     BUF_MEM* bufRawRead;
     BUF_MEM* bufRawWrite;
 
+    String_ASCII currentSniHostname;
+
 @safe nothrow @nogc:
 
     void acquireCredentials(scope SocketState* socketState) scope @trusted {
@@ -136,6 +138,15 @@ struct OpenSSLEncryptionStateImpl {
             SSL_set_accept_state(openSSL);
         } else {
             SSL_set_connect_state(openSSL);
+
+            this.currentSniHostname = socketState.encryption.sniHostname.get;
+
+            if(this.currentSniHostname.length > 0) {
+                if(!currentSniHostname.isPtrNullTerminated)
+                    this.currentSniHostname = this.currentSniHostname.dup;
+
+                SSL_set_tlsext_host_name(openSSL, cast(char*)this.currentSniHostname.ptr);
+            }
         }
 
         {
@@ -169,6 +180,7 @@ struct OpenSSLEncryptionStateImpl {
 
     Slice!ubyte encrypt(scope SocketState* socketState, return scope Slice!ubyte decrypted, out size_t consumed) scope @trusted {
         socketState.rawReading.readRaw((rawReadBuffer) @trusted {
+        
             {
                 updateRawReadBuffer(socketState, rawReadBuffer.unsafeGetLiteral);
                 logger.trace("Encrypt raw read buffer ", bufRawRead, rawReadBuffer);
