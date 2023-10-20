@@ -1,5 +1,6 @@
 module sidero.eventloop.networking.internal.openssl.state;
 import sidero.eventloop.networking.internal.state;
+import sidero.eventloop.threads;
 import sidero.base.bindings.openssl.libcrypto;
 import sidero.base.bindings.openssl.libssl;
 import sidero.base.containers.readonlyslice;
@@ -85,21 +86,51 @@ struct OpenSSLEncryptionStateImpl {
 
     void acquireCredentials(scope SocketState* socketState) scope @trusted {
         const isInitialized = checkInit;
-        if (!isInitialized) {
-            socketState.encryption.enabled = false;
+        if(!isInitialized) {
+            socketState.close(true);
             return;
         }
 
+        logger.debug_("Starting to acquire credentials for socket ", socketState.handle, " on ", Thread.self);
+
+        socketState.encryption.bufferSize = 16 * 1024;
         openSSL = SSL_new(openSSLContext);
 
-        // we won't be writing to this BIO, but just incase lets set the read only flag, so nothing gets decallocated wrongly ext.
-        rawReadBIO = BIO_new(BIO_s_mem());
-        BIO_get_mem_ptr(rawReadBIO, bufRawRead);
-        bufRawRead.flags |= BIO_FLAGS_MEM_RDONLY;
+        if(openSSL is null) {
+            logger.info("Failed to create new openssl context for socket ", socketState.handle, " on ", Thread.self);
+            socketState.close(true);
+            return;
+        }
 
-        // allow the raw write BIO to handle the memory, although we'll read and reset as we raw write
-        rawWriteBIO = BIO_new(BIO_s_mem());
-        BIO_get_mem_ptr(rawWriteBIO, bufRawWrite);
+        {
+            // we won't be writing to this BIO, but just incase lets set the read only flag, so nothing gets decallocated wrongly ext.
+            rawReadBIO = BIO_new(BIO_s_mem());
+
+            if(rawReadBIO is null) {
+                logger.info("Failed to create new openssl raw read BIO for socket ", socketState.handle, " on ", Thread.self);
+                socketState.close(true);
+                return;
+            }
+
+            BIO_set_flags(rawReadBIO, BIO_FLAGS_MEM_RDONLY);
+            BIO_get_mem_ptr(rawReadBIO, bufRawRead);
+        }
+
+        {
+            // allow the raw write BIO to handle the memory, although we'll read and reset as we raw write
+            rawWriteBIO = BIO_new(BIO_s_mem());
+
+            if(rawWriteBIO is null) {
+                logger.info("Failed to create new openssl raw write BIO for socket ", socketState.handle, " on ", Thread.self);
+                socketState.close(true);
+                return;
+            }
+
+            BIO_get_mem_ptr(rawWriteBIO, bufRawWrite);
+        }
+
+        SSL_set0_rbio(openSSL, rawReadBIO);
+        SSL_set0_wbio(openSSL, rawWriteBIO);
 
         if(socketState.cameFromServer) {
             SSL_set_accept_state(openSSL);
@@ -107,30 +138,44 @@ struct OpenSSLEncryptionStateImpl {
             SSL_set_connect_state(openSSL);
         }
 
-        socketState.encryption.currentCertificate.unsafeGetOpenSSLHandles((X509_INFO* publicKey, X509_PKEY* privateKey, STACK_OF!X509_INFO* chain) {
-            const countChain = sk_X509_INFO_num(chain);
-            STACK_OF!X509* chain2 = sk_X509_new(null, countChain);
+        {
+            bool gotCerts;
 
-            foreach(i; 0 .. countChain) {
-                auto got = sk_X509_INFO_value(chain, i);
+            socketState.encryption.currentCertificate.unsafeGetOpenSSLHandles((X509_INFO* publicKey,
+                    X509_PKEY* privateKey, STACK_OF!X509_INFO* chain) {
+                const countChain = sk_X509_INFO_num(chain);
+                STACK_OF!X509* chain2 = sk_X509_new_reserve(null, countChain);
 
-                if (got !is null && got.x509 !is null) {
-                    sk_X509_push(chain2, got.x509);
+                foreach(i; 0 .. countChain) {
+                    auto got = sk_X509_INFO_value(chain, i);
+
+                    if(got !is null && got.x509 !is null) {
+                        sk_X509_push(chain2, got.x509);
+                    }
                 }
+
+                SSL_use_cert_and_key(openSSL, publicKey is null ? null : publicKey.x509, privateKey is null ?
+                    null : privateKey.dec_pkey, chain2, 0);
+                gotCerts = true;
+            });
+
+            if(!gotCerts && socketState.cameFromServer) {
+                logger.info("Failed to initialize openssl TLS certificates for socket ", socketState.handle, " on ", Thread.self);
+                socketState.close(true);
+                return;
             }
-
-            SSL_use_cert_and_key(openSSL, publicKey is null ? null : publicKey.x509, privateKey is null ?
-                null : privateKey.dec_pkey, chain2, 0);
-        });
-
-        SSL_set_bio(openSSL, rawReadBIO, rawWriteBIO);
-
-        socketState.encryption.negotiating = false;
+        }
     }
 
     Slice!ubyte encrypt(scope SocketState* socketState, return scope Slice!ubyte decrypted, out size_t consumed) scope @trusted {
         socketState.rawReading.readRaw((rawReadBuffer) @trusted {
-            updateRawReadBuffer(rawReadBuffer.unsafeGetLiteral);
+            {
+                updateRawReadBuffer(socketState, rawReadBuffer.unsafeGetLiteral);
+                logger.trace("Encrypt raw read buffer ", bufRawRead, rawReadBuffer);
+
+                SSL_do_handshake(openSSL);
+                applyRawWriteBuffer(socketState);
+            }
 
             auto toEncrypt = decrypted.unsafeGetLiteral;
 
@@ -147,9 +192,12 @@ struct OpenSSLEncryptionStateImpl {
                     switch(error) {
                     case SSL_ERROR_WANT_READ:
                     case SSL_ERROR_WANT_WRITE:
+                        logger.debug_("Socket openssl TLS encrypt needs read/write for socket ", socketState.handle, " on ", Thread.self);
                         break Loop;
 
                     default:
+                        logger.debug_("Socket openssl TLS encrypt unknown error ", error, " for socket ",
+                            socketState.handle, " on ", Thread.self);
                         break;
                     }
                 }
@@ -157,7 +205,7 @@ struct OpenSSLEncryptionStateImpl {
                 applyRawWriteBuffer(socketState);
             }
 
-            return bufRawRead.max - bufRawRead.length;
+            return rawReadBuffer.length - bufRawRead.length;
         });
 
         // raw writing has already been handled via applyRawWriteBuffer
@@ -167,24 +215,39 @@ struct OpenSSLEncryptionStateImpl {
     Slice!ubyte decrypt(scope SocketState* socketState, return scope DynamicArray!ubyte encrypted, out size_t consumed) scope @trusted {
         ubyte[16 * 1024] buffer = void;
 
-        updateRawReadBuffer(encrypted.unsafeGetLiteral);
+        updateRawReadBuffer(socketState, encrypted.unsafeGetLiteral);
 
-        Loop: while(encrypted.length > 0) {
+        const startingLength = bufRawRead.length;
+        scope(exit) {
+            consumed = startingLength - bufRawRead.length;
+        }
+
+        {
+            logger.trace("Decrypt raw read buffer ", bufRawRead, encrypted);
+            const err = SSL_do_handshake(openSSL);
+            applyRawWriteBuffer(socketState);
+
+            logger.trace("decrypt handshake has done ", err, " as ", startingLength, " != ", bufRawRead.length);
+        }
+
+        Loop: while(bufRawRead.length > 0) {
             size_t readBytes;
             const err = SSL_read_ex(this.openSSL, buffer.ptr, buffer.length, &readBytes);
 
             if(err == 1) {
                 socketState.reading.queue.push(Slice!ubyte(buffer[0 .. readBytes]).dup);
-                encrypted = encrypted[readBytes .. $];
             } else {
                 const error = SSL_get_error(this.openSSL, err);
 
                 switch(error) {
                 case SSL_ERROR_WANT_READ:
                 case SSL_ERROR_WANT_WRITE:
+                    logger.debug_("Socket openssl TLS decrypt needs read/write for socket ", socketState.handle, " on ", Thread.self);
                     break Loop;
 
                 default:
+                    logger.debug_("Socket openssl TLS decrypt unknown error ", error, " for socket ",
+                            socketState.handle, " on ", Thread.self);
                     break;
                 }
             }
@@ -192,15 +255,43 @@ struct OpenSSLEncryptionStateImpl {
             applyRawWriteBuffer(socketState);
         }
 
-        consumed = bufRawRead.max - bufRawRead.length;
-
         // we'll push straight to reading
         return Slice!ubyte.init;
     }
 
     bool negotiate(scope SocketState* socketState) scope {
-        // handled through other steps
-        assert(0);
+        bool ret;
+
+        socketState.rawReading.readRaw((rawReadBuffer) @trusted {
+            updateRawReadBuffer(socketState, rawReadBuffer.unsafeGetLiteral);
+
+            const err = SSL_do_handshake(openSSL);
+            if(err == 1) {
+                socketState.encryption.negotiating = false;
+                ret = true;
+            } else {
+                const error = SSL_get_error(openSSL, err);
+                ret = false;
+
+                switch(error) {
+                case SSL_ERROR_WANT_READ:
+                case SSL_ERROR_WANT_WRITE:
+                    logger.debug_("Socket openssl TLS negotiate needs read/write for socket ", socketState.handle, " on ", Thread.self);
+                    break;
+
+                default:
+                    logger.debug_("Socket openssl TLS negotiate unknown error ", error, " for socket ",
+                        socketState.handle, " on ", Thread.self);
+                    break;
+                }
+            }
+
+            applyRawWriteBuffer(socketState);
+            logger.trace("Post negotiate ", bufRawRead, " ", rawReadBuffer.length);
+            return rawReadBuffer.length - bufRawRead.length;
+        });
+
+        return ret;
     }
 
     void cleanup(scope SocketState* socketState) scope @trusted {
@@ -214,17 +305,36 @@ struct OpenSSLEncryptionStateImpl {
     }
 
 private:
-    void updateRawReadBuffer(const(ubyte)[] toRead) scope @trusted {
+    void updateRawReadBuffer(scope SocketState* socketState, const(ubyte)[] toRead) scope @trusted {
+        logger.debug_("Applying from read buffer ", toRead.length, " for ", socketState.handle, " on ", Thread.self);
+
+        //bufRawRead = BUF_MEM_new();
         bufRawRead.length = toRead.length;
         bufRawRead.max = toRead.length;
         bufRawRead.data = cast(ubyte*)toRead.ptr;
+
+        // this will update the read pointer so that it matches
+        //BIO_set_mem_buf(rawReadBIO, bufRawRead, BIO_NOCLOSE);
+
+        /+rawReadBIO = BIO_new(BIO_s_mem());
+        BIO_set_flags(rawReadBIO, BIO_FLAGS_MEM_RDONLY);
+        BIO_get_mem_ptr(rawReadBIO, bufRawRead);
+
+        bufRawRead.length = toRead.length;
+        bufRawRead.max = toRead.length;
+        bufRawRead.data = cast(ubyte*)toRead.ptr;
+
+        SSL_set0_rbio(openSSL, rawReadBIO);+/
     }
 
     void applyRawWriteBuffer(scope SocketState* socketState) scope @trusted {
-        if(bufRawWrite.length < 1)
-            return;
+        logger.debug_("Applying to write buffer ", bufRawWrite.length, " for ", socketState.handle, " on ", Thread.self);
 
-        socketState.rawWriting.queue.push(Slice!ubyte(bufRawWrite.data[0 .. bufRawWrite.length]).dup);
+        ubyte[16 * 1024] rawByteBuffer;
+        size_t readBytes;
+        BIO_read_ex(rawWriteBIO, rawByteBuffer.ptr, rawByteBuffer.length, &readBytes);
+
+        socketState.rawWriting.queue.push(Slice!ubyte(rawByteBuffer[0 .. readBytes]).dup);
         bufRawWrite.length = 0;
     }
 }

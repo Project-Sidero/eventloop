@@ -37,21 +37,21 @@ int main(string[] args) {
     } else
         portToListenOn = 22965;
 
-    /+{
+    version(all) {
         import sidero.base.bindings.openssl.libcrypto;
         import sidero.base.bindings.openssl.libssl;
         import sidero.base.path.file;
 
-        auto lcFP = FilePath.from("../../libsbin/openssl/x64/bin/libcrypto-3-x64.dll");
+        auto lcFP = FilePath.from("C:/Program Files/OpenSSL-Win64/libcrypto-3-x64.dll");
         assert(lcFP);
-        auto lsFP = FilePath.from("../../libsbin/openssl/x64/bin/libssl-3-x64.dll");
+        auto lsFP = FilePath.from("C:/Program Files/OpenSSL-Win64/libssl-3-x64.dll");
         assert(lsFP);
 
         loadLibCrypto(lcFP).debugWriteln;
         loadLibSSL(lsFP).debugWriteln;
-    }+/
+    }
 
-    version(none) {
+    version(all) {
         if(!startUpNetworking)
             return 3;
         if(!startWorkers(1))

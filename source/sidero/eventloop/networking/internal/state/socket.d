@@ -7,7 +7,7 @@ import sidero.eventloop.networking.internal.state.rawreading;
 import sidero.eventloop.networking.internal.state.rawwriting;
 import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.networking.sockets;
-import sidero.base.synchronization.mutualexclusion;
+import sidero.eventloop.synchronization.system.lock;
 import sidero.base.allocators;
 import sidero.base.path.networking;
 import sidero.base.internal.atomic;
@@ -15,7 +15,7 @@ import sidero.base.errors;
 
 struct SocketState {
     private {
-        TestTestSetLockInline mutex;
+        SystemLock mutex;
         RCAllocator allocator;
 
         shared(ptrdiff_t) refCount;
@@ -80,7 +80,7 @@ struct SocketState {
     }
 
     void unpin() scope @trusted {
-        mutex.pureLock;
+        mutex.lock.assumeOkay;
         if(!atomicLoad(isAlive)) {
             mutex.unlock;
             return;
@@ -108,14 +108,14 @@ struct SocketState {
         rc(false);
     }
 
-    void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope {
-        mutex.pureLock;
+    void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
+        mutex.lock.assumeOkay;
         del(args);
         mutex.unlock;
     }
 
     void close(bool gracefully) scope @trusted {
-        mutex.pureLock;
+        mutex.lock.assumeOkay;
         if(!atomicLoad(isAlive)) {
             mutex.unlock;
             return;

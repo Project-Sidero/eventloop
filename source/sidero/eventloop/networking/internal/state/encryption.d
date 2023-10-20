@@ -170,7 +170,6 @@ struct EncryptionState {
             if(acquireContext) {
                 winCrypt.acquireCredentials(socketState);
                 assert(winCrypt.credentialHandleSet);
-                return true;
             }
 
             return winCrypt.negotiate(socketState);
@@ -178,10 +177,9 @@ struct EncryptionState {
         case Certificate.Type.OpenSSL:
             if(acquireContext) {
                 openssl.acquireCredentials(socketState);
-                return true;
             }
 
-            return false;
+            return openssl.negotiate(socketState);
         }
     }
 
@@ -196,51 +194,54 @@ struct EncryptionState {
 
             {
                 auto got = socketState.writing.queue.pop;
+                Slice!ubyte toEncrypt;
 
                 size_t consumed;
                 Slice!ubyte encrypted;
                 bool canEncrypt;
 
-                if(got) {
-                    final switch(encryptionEngine) {
-                    case Certificate.Type.None:
-                    case Certificate.Type.Default:
-                        break;
+                if(got)
+                    toEncrypt = got.get;
 
-                    case Certificate.Type.WinCrypt:
-                        encrypted = winCrypt.encrypt(socketState, got.get, consumed);
-                        canEncrypt = true;
-                        break;
+                final switch(encryptionEngine) {
+                case Certificate.Type.None:
+                case Certificate.Type.Default:
+                    break;
 
-                    case Certificate.Type.OpenSSL:
-                        encrypted = openssl.encrypt(socketState, got.get, consumed);
-                        assert(encrypted.isNull); // never set
-                        break;
+                case Certificate.Type.WinCrypt:
+                    encrypted = winCrypt.encrypt(socketState, toEncrypt, consumed);
+                    canEncrypt = true;
+                    break;
+
+                case Certificate.Type.OpenSSL:
+                    encrypted = openssl.encrypt(socketState, toEncrypt, consumed);
+                    assert(encrypted.isNull); // never set
+                    break;
+                }
+
+                if(canEncrypt) {
+                    if(encrypted.length > 0) {
+                        logger.debug_("Encrypted data for socket ", socketState.handle, " as ", encrypted.length,
+                                " from ", got.length, " and consumed ", consumed, " on ", Thread.self);
+                        socketState.rawWriting.queue.push(encrypted);
+                        didSomething = true;
+                    } else if(got.get.length > 0) {
+                        logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ",
+                                toEncrypt.length, " on ", Thread.self);
                     }
+                }
 
-                    if(canEncrypt) {
-                        if(encrypted.length > 0) {
-                            logger.debug_("Encrypted data for socket ", socketState.handle, " as ", encrypted.length,
-                                    " from ", got.length, " and consumed ", consumed, " on ", Thread.self);
-                            socketState.rawWriting.queue.push(encrypted);
-                            didSomething = true;
-                        } else if(got.get.length > 0) {
-                            logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ",
-                                    got.get.length, " on ", Thread.self);
-                        }
-                    }
-
-                    if(consumed > 0 && consumed < got.length) {
-                        socketState.writing.reappendToQueue(socketState, got.get[consumed .. $]);
-                    } else if(consumed < got.length) {
-                        socketState.writing.reappendToQueue(socketState, got.get);
-                    }
+                if(consumed > 0 && consumed < toEncrypt.length) {
+                    socketState.writing.reappendToQueue(socketState, toEncrypt[consumed .. $]);
+                } else if(consumed < toEncrypt.length) {
+                    socketState.writing.reappendToQueue(socketState, toEncrypt);
                 }
             }
 
             {
                 Slice!ubyte decrypted;
                 size_t encryptedLength, consumed;
+                bool haveDecrypted;
 
                 socketState.rawReading.readRaw((encrypted) @trusted {
                     final switch(encryptionEngine) {
@@ -250,6 +251,7 @@ struct EncryptionState {
 
                     case Certificate.Type.WinCrypt:
                         decrypted = winCrypt.decrypt(socketState, encrypted, consumed);
+                        haveDecrypted = true;
                         break;
 
                     case Certificate.Type.OpenSSL:
@@ -262,15 +264,14 @@ struct EncryptionState {
                     return consumed;
                 });
 
-                if(encryptedLength == 0) {
-                    assert(decrypted.isNull);
-                } else if(consumed > 0) {
+                if(consumed > 0) {
                     logger.debug_("Decrypted data for socket ", socketState.handle, " with ", decrypted.length,
                             " from ", encryptedLength, " and consumed ", consumed, " on ", Thread.self);
 
-                    socketState.reading.queue.push(decrypted);
+                    if(decrypted.length > 0)
+                        socketState.reading.queue.push(decrypted);
                     didSomething = true;
-                } else if(encryptedLength > 0) {
+                } else if(haveDecrypted && encryptedLength > 0) {
                     logger.debug_("Failed to decrypt data for socket ", socketState.handle, " with ",
                             encryptedLength, " on ", Thread.self);
                 }
