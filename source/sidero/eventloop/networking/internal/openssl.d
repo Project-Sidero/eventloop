@@ -134,6 +134,12 @@ struct OpenSSLEncryptionStateImpl {
         SSL_set0_rbio(openSSL, rawReadBIO);
         SSL_set0_wbio(openSSL, rawWriteBIO);
 
+        if (socketState.encryption.validateCertificates) {
+            SSL_set_verify(openSSL, SSL_VERIFY_PEER, null);
+        } else {
+            SSL_set_verify(openSSL, SSL_VERIFY_NONE, null);
+        }
+
         if(socketState.cameFromServer) {
             SSL_set_accept_state(openSSL);
         } else {
