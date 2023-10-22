@@ -8,7 +8,11 @@ import sidero.base.path.networking;
 
 version(Windows) {
     public import sidero.eventloop.networking.internal.windows.mechanism;
+} else version(Posix) {
+    public import sidero.eventloop.networking.internal.posix.mechanism;
 } else {
+    static assert(0, "Unimplemented");
+
     bool startUpNetworkingMechanism() {
         assert(0);
     }
@@ -20,7 +24,11 @@ version(Windows) {
 
 version(Windows) {
     public import sidero.eventloop.networking.internal.windows.socketclient;
+} else version(Posix) {
+    public import sidero.eventloop.networking.internal.posix.socketclient;
 } else {
+    static assert(0, "Unimplemented");
+
     struct PlatformSocket {
         void* handle;
 
@@ -50,7 +58,11 @@ version(Windows) {
 
 version(Windows) {
     public import sidero.eventloop.networking.internal.windows.socketserver;
+} else version(Posix) {
+    public import sidero.eventloop.networking.internal.posix.socketserver;
 } else {
+    static assert(0, "Unimplemented");
+
     alias PlatformListenSocketKey = void*;
 
     struct PlatformListenSocket {
@@ -63,7 +75,7 @@ version(Windows) {
         }
     }
 
-    bool listenOnAddress(scope ListenSocket* listenSocketState, bool reuseAddr, bool keepAlive) {
+    bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, bool keepAlive) {
         assert(0);
     }
 

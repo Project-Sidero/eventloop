@@ -8,12 +8,12 @@ import sidero.base.synchronization.mutualexclusion;
 import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.containers.readonlyslice;
 
-version(Windows) {
+version (Windows) {
     import sidero.eventloop.internal.windows.bindings;
 }
 
 struct NegotationState {
-    version(Windows) {
+    version (Windows) {
         CtxtHandle contextHandle;
         bool haveContextHandle;
     }
@@ -21,8 +21,8 @@ struct NegotationState {
 @safe nothrow @nogc:
 
     void cleanup(scope SocketState* socketState) scope @trusted {
-        version(Windows) {
-            if(this.haveContextHandle) {
+        version (Windows) {
+            if (this.haveContextHandle) {
                 DeleteSecurityContext(&this.contextHandle);
                 this.haveContextHandle = false;
             }
@@ -30,7 +30,7 @@ struct NegotationState {
     }
 
     bool negotiateServer(scope SocketState* socketState) scope @trusted {
-        version(Windows) {
+        version (Windows) {
             bool didSomething;
             ULONG plAttributes = ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM;
 
@@ -60,18 +60,18 @@ struct NegotationState {
 
                 SECURITY_STATUS ss;
 
-                if(haveContextHandle) {
-                    ss = AcceptSecurityContext(&socketState.encryption.winCrypt.credentialHandle, &contextHandle, &buffersDescriptionIn,
-                        plAttributes, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+                if (haveContextHandle) {
+                    ss = AcceptSecurityContext(&socketState.encryption.winCrypt.credentialHandle, &contextHandle,
+                        &buffersDescriptionIn, plAttributes, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
                 } else {
-                    ss = AcceptSecurityContext(&socketState.encryption.winCrypt.credentialHandle, null, &buffersDescriptionIn,
-                        plAttributes, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
+                    ss = AcceptSecurityContext(&socketState.encryption.winCrypt.credentialHandle, null,
+                        &buffersDescriptionIn, plAttributes, 0, &contextHandle, &buffersDescriptionOut, &plAttributes, null);
                     haveContextHandle = true;
                 }
 
                 logger.trace("Socket server handshake ", socketState.handle, " with ", ss, " on ", Thread.self);
 
-                if(buffersOut[0].cbBuffer > 0) {
+                if (buffersOut[0].cbBuffer > 0) {
                     auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                     logger.debug_("Sending data for server socket ", socketState.handle, " for length ", sliced.length,
                         " on ", Thread.self);
@@ -84,18 +84,18 @@ struct NegotationState {
                 assert(ss != SEC_I_COMPLETE_NEEDED);
                 socketState.encryption.negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
 
-                if(ss == SEC_E_INCOMPLETE_MESSAGE)
+                if (ss == SEC_E_INCOMPLETE_MESSAGE)
                     return 0;
 
-                if(!socketState.encryption.negotiating) {
-                    if(ss != SEC_E_OK) {
+                if (!socketState.encryption.negotiating) {
+                    if (ss != SEC_E_OK) {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " with ", ss, " on ", Thread.self);
                         socketState.close(true);
                     }
                 }
 
                 size_t consumed = canDo.length;
-                if(buffersOut[1].BufferType == SECBUFFER_EXTRA) {
+                if (buffersOut[1].BufferType == SECBUFFER_EXTRA) {
                     consumed -= buffersOut[1].cbBuffer;
                 }
 
@@ -103,7 +103,7 @@ struct NegotationState {
                 return consumed;
             });
 
-            if(!socketState.encryption.negotiating) {
+            if (!socketState.encryption.negotiating) {
                 updateStreamSizes(socketState);
             }
 
@@ -113,7 +113,7 @@ struct NegotationState {
     }
 
     bool negotiateClient(scope SocketState* socketState) scope @trusted {
-        version(Windows) {
+        version (Windows) {
             bool didSomething;
             ULONG plAttributes = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY |
                 ISC_REQ_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_STREAM;
@@ -141,7 +141,7 @@ struct NegotationState {
 
                 SECURITY_STATUS ss;
 
-                if(haveContextHandle) {
+                if (haveContextHandle) {
                     ss = InitializeSecurityContextW(&socketState.encryption.winCrypt.credentialHandle, &contextHandle, null,
                         plAttributes, 0, SECURITY_NATIVE_DREP, &buffersDescriptionIn, 0, null,
                         &buffersDescriptionOut, &plAttributes, null);
@@ -154,7 +154,7 @@ struct NegotationState {
 
                 logger.trace("Socket client handshake ", socketState.handle, " with ", ss, " on ", Thread.self);
 
-                if(buffersOut[0].cbBuffer > 0) {
+                if (buffersOut[0].cbBuffer > 0) {
                     auto sliced = Slice!ubyte((cast(ubyte*)buffersOut[0].pvBuffer)[0 .. buffersOut[0].cbBuffer]);
                     logger.debug_("Sending data for client socket ", socketState.handle, " for length ", sliced.length,
                         " on ", Thread.self);
@@ -167,15 +167,15 @@ struct NegotationState {
                 assert(ss != SEC_I_COMPLETE_NEEDED);
                 socketState.encryption.negotiating = ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE;
 
-                if(ss == SEC_E_INCOMPLETE_MESSAGE)
+                if (ss == SEC_E_INCOMPLETE_MESSAGE)
                     return 0;
 
-                if(!socketState.encryption.negotiating) {
-                    if(ss == SEC_E_WRONG_PRINCIPAL) {
+                if (!socketState.encryption.negotiating) {
+                    if (ss == SEC_E_WRONG_PRINCIPAL) {
                         logger.warning("Unable to negotiate socket encryption possibly due to invalidate certificate ",
                             socketState.handle, " with ", ss, " on ", Thread.self);
                         socketState.close(true);
-                    } else if(ss != SEC_E_OK) {
+                    } else if (ss != SEC_E_OK) {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " with ", ss, " on ", Thread.self);
                         socketState.close(true);
                     } else {
@@ -184,7 +184,7 @@ struct NegotationState {
                 }
 
                 size_t consumed = canDo.length;
-                if(buffersIn[1].BufferType == SECBUFFER_EXTRA) {
+                if (buffersIn[1].BufferType == SECBUFFER_EXTRA) {
                     consumed -= buffersIn[1].cbBuffer;
                 }
 
@@ -192,7 +192,7 @@ struct NegotationState {
                 return consumed;
             });
 
-            if(!socketState.encryption.negotiating) {
+            if (!socketState.encryption.negotiating) {
                 updateStreamSizes(socketState);
             }
 
@@ -202,21 +202,24 @@ struct NegotationState {
     }
 
     void updateStreamSizes(scope SocketState* socketState) scope @trusted {
-        SecPkgContext_StreamSizes sizes;
+        version (Windows) {
+            SecPkgContext_StreamSizes sizes;
 
-        // Get stream data properties
-        SECURITY_STATUS ss = QueryContextAttributesW(&contextHandle, SECPKG_ATTR_STREAM_SIZES, &sizes);
+            // Get stream data properties
+            SECURITY_STATUS ss = QueryContextAttributesW(&contextHandle, SECPKG_ATTR_STREAM_SIZES, &sizes);
 
-        if(ss != SEC_E_OK) {
-            logger.warning("Could not acquire stream TLS properties for ", socketState.handle, " ", ss);
-            return;
-        }
+            if (ss != SEC_E_OK) {
+                logger.warning("Could not acquire stream TLS properties for ", socketState.handle, " ", ss);
+                return;
+            }
 
-        socketState.encryption.winCrypt.encryptedPacketHeaderSize = sizes.cbHeader;
-        socketState.encryption.winCrypt.encryptedMessageSize = sizes.cbMaximumMessage;
-        socketState.encryption.winCrypt.encryptedPacketTrailerSize = sizes.cbTrailer;
-        socketState.encryption.winCrypt.maxEncryptedPacketSize = sizes.cbHeader + sizes.cbMaximumMessage + sizes.cbTrailer;
-        logger.debug_("Max WinCrypt encrypted package size for ", SecurityPackageName, ": ",
-                socketState.encryption.winCrypt.maxEncryptedPacketSize);
+            socketState.encryption.winCrypt.encryptedPacketHeaderSize = sizes.cbHeader;
+            socketState.encryption.winCrypt.encryptedMessageSize = sizes.cbMaximumMessage;
+            socketState.encryption.winCrypt.encryptedPacketTrailerSize = sizes.cbTrailer;
+            socketState.encryption.winCrypt.maxEncryptedPacketSize = sizes.cbHeader + sizes.cbMaximumMessage + sizes.cbTrailer;
+            logger.debug_("Max WinCrypt encrypted package size for ", SecurityPackageName, ": ",
+                    socketState.encryption.winCrypt.maxEncryptedPacketSize);
+        } else
+            assert(0);
     }
 }

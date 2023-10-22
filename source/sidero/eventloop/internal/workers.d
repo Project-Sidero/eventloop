@@ -14,6 +14,8 @@ import sidero.base.synchronization.mutualexclusion;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.iocp;
+} else version(Posix) {
+    import sidero.eventloop.internal.posix.workers;
 } else {
     static assert(0, "unimplemented");
 }

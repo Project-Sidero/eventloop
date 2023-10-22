@@ -32,7 +32,7 @@ struct SystemSemaphore {
 export @safe nothrow @nogc:
 
     /// Maximum value does not apply to POSIX.
-    this(uint initialValue, uint maximumValue = uint.max) scope {
+    this(uint initialValue, uint maximumValue = uint.max) scope @trusted {
         version(Windows) {
             semaphore = CreateSemaphoreA(null, initialValue, maximumValue, null);
             if(semaphore is null)
@@ -57,11 +57,6 @@ export @safe nothrow @nogc:
             } else
                 static assert(0, "Unimplemented platform");
         }
-    }
-
-    /// Warning: unsafe, you must handle reference counting and keeping this instance alive
-    SystemHandle unsafeGetHandle() @system {
-        return SystemHandle(semaphore, SemaphoreHandleIdentifier);
     }
 
     ///
@@ -93,8 +88,7 @@ export @safe nothrow @nogc:
                 return waitForLock(semaphore);
             }
         } else version(Posix) {
-            import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
-            import core.stdc.time : timespec;
+            import core.sys.posix.time : timespec, clock_gettime, CLOCK_REALTIME;
             import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN, EINTR;
 
             if(timeout < Duration.max) {
@@ -110,7 +104,7 @@ export @safe nothrow @nogc:
                 ts.tv_sec += secs;
                 ts.tv_nsec += nsecs;
 
-                result = sem_timedwait(&semaphore, ts);
+                result = sem_timedwait(&semaphore, &ts);
 
                 switch(result) {
                 case 0:
@@ -128,7 +122,7 @@ export @safe nothrow @nogc:
                     return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
                 }
             } else {
-                return waitForLock(semaphore);
+                return waitForLock(&semaphore);
             }
         } else
             static assert(0, "Unimplemented platform");
@@ -155,6 +149,7 @@ export @safe nothrow @nogc:
                 return typeof(return)(UnknownPlatformBehaviorException("Could not lock semaphore"));
             }
         } else version(Posix) {
+            import core.stdc.errno : EINVAL, EAGAIN, EINTR;
             auto result = sem_trywait(&semaphore);
 
             switch(result) {
@@ -209,11 +204,10 @@ ErrorResult waitForLock(scope void* handle) @trusted nothrow @nogc {
             return ErrorResult(UnknownPlatformBehaviorException("Could not lock semaphore"));
         }
     } else version(Posix) {
-        import core.sys.posix.semaphore : sem_wait;
-        import core.sys.posix.pthread : EOWNERDEAD, ENOTRECOVERABLE, EBUSY;
-        import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN;
+        import core.sys.posix.semaphore : sem_wait, sem_t;
+        import core.stdc.errno : EOWNERDEAD, ENOTRECOVERABLE, EBUSY, EINVAL, ETIMEDOUT, EAGAIN;
 
-        int result = sem_wait(handle);
+        int result = sem_wait(cast(sem_t*)handle);
 
         switch(result) {
         case 0:

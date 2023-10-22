@@ -15,7 +15,7 @@ struct SystemLock {
         TestTestSetLockInline protectMutex;
         bool initialized;
 
-        version(Windows) {
+        version (Windows) {
             import core.sys.windows.windows : CreateMutex, HANDLE, CloseHandle, WaitForSingleObject, INFINITE,
                 WAIT_OBJECT_0, WAIT_ABANDONED, WAIT_FAILED, WAIT_TIMEOUT, ReleaseMutex;
 
@@ -24,7 +24,7 @@ struct SystemLock {
             void setup() scope @trusted nothrow @nogc {
                 protectMutex.pureLock;
 
-                if(!initialized) {
+                if (!initialized) {
                     mutex = CreateMutex(null, false, null);
                     assert(mutex !is null);
                     initialized = true;
@@ -32,31 +32,36 @@ struct SystemLock {
 
                 protectMutex.unlock;
             }
-        } else version(Posix) {
+        } else version (Posix) {
             import core.sys.posix.pthread : pthread_mutex_t, pthread_mutex_init, pthread_mutex_destroy,
-                pthread_mutex_lock, pthread_mutex_unlock, pthread_mutex_trylock, pthread_mutexattr_t,
-                pthread_mutexattr_settype, PTHREAD_MUTEX_RECURSIVE,
-                pthread_mutexattr_setrobust, PTHREAD_MUTEX_ROBUST, pthread_mutex_consistent, EOWNERDEAD, EAGAIN, ENOTRECOVERABLE, EBUSY;
+                pthread_mutex_lock, pthread_mutex_unlock, pthread_mutex_trylock,
+                pthread_mutexattr_t, pthread_mutexattr_settype, PTHREAD_MUTEX_RECURSIVE, pthread_mutexattr_init,
+                pthread_mutexattr_destroy;
+            import core.stdc.errno : EOWNERDEAD, EAGAIN, ENOTRECOVERABLE, EBUSY;
 
             pthread_mutex_t mutex;
 
-            void setup() scope @trusted nothrow @nogc {
+            void setupImpl() scope @trusted {
                 protectMutex.pureLock;
 
-                if(!initialized) {
+                if (!initialized) {
                     pthread_mutexattr_t attr;
-                    auto result = pthread_attr_init(&attr);
+                    auto result = pthread_mutexattr_init(&attr);
                     assert(result == 0);
 
                     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
                     pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
 
                     pthread_mutex_init(&mutex, &attr);
-                    pthread_attr_destroy(&attr);
+                    pthread_mutexattr_destroy(&attr);
                     initialized = true;
                 }
 
                 protectMutex.unlock;
+            }
+
+            void setup() scope @trusted nothrow @nogc {
+                (cast(void delegate()@safe nothrow @nogc)&this.setupImpl)();
             }
         } else
             static assert(0, "Unimplemented platform");
@@ -67,34 +72,28 @@ export @safe nothrow @nogc:
 
     ///
     ~this() scope @trusted {
-        if(initialized) {
-            version(Windows) {
+        if (initialized) {
+            version (Windows) {
                 CloseHandle(mutex);
-            } else version(Posix) {
+            } else version (Posix) {
                 pthread_mutex_destroy(&mutex);
             } else
                 static assert(0, "Unimplemented platform");
         }
     }
 
-    /// Warning: unsafe, you must handle reference counting and keeping this instance alive
-    SystemHandle unsafeGetHandle() @system {
-        setup;
-        return SystemHandle(mutex, MutexHandleIdentifier);
-    }
-
     ///
     ErrorResult lock(Duration timeout = Duration.max) scope @trusted {
-        if(timeout <= Duration.init)
+        if (timeout <= Duration.init)
             return ErrorResult(MalformedInputException("Timeout duration must be above zero"));
 
         setup;
 
-        version(Windows) {
-            if(timeout < Duration.max) {
+        version (Windows) {
+            if (timeout < Duration.max) {
                 auto result = WaitForSingleObject(mutex, timeout < Duration.max ? cast(uint)timeout.totalMilliSeconds() : INFINITE);
 
-                switch(result) {
+                switch (result) {
                 case WAIT_OBJECT_0:
                 case WAIT_ABANDONED:
                     return ErrorResult.init;
@@ -106,28 +105,27 @@ export @safe nothrow @nogc:
             } else {
                 return waitForLock(mutex);
             }
-        } else version(Posix) {
+        } else version (Posix) {
             import core.sys.posix.pthread : pthread_mutex_timedlock;
-            import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
-            import core.stdc.time : timespec;
+            import core.sys.posix.time : clock_gettime, CLOCK_REALTIME, timespec;
             import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN;
 
-            if(timeout < Duration.max) {
+            if (timeout < Duration.max) {
                 int result;
 
                 long secs = timeout.totalSeconds();
                 long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
 
                 timespec ts;
-                if(clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
                     return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
 
                 ts.tv_sec += secs;
                 ts.tv_nsec += nsecs;
 
-                result = pthread_mutex_timedlock(&mutex, ts);
+                result = pthread_mutex_timedlock(&mutex, &ts);
 
-                switch(result) {
+                switch (result) {
                 case 0:
                     return ErrorResult.init;
 
@@ -157,10 +155,10 @@ export @safe nothrow @nogc:
     Result!bool tryLock() scope @trusted {
         setup;
 
-        version(Windows) {
+        version (Windows) {
             auto result = WaitForSingleObject(mutex, 0);
 
-            switch(result) {
+            switch (result) {
             case WAIT_OBJECT_0:
             case WAIT_ABANDONED:
                 return typeof(return)(true);
@@ -172,10 +170,10 @@ export @safe nothrow @nogc:
             default:
                 return typeof(return)(UnknownPlatformBehaviorException("Could not lock mutex"));
             }
-        } else version(Posix) {
+        } else version (Posix) {
             auto result = pthread_mutex_trylock(&mutex);
 
-            switch(result) {
+            switch (result) {
             case 0:
                 return typeof(return)(true);
 
@@ -199,9 +197,9 @@ export @safe nothrow @nogc:
     void unlock() scope @trusted {
         setup;
 
-        version(Windows) {
+        version (Windows) {
             ReleaseMutex(mutex);
-        } else version(Posix) {
+        } else version (Posix) {
             pthread_mutex_unlock(&mutex);
         } else
             static assert(0, "Unimplemented platform");
@@ -210,13 +208,26 @@ export @safe nothrow @nogc:
 
 private:
 
+version (Posix) {
+    import core.sys.posix.pthread : pthread_mutex_t, pthread_mutexattr_t;
+
+    enum {
+        PTHREAD_MUTEX_ROBUST = 1,
+    }
+
+    extern (C) nothrow @nogc {
+        int pthread_mutexattr_setrobust(pthread_mutexattr_t* attr, int robustness);
+        int pthread_mutex_consistent(pthread_mutex_t* mutex);
+    }
+}
+
 ErrorResult waitForLock(scope void* handle) @trusted nothrow @nogc {
-    version(Windows) {
+    version (Windows) {
         import core.sys.windows.windows : WaitForSingleObject, INFINITE, WAIT_OBJECT_0, WAIT_ABANDONED, WAIT_FAILED;
 
         auto result = WaitForSingleObject(handle, INFINITE);
 
-        switch(result) {
+        switch (result) {
         case WAIT_OBJECT_0:
         case WAIT_ABANDONED:
             return ErrorResult.init;
@@ -225,18 +236,18 @@ ErrorResult waitForLock(scope void* handle) @trusted nothrow @nogc {
         default:
             return ErrorResult(UnknownPlatformBehaviorException("Could not lock mutex"));
         }
-    } else version(Posix) {
-        import core.sys.posix.pthread : pthread_mutex_lock, EOWNERDEAD, ENOTRECOVERABLE, EBUSY;
-        import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN;
+    } else version (Posix) {
+        import core.sys.posix.pthread : pthread_mutex_lock;
+        import core.stdc.errno : EINVAL, ETIMEDOUT, EAGAIN, EOWNERDEAD, ENOTRECOVERABLE, EBUSY;
 
-        int result = pthread_mutex_lock(&mutex);
+        int result = pthread_mutex_lock(cast(pthread_mutex_t*)handle);
 
-        switch(result) {
+        switch (result) {
         case 0:
             return ErrorResult.init;
 
         case EOWNERDEAD:
-            pthread_mutex_consistent(handle);
+            pthread_mutex_consistent(cast(pthread_mutex_t*)handle);
             return ErrorResult.init;
 
         case EINVAL:

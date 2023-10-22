@@ -11,6 +11,8 @@ import sidero.base.internal.atomic;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.event_waiting;
+} else version(Posix) {
+    import sidero.eventloop.internal.posix.event_waiting;
 } else
     static assert(0, "Unimplemented");
 
@@ -33,7 +35,7 @@ version(none) {
         DynamicArray!(void*) nextEventHandles, eventHandles;
         DynamicArray!(UserEventHandler) nextEventProcs, eventProcs;
 
-    export @safe nothrow @nogc:
+    @safe nothrow @nogc:
 
         this(return scope ref EventWaiterThread other) scope {
             this.tupleof = other.tupleof;
