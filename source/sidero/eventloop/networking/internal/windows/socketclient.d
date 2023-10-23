@@ -403,7 +403,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
         assert(0);
 }
 
-void handleSocketEvent(void* handle, void* user) @trusted {
+void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     version(Windows) {
         SocketState* socketState = cast(SocketState*)user;
         WSANETWORKEVENTS wsaEvent;

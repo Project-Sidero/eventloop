@@ -18,7 +18,7 @@ version(Windows) {
 
     export @safe nothrow @nogc:
 
-    alias UserEventProc = void function(void* handle, void* user) @safe nothrow @nogc;
+    alias UserEventProc = void function(void* handle, void* user, scope void* eventResponsePtr) @safe nothrow @nogc;
 
 struct UserEventHandler {
     UserEventProc proc;

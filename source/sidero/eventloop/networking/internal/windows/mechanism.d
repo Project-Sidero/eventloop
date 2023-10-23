@@ -99,7 +99,7 @@ void addSocketToRetrigger(Socket socket) @trusted {
 
 private:
 
-void onTimerFunction(void* handle, void* user) @trusted {
+void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     version(Windows) {
         while(!socketRetryQueue.empty) {
             auto got = socketRetryQueue.pop;

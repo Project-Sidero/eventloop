@@ -178,7 +178,7 @@ version(Windows) {
                         }
 
                         logger.debug_("Got event for event handle ", gotHandle, " with procedure ", gotUserProc, " on ", thread);
-                        gotUserProc.proc(gotHandle, gotUserProc.user);
+                        gotUserProc.proc(gotHandle, gotUserProc.user, null);
                         break;
                     default:
                         logger.debug_("Got unknown event from wait ", result, " on ", thread);

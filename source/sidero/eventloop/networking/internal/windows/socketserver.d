@@ -228,7 +228,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         assert(0);
 }
 
-void handleListenSocketEvent(void* handle, void* user) @trusted {
+void handleListenSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     version (Windows) {
         ListenSocketState* listenSocketState = cast(ListenSocketState*)user;
         auto perSockState = listenSocketState.platformSockets[cast(PlatformListenSocketKey)handle];
