@@ -9,7 +9,6 @@ version(D_BetterC) {
 
     extern (C) void rt_moduleTlsCtor();
     extern (C) void rt_moduleTlsDtor();
-    private __gshared int globalThreadSystemKey;
 
     shared static this() {
         static extern (C) void onAttach() {
@@ -28,12 +27,12 @@ version(D_BetterC) {
             return Thread.getThis() !is null;
         }
 
-        registerThreadRegistration(&globalThreadSystemKey, cast(OnAttachThisFunction)&onAttach,
+        registerThreadRegistration(&thread_attachThis, cast(OnAttachThisFunction)&onAttach,
                 cast(OnDetachThisFunction)&onDetach, cast(IsThreadRegisteredFunction)&isRegistered);
     }
 
     shared static ~this() {
-        deregisterThreadRegistration(&globalThreadSystemKey);
+        deregisterThreadRegistration(&thread_attachThis);
     }
 
     static this() {
