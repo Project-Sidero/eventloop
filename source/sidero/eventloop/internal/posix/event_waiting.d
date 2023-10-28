@@ -2,11 +2,17 @@ module sidero.eventloop.internal.posix.event_waiting;
 import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.threads;
 import sidero.base.containers.dynamicarray;
+import sidero.base.logger;
+import sidero.base.text;
 
 @safe nothrow @nogc:
 
-version(Posix) {
+version (Posix) {
     import core.sys.posix.unistd;
+}
+
+__gshared private {
+    LoggerReference logger;
 }
 
 struct EventWaiterThread {
@@ -17,7 +23,7 @@ struct EventWaiterThread {
     DynamicArray!(void*) nextEventHandles, eventHandles;
     DynamicArray!(UserEventHandler) nextEventProcs, eventProcs;
 
-    version(Posix) {
+    version (Posix) {
         import core.sys.posix.poll;
 
         int[2] candcPipes;
@@ -31,14 +37,14 @@ struct EventWaiterThread {
     }
 
     void handleReSet() scope {
-        version(Posix) {
+        version (Posix) {
             this.eventHandles = this.nextEventHandles;
             this.eventProcs = this.nextEventProcs;
 
             this.nextEventHandles = typeof(this.nextEventHandles).init;
             this.nextEventProcs = typeof(this.nextEventProcs).init;
 
-            foreach(i, eh; this.eventHandles) {
+            foreach (i, eh; this.eventHandles) {
                 pollfds[i + 1].fd = cast(int)eh;
                 pollfds[i + 1].events = short.max;
                 pollfds[i + 1].revents = 0;
@@ -47,7 +53,7 @@ struct EventWaiterThread {
     }
 
     void ourProc() scope @trusted {
-        version(Posix) {
+        version (Posix) {
             import sidero.base.internal.atomic;
             import core.sys.posix.fcntl;
 
@@ -55,12 +61,12 @@ struct EventWaiterThread {
 
             {
                 const err = pipe(candcPipes);
-                if(err != 0)
+                if (err != 0)
                     return;
                 fcntl(candcPipes[0], F_SETFL, O_NONBLOCK | FD_CLOEXEC);
             }
 
-            scope(exit) {
+            scope (exit) {
                 atomicStore(isAlive, false);
 
                 close(candcPipes[0]);
@@ -71,19 +77,19 @@ struct EventWaiterThread {
                 logger.info("Ending event waiter thread ", thread);
             }
 
-            while(atomicLoad(this.isAlive)) {
-                if(!this.nextEventHandles.isNull)
+            while (atomicLoad(this.isAlive)) {
+                if (!this.nextEventHandles.isNull)
                     handleReSet();
 
                 const err = poll(pollfds.ptr, eventHandles.length + 1, -1);
                 logger.debug_("Event waiter poll complete ", err);
 
-                switch(err) {
+                switch (err) {
                 default:
                     assert(err > 0);
                     // check for revents member
 
-                    foreach(i, ref pfd; pollfds[1 .. eventHandles.length]) {
+                    foreach (i, ref pfd; pollfds[1 .. eventHandles.length]) {
                         auto eventProc = this.eventProcs[i];
                         assert(eventProc);
 
@@ -96,7 +102,7 @@ struct EventWaiterThread {
                         pfd.revents = 0;
                     }
 
-                    if(pollfds[0].revents != 0) {
+                    if (pollfds[0].revents != 0) {
                         // need to rehandle setting
 
                         int dummy;
@@ -120,8 +126,12 @@ struct EventWaiterThread {
     }
 }
 
-bool initializePlatformEventWaiting() {
-    version(Posix) {
+bool initializePlatformEventWaiting() @trusted {
+    version (Posix) {
+        logger = Logger.forName(String_UTF8(__MODULE__));
+        if (!logger)
+            return false;
+
         return true;
     } else
         return false;
@@ -135,11 +145,11 @@ size_t maximumNumberOfHandlesPerEventWaiter() {
 }
 
 void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
-    version(Posix) {
+    version (Posix) {
         // step five: wake up threads and set the handles to the new ones
-        foreach(threadState; eventWaiterThreads) {
+        foreach (threadState; eventWaiterThreads) {
             assert(threadState);
-            if(threadState.nextEventHandles.isNull || threadState.candcPipes[1] == 0)
+            if (threadState.nextEventHandles.isNull || threadState.candcPipes[1] == 0)
                 continue;
 
             int dummy;
@@ -153,27 +163,27 @@ void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
 }
 
 void shutdownEventWaiterThreadsMechanism() @trusted {
-    version(Posix) {
+    version (Posix) {
         import sidero.base.internal.atomic;
 
         auto lockError = eventWaiterMutex.lock;
         assert(lockError);
 
-        foreach(threadState; eventWaiterThreads) {
+        foreach (threadState; eventWaiterThreads) {
             assert(threadState);
             atomicStore(threadState.isAlive, false);
 
             // we don't care if the event loop cycles just at the right time
             // to make this write fail.
             // in that scenario it still did its job
-            if(threadState.candcPipes[1] != 0) {
+            if (threadState.candcPipes[1] != 0) {
                 int dummy = 1;
                 write(threadState.candcPipes[1], &dummy, 4);
                 logger.debug_("Triggered shutdown write for accept thread ", threadState.thread);
             }
         }
 
-        foreach(threadState; eventWaiterThreads) {
+        foreach (threadState; eventWaiterThreads) {
             assert(threadState);
             cast(void)threadState.thread.join();
         }
