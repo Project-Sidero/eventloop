@@ -4,9 +4,6 @@ import sidero.base.errors;
 import sidero.base.datetime.duration;
 import sidero.base.internal.atomic;
 
-// https://idea.popcount.org/2017-02-20-epoll-is-fundamentally-broken-12/ EPOLLONESHOT EPOLLEXCLUSIVE
-// https://idea.popcount.org/2017-03-20-epoll-is-fundamentally-broken-22/
-
 ///
 enum ThreadHandleIdentifier = SystemHandleType.from("thread");
 
