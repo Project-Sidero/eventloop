@@ -1,9 +1,9 @@
 module sidero.eventloop.rtinfoimplstub;
 
-version(DigitalMars) version = NeedStubs;
+version (DigitalMars) version = NeedStubs;
 
-version(NeedStubs) {
-    static foreach(Stub; [
+version (NeedStubs) {
+    static foreach (Stub; [
         "_D6object__T10RTInfoImplVAmA2i96i1063ZQBayG2m", "_D6object__T10RTInfoImplVAmA2i136i87079ZQBcyG2m",
         "_D6object__T10RTInfoImplVAmA2i208i3560789ZQBeyG2m", "_D6object__T10RTInfoImplVAmA2i56i66ZQyyG2m",
         "_D6object__T10RTInfoImplVAmA2i264i6098517954ZQBhyG2m",
@@ -21,6 +21,7 @@ version(NeedStubs) {
         "_D6object__T10RTInfoImplVAmA2i256i3599226503ZQBhyG2m",
         "_D6object__T10RTInfoImplVAmA4i1328i1671i876086964i899678208ZQBwyG4m",
         "_D6object__T10RTInfoImplVAmA2i304i91627997544ZQBiyG2m", "_D6object__T10RTInfoImplVAmA2i176i1398132ZQBeyG2m",
+        "_D6object__T10RTInfoImplVAmA2i88i686ZQzyG2m", "_D6object__T10RTInfoImplVAmA2i80i337ZQzyG2m",
     ]) {
         mixin(() { return "extern(C) void " ~ Stub ~ "() { asm { naked; dl 0; dl 0;}\n}\n"; }());
     }
