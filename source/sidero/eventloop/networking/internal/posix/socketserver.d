@@ -12,7 +12,7 @@ import sidero.base.errors;
 import sidero.base.allocators;
 import sidero.base.text;
 
-version(Posix) {
+version (Posix) {
     import core.sys.posix.netinet.in_;
     import core.sys.posix.sys.socket;
     import core.sys.posix.unistd;
@@ -25,7 +25,7 @@ version(Posix) {
 alias PlatformListenSocketKey = void*;
 
 struct PlatformListenSocket {
-    version(Posix) {
+    version (Posix) {
         union {
             void* handle;
             int fd;
@@ -37,28 +37,28 @@ struct PlatformListenSocket {
 
 @safe nothrow @nogc:
 
-    this(return scope ref PlatformListenSocket other) scope {
+    this(return scope ref PlatformListenSocket other) scope @trusted {
         this.tupleof = other.tupleof;
     }
 }
 
 bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, bool keepAlive) @trusted {
-    if(listenSocketState.address.type == NetworkAddress.Type.Hostname) {
+    if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
         auto resolved = listenSocketState.address.resolve();
 
         uint gotOne;
 
-        foreach(address; resolved) {
-            if(listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAlive))
+        foreach (address; resolved) {
+            if (listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAlive))
                 gotOne++;
         }
 
-        if(gotOne > 0) {
+        if (gotOne > 0) {
             listenSocketState.pin(gotOne);
             return true;
         }
-    } else if(listenSocketState.address.type != NetworkAddress.Type.Invalid) {
-        if(listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAlive)) {
+    } else if (listenSocketState.address.type != NetworkAddress.Type.Invalid) {
+        if (listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAlive)) {
             listenSocketState.pin(1);
             return true;
         }
@@ -68,14 +68,14 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
 }
 
 void forceClose(scope PlatformListenSocket* listenSocketState) scope {
-    version(Posix) {
+    version (Posix) {
         close(listenSocketState.fd);
     } else
         assert(0);
 }
 
 void cleanup(scope PlatformListenSocket* listenSocketState) scope {
-    version(Posix) {
+    version (Posix) {
     } else
         assert(0);
 }
@@ -83,7 +83,7 @@ void cleanup(scope PlatformListenSocket* listenSocketState) scope {
 private:
 
 bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, bool keepAlive) @trusted {
-    version(Posix) {
+    version (Posix) {
         import sidero.eventloop.internal.event_waiting;
         import sidero.base.internal.atomic;
 
@@ -114,7 +114,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
                 sockaddr_in6* saPtr = cast(sockaddr_in6*)serverAddressBuffer.ptr;
                 saPtr.sin6_family = AF_INET6;
-                saPtr.sin6_addr.Word = value;
+                saPtr.sin6_addr.s6_addr16 = value;
                 saPtr.sin6_port = address.networkOrderPort();
             }, () @trusted {
                 // any ipv4
@@ -132,7 +132,11 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
                 sockaddr_in6* saPtr = cast(sockaddr_in6*)serverAddressBuffer.ptr;
                 saPtr.sin6_family = AF_INET6;
-                saPtr.sin6_addr = IN6ADDR_ANY;
+
+                // for pretty much all targets this is left as init
+                //saPtr.sin6_addr = IN6ADDR_ANY_INIT;
+                saPtr.sin6_addr = in6_addr.init;
+
                 saPtr.sin6_port = address.networkOrderPort();
             }, (scope Hostname hostname) {
                 assert(0); // already resolved
@@ -141,7 +145,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             });
         }
 
-        final switch(listenSocketState.protocol) {
+        final switch (listenSocketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -155,7 +159,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         {
             platformListenSocket.fd = socket(addressFamily, socketType, socketProtocol);
 
-            if(platformListenSocket.fd == -1) {
+            if (platformListenSocket.fd == -1) {
                 logger.notice("Error could not open socket ", address, " as ", addressFamily, " ", socketType, " ",
                         socketProtocol, " with error ", errno, " on ", Thread.self);
                 return false;
@@ -165,14 +169,14 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         }
 
         {
-            if(reuseAddr && setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
+            if (reuseAddr && setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
                 logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
                         errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
             }
 
-            if(keepAlive && setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
+            if (keepAlive && setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
                 logger.debug_("Error could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ",
                         errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
@@ -181,7 +185,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         }
 
         {
-            if(bind(platformListenSocket.fd, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == -1) {
+            if (bind(platformListenSocket.fd, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == -1) {
                 logger.notice("Error could not bind on port ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
@@ -191,9 +195,9 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         }
 
         {
-            if(listen(platformListenSocket.fd, SOMAXCONN) == -1) {
+            if (listen(platformListenSocket.fd, SOMAXCONN) == -1) {
                 logger.notice("Error could not listen on port ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
-                closesocket(platformListenSocket.handle);
+                close(platformListenSocket.fd);
                 return false;
             } else {
                 logger.debug_("Listening on port ", platformListenSocket.handle, " on ", Thread.self);
@@ -206,6 +210,200 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         listenSocketState.platformSockets[platformListenSocket.handle] = platformListenSocket;
         addEventWaiterHandle(platformListenSocket.handle, &handleListenSocketEvent, listenSocketState);
         return true;
+    } else
+        assert(0);
+}
+
+void handleListenSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
+    version (Posix) {
+        import core.sys.posix.poll;
+
+        ListenSocketState* listenSocketState = cast(ListenSocketState*)user;
+        auto perSockState = listenSocketState.platformSockets[cast(PlatformListenSocketKey)handle];
+        assert(perSockState);
+
+        const revent = *cast(int*)eventResponsePtr;
+
+        if (revent != 0) {
+            if ((revent & POLLIN) == POLLIN) {
+                onAccept(listenSocketState, perSockState);
+            } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
+                logger.debug_("Listen socket closed ", perSockState.handle, " on ", Thread.self);
+                listenSocketState.unpin();
+            } else {
+                logger.debug_("Listen socket got network event and shouldn't have (may indicate a bug) ", revent,
+                        " with ", perSockState.handle, " on ", Thread.self);
+            }
+        }
+    } else
+        assert(0);
+}
+
+void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
+    version (Posix) {
+        import sidero.eventloop.tasks.workers : registerAsTask;
+        import sidero.eventloop.internal.event_waiting;
+
+        assert(perSockState);
+        short addressFamily, socketType, socketProtocol;
+
+        {
+            bool notRecognized;
+
+            perSockState.address.onNetworkOrder((uint value) @trusted {
+                //ipv4
+                addressFamily = AF_INET;
+            }, (ushort[8] value) @trusted {
+                // ipv6
+                addressFamily = AF_INET6;
+            }, () @trusted {
+                // any ipv4
+                addressFamily = AF_INET;
+            }, () @trusted {
+                // any ipv6
+                addressFamily = AF_INET6;
+            }, (scope String_ASCII) {
+                // hostname
+                notRecognized = true;
+            }, () {
+                // error
+                notRecognized = true;
+            });
+
+            if (notRecognized) {
+                logger.error("Did not recognize network address type for accept ", perSockState.address, " for ",
+                        perSockState.handle, " on ", Thread.self);
+                return;
+            }
+        }
+
+        final switch (listenSocketState.protocol) {
+        case Socket.Protocol.TCP:
+            socketType = SOCK_STREAM;
+            socketProtocol = IPPROTO_TCP;
+            break;
+        case Socket.Protocol.UDP:
+            socketType = SOCK_DGRAM;
+            socketProtocol = IPPROTO_UDP;
+            break;
+        }
+
+        enum SockAddress4Size = sockaddr_in.sizeof;
+        enum SockAddress6Size = sockaddr_in6.sizeof;
+        enum SockAddressMaxSize = SockAddress6Size > SockAddress4Size ? SockAddress6Size : SockAddress4Size;
+
+        int acceptedSocket = accept(perSockState.fd, null, null);
+        NetworkAddress localAddress, remoteAddress;
+
+        if (acceptedSocket == -1) {
+            logger.error("Error could not accept socket with error ", perSockState.handle, " for ",
+                    perSockState.handle, " with error ", errno, " on ", Thread.self);
+            return;
+        }
+
+        {
+            ubyte[SockAddressMaxSize] localBuffer, remoteBuffer;
+            socklen_t localAddressSize = localBuffer.length, remoteAddressSize = remoteBuffer.length;
+
+            sockaddr_in* localAddressPtr = cast(sockaddr_in*)localBuffer.ptr, remoteAddressPtr = cast(sockaddr_in*)remoteBuffer.ptr;
+
+            if (getsockname(acceptedSocket, cast(sockaddr*)localBuffer.ptr, &localAddressSize) == -1) {
+                logger.notice("Did not recognize a local IP address for accepted socket ", acceptedSocket, " error ",
+                        errno, " for ", perSockState.handle, " on ", Thread.self);
+                close(acceptedSocket);
+                return;
+            } else if (getpeername(acceptedSocket, cast(sockaddr*)remoteBuffer.ptr, &remoteAddressSize) == -1) {
+                logger.notice("Did not recognize a remote IP address for accepted socket ", acceptedSocket, " error ",
+                        errno, " for ", perSockState.handle, " on ", Thread.self);
+                close(acceptedSocket);
+                return;
+            }
+
+            if (localAddressPtr.sin_family == AF_INET) {
+                sockaddr_in* localAddress4 = localAddressPtr;
+                localAddress = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
+            } else if (localAddressPtr.sin_family == AF_INET6) {
+                sockaddr_in6* localAddress6 = cast(sockaddr_in6*)localAddressPtr;
+                localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.s6_addr16, true, true);
+            }
+
+            if (remoteAddressPtr.sin_family == AF_INET) {
+                sockaddr_in* remoteAddress4 = remoteAddressPtr;
+                remoteAddress = NetworkAddress.fromIPv4(remoteAddress4.sin_port, remoteAddress4.sin_addr.s_addr, true, true);
+            } else if (remoteAddressPtr.sin_family == AF_INET6) {
+                sockaddr_in6* remoteAddress6 = cast(sockaddr_in6*)remoteAddressPtr;
+                remoteAddress = NetworkAddress.fromIPv6(remoteAddress6.sin6_port, remoteAddress6.sin6_addr.s6_addr16, true, true);
+            }
+
+            bool notRecognized;
+
+            localAddress.onNetworkOrder((value) {
+                // ipv4
+            }, (value) {
+                // ipv6
+            }, () {
+                // any4
+                notRecognized = true;
+            }, () {
+                // any6
+                notRecognized = true;
+            }, (scope String_ASCII) {
+                // hostname
+                notRecognized = true;
+            }, () {
+                // invalid
+                notRecognized = true;
+            });
+
+            remoteAddress.onNetworkOrder((value) {
+                // ipv4
+            }, (value) {
+                // ipv6
+            }, () {
+                // any4
+                notRecognized = true;
+            }, () {
+                // any6
+                notRecognized = true;
+            }, (scope String_ASCII) {
+                // hostname
+                notRecognized = true;
+            }, () {
+                // invalid
+                notRecognized = true;
+            });
+
+            if (notRecognized) {
+                logger.notice("Did not recognize an IP address for accepted socket ", acceptedSocket, " local ",
+                        localAddress, " remote ", remoteAddress, " for ", perSockState.handle, " on ", Thread.self);
+                close(acceptedSocket);
+                return;
+            } else {
+                logger.debug_("Accepted socket addresses ", acceptedSocket, " local ", localAddress, " remote ",
+                        remoteAddress, " for ", perSockState.handle, " on ", Thread.self);
+            }
+        }
+
+        Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
+        acquiredSocket.state.fd = acceptedSocket;
+        acquiredSocket.state.cameFromServer = true;
+
+        if (!listenSocketState.fallbackCertificate.isNull) {
+            if (!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
+                    listenSocketState.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
+                    listenSocketState.encryption, listenSocketState.validateCertificates)) {
+                logger.notice("Could not initialize encryption on socket ", acceptedSocket, " for ",
+                        perSockState.handle, " on ", Thread.self);
+                close(acceptedSocket);
+                return;
+            }
+        }
+
+        addEventWaiterHandle(acquiredSocket.state.handle, &handleSocketEvent, acquiredSocket.state);
+        acquiredSocket.state.pin();
+
+        auto acceptSocketCO = listenSocketState.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
+        registerAsTask(acceptSocketCO);
     } else
         assert(0);
 }

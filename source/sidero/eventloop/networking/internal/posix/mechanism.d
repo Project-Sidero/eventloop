@@ -15,6 +15,8 @@ __gshared {
 
         version(linux) {
             import core.sys.linux.timerfd;
+            import core.sys.posix.unistd : close;
+            import core.sys.posix.sys.time : timeval, gettimeofday;
 
             int timerHandle;
         }
@@ -53,7 +55,7 @@ bool startUpNetworkingMechanism() @trusted {
             spec.it_value.tv_sec = time_t.max;
             spec.it_interval.tv_sec = 15;
 
-            timerfd_settime(timerHandle, &spec, null);
+            timerfd_settime(timerHandle, TFD_NONBLOCK | TFD_CLOEXEC, &spec, null);
             addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
         }
     } else version(Posix) {
@@ -78,13 +80,15 @@ bool startUpNetworkingMechanism() @trusted {
         }
     } else
         assert(0);
+
+    return true;
 }
 
 void shutdownNetworkingMechanism() @trusted {
     version(linux) {
         import sidero.eventloop.internal.event_waiting;
 
-        removeEventWaiterHandle(timerHandle);
+        removeEventWaiterHandle(cast(void*)timerHandle);
         close(timerHandle);
         timerHandle = 0;
     } else version(Posix) {
@@ -125,8 +129,10 @@ void timerThreadProc() @trusted {
             while(socketRetryQueue.empty && !atomicLoad(timerThreadInShutdown)) {
                 timeval now;
                 gettimeofday(&now, null);
-                now.tv_sec += 15;
-                pthread_cond_timedwait(&timerCondition, &timerMutex);
+
+                timespec next;
+                next.tv_sec = now.tv_sec + 15;
+                pthread_cond_timedwait(&timerCondition, &timerMutex, &next);
             }
 
             if(atomicLoad(timerThreadInShutdown)) {

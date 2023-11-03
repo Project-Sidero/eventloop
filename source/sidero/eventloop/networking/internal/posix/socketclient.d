@@ -10,7 +10,7 @@ import sidero.base.path.hostname;
 
 @safe nothrow @nogc:
 
-version(Posix) {
+version (Posix) {
     import core.sys.posix.netinet.in_;
     import core.sys.posix.sys.socket;
     import core.sys.posix.unistd;
@@ -31,7 +31,7 @@ struct PlatformSocket {
 
     // NOTE: needs to be guarded
     private bool needToBeRetriggered(scope SocketState* socketState) scope @trusted {
-        if(isWaitingForRetrigger)
+        if (isWaitingForRetrigger)
             return false;
 
         Socket socket;
@@ -53,8 +53,8 @@ struct PlatformSocket {
     }
 }
 
-ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) {
-    version(Posix) {
+ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) @trusted {
+    version (Posix) {
         SocketState* socketState = socket.state;
 
         enum SockAddress4Size = sockaddr_in.sizeof;
@@ -62,7 +62,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
         enum SockAddressMaxSize = SockAddress6Size > SockAddress4Size ? SockAddress6Size : SockAddress4Size;
 
         ubyte[SockAddressMaxSize] localAddressBuffer, remoteAddressBuffer;
-        int localAddressSize = SockAddressMaxSize, remoteAddressSize;
+        uint localAddressSize = SockAddressMaxSize, remoteAddressSize;
         short addressFamily, socketType, socketProtocol;
 
         {
@@ -96,11 +96,11 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
                 // needs to be have been already resolved
             }, () {});
 
-            if(!validAddress)
+            if (!validAddress)
                 return ErrorResult(MalformedInputException("Not a valid network address, must be resolved ip/port"));
         }
 
-        final switch(socketState.protocol) {
+        final switch (socketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -112,9 +112,9 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
         }
 
         {
-            socketState.fd = socket(addressFamily, socketType, socketProtocol);
+            socketState.fd = .socket(addressFamily, socketType, socketProtocol);
 
-            if(socketState.fd == -1) {
+            if (socketState.fd == -1) {
                 logger.notice("Could not open socket ", address, " with error ", errno, " on ", Thread.self);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not create socket"));
             } else {
@@ -123,7 +123,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
         }
 
         {
-            if(keepAlive && setsockopt(socketState.fd, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
+            if (keepAlive && setsockopt(socketState.fd, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", socketState.handle, " with error ", errno, " on ", Thread.self);
                 close(socketState.fd);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not set keep alive status to socket"));
@@ -131,7 +131,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
         }
 
         {
-            if(connect(socketState.handle, cast(sockaddr*)remoteAddressBuffer.ptr, remoteAddressSize) == -1) {
+            if (connect(socketState.fd, cast(sockaddr*)remoteAddressBuffer.ptr, remoteAddressSize) == -1) {
                 logger.notice("Could not connect to address on port ", socketState.handle, " with error ", errno, " on ", Thread.self);
                 close(socketState.fd);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not connect socket to address"));
@@ -144,19 +144,19 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
             NetworkAddress localAddress;
             sockaddr_in* localAddressPtr = cast(sockaddr_in*)localAddressBuffer.ptr;
 
-            if(getsockname(socketState.fd, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
+            if (getsockname(socketState.fd, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
                 logger.notice("Error could not acquire local network address for socket client ", socketState.handle,
                         " with error ", errno, " on ", Thread.self);
                 close(socketState.fd);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not associate on close event for socket"));
             }
 
-            if(localAddressPtr.sin_family == AF_INET) {
+            if (localAddressPtr.sin_family == AF_INET) {
                 sockaddr_in* localAddress4 = localAddressPtr;
                 localAddress = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
-            } else if(localAddressPtr.sin_family == AF_INET6) {
+            } else if (localAddressPtr.sin_family == AF_INET6) {
                 sockaddr_in6* localAddress6 = cast(sockaddr_in6*)localAddressPtr;
-                localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.Word, true, true);
+                localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.s6_addr16, true, true);
             }
 
             bool notRecognized;
@@ -179,10 +179,10 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
                 notRecognized = true;
             });
 
-            if(notRecognized) {
+            if (notRecognized) {
                 logger.notice("Did not recognize an IP address for socket client local ", localAddress, " remote ",
                         address, " for ", socketState.handle, " on ", Thread.self);
-                close(socketState.handle);
+                close(socketState.fd);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not acquire local address for client socket"));
             } else {
                 logger.debug_("Connected socket addresses local ", localAddress, " remote ", address, " for ",
@@ -205,14 +205,15 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
         assert(0);
 }
 
-void shutdown(scope SocketState* socketState, bool haveReferences = true) {
-    version(Posix) {
+void shutdown(scope SocketState* socketState, bool haveReferences = true) @trusted {
+    version (Posix) {
         import sidero.base.internal.atomic;
+        import core.sys.posix.sys.socket : shutdown;
 
-        if(cas(socketState.isShutdown, false, true)) {
+        if (cas(socketState.isShutdown, false, true)) {
             logger.notice("Shutting down socket ", socketState.handle, " on ", Thread.self);
             socketState.performReadWrite();
-            shutdown(socketState.fd, SD_SEND);
+            shutdown(socketState.fd, SHUT_WR);
 
             socketState.reading.cleanup();
             socketState.performReadWrite();
@@ -221,11 +222,11 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) {
         assert(0);
 }
 
-void forceClose(scope SocketState* socketState) {
-    version(Posix) {
+void forceClose(scope SocketState* socketState) @trusted {
+    version (Posix) {
         import sidero.base.internal.atomic;
 
-        if(cas(socketState.isClosed, false, true)) {
+        if (cas(socketState.isClosed, false, true)) {
             logger.debug_("Forcing closed socket ", socketState.handle);
             close(socketState.fd);
         }
@@ -233,22 +234,19 @@ void forceClose(scope SocketState* socketState) {
         assert(0);
 }
 
-bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) {
-    version(Posix) {
+bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
+    version (Posix) {
         const err = send(socketState.fd, buffer.ptr, buffer.length, 0);
 
-        if(err >= 0) {
+        if (err >= 0) {
             logger.debug_("Immediate completion of write ", socketState.handle, " on ", Thread.self);
             socketState.rawWriting.complete(socketState, err);
             return true;
         } else {
-            switch(errno) {
-            case EAGAIN:
-            case EWOULDBLOCK:
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 logger.debug_("Writing failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
                 return socketState.needToBeRetriggered(socketState);
-
-            default:
+            } else {
                 logger.info("Failed to write initiate closing ", errno, " for ", socketState.handle, " on ", Thread.self);
                 socketState.unpinGuarded;
                 return false;
@@ -258,26 +256,23 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) {
         assert(0);
 }
 
-bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) {
-    version(Posix) {
+bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
+    version (Posix) {
         const err = recv(socketState.fd, buffer.ptr, buffer.length, 0);
 
-        if(err == 0) {
+        if (err == 0) {
             logger.info("Failed to read initiate closing for ", socketState.handle, " on ", Thread.self);
             socketState.unpin;
             return false;
-        } else if(err > 0) {
+        } else if (err > 0) {
             logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
             socketState.rawReading.complete(socketState, err);
             return true;
         } else {
-            switch(errno) {
-            case EAGAIN:
-            case EWOULDBLOCK:
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 logger.debug_("Reading failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
                 return socketState.needToBeRetriggered(socketState);
-
-            default:
+            } else {
                 logger.info("Failed to read initiate closing ", errno, " for ", socketState.handle, " on ", Thread.self);
                 socketState.unpin;
                 return false;
@@ -288,14 +283,16 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) {
 }
 
 void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
-    version(Posix) {
+    version (Posix) {
+        import core.sys.posix.poll;
+
         SocketState* socketState = cast(SocketState*)user;
         const revent = *cast(int*)eventResponsePtr;
 
-        if(revent != 0) {
-            if((revent & POLLIN) == POLLIN || (revent & POLLOUT) == POLLOUT) {
+        if (revent != 0) {
+            if ((revent & POLLIN) == POLLIN || (revent & POLLOUT) == POLLOUT) {
                 // all ok nothing to do here
-            } else if((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP || (revent & POLLRDHUP) == POLLRDHUP) {
+            } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
                 socketState.unpin();
             } else {
