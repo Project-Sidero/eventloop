@@ -85,12 +85,15 @@ export @safe nothrow @nogc:
 
     ///
     static Result!Thread create(Args...)(void function(Args) nothrow entryFunction, Args args) @trusted {
-        // 8mb stack is a very good size regardless of platform, very unlikely to cause problems with code
-        return Thread.create(8 * 1024 * 1024, entryFunction, args);
+        return Thread.create(0, entryFunction, args);
     }
 
     ///
     static Result!Thread create(Args...)(size_t stackSize, void function(Args) nothrow entryFunction, Args args) @trusted {
+        // 8mb stack is a very good size regardless of platform, very unlikely to cause problems with code
+        if (stackSize < 1024 * 1024)
+            stackSize = 8 * 1024 * 1024;
+
         Result!Thread ret;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {

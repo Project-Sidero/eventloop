@@ -1,6 +1,8 @@
 module sidero.eventloop.rtinfoimplstub;
 
-version (DigitalMars) version = NeedStubs;
+version (DigitalMars) {
+    version (D_BetterC) version = NeedStubs;
+}
 
 version (NeedStubs) {
     static foreach (Stub; [
