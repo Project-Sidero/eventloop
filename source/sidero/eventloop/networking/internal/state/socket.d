@@ -7,7 +7,7 @@ import sidero.eventloop.networking.internal.state.rawreading;
 import sidero.eventloop.networking.internal.state.rawwriting;
 import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.networking.sockets;
-import sidero.eventloop.synchronization.system.lock;
+import sidero.base.synchronization.system.lock;
 import sidero.base.allocators;
 import sidero.base.path.networking;
 import sidero.base.internal.atomic;

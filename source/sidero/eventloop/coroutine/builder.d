@@ -303,7 +303,7 @@ unittest {
     }
 
     static InstanceableCoroutine!(int, int) createCo2() {
-        import sidero.eventloop.synchronization.system.lock;
+        import sidero.base.synchronization.system.lock;
 
         static struct State {
             SystemLock lock;

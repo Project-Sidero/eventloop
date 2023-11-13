@@ -1,6 +1,6 @@
 module sidero.eventloop.internal.event_waiting;
-import sidero.eventloop.synchronization.system.lock;
 import sidero.eventloop.threads;
+import sidero.base.synchronization.system.lock;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.map.hashmap;
 import sidero.base.containers.map.concurrenthashmap;

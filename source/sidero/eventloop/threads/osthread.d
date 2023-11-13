@@ -184,15 +184,8 @@ export @safe nothrow @nogc:
 
     /// Tells the kernel that this thread can wait before continuing its work
     static void yield() @trusted {
-        version (Windows) {
-            import core.sys.windows.windows : SwitchToThread;
-
-            SwitchToThread();
-        } else version (Posix) {
-            import core.sys.posix.sched : sched_yield;
-
-            sched_yield();
-        }
+        import sidero.base.internal.thread;
+        threadYield;
     }
 
     ///
@@ -403,7 +396,7 @@ private:
 
 private:
 import sidero.eventloop.threads.registration;
-import sidero.eventloop.synchronization.system.lock;
+import sidero.base.synchronization.system.lock;
 import sidero.base.allocators.predefined;
 import sidero.base.containers.map.hashmap;
 

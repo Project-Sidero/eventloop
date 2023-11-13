@@ -1,10 +1,10 @@
 /*
 
-https://en.wikipedia.org/wiki/Eisenberg_%26_McGuire_algorithm
-https://en.wikipedia.org/wiki/Szyma%C5%84ski%27s_algorithm
+
 */
 module sidero.eventloop.synchronization.mutualexclusion;
 import sidero.eventloop.threads.osthread;
+public import sidero.base.synchronization.mutualexclusion;
 import sidero.base.attributes;
 import sidero.base.errors;
 import sidero.base.allocators : RCAllocator, globalAllocator, makeArray, dispose;
@@ -502,91 +502,5 @@ export @safe nothrow @nogc:
 
         atomicStore(levels[offset], 0);
         return ErrorResult.init;
-    }
-}
-
-///
-struct TestSetLockInline {
-    private @PrettyPrintIgnore shared(bool) state;
-
-    @disable this(this);
-
-export @safe nothrow @nogc:
-
-    /// Non-pure will yield the thread lock
-    void lock() scope {
-        while(!cas(state, false, true)) {
-            Thread.yield;
-        }
-    }
-
-pure:
-
-    /// A much more limited lock method, that is pure.
-    void pureLock() scope {
-        if(cas(state, false, true))
-            return;
-        else
-            atomicFence();
-
-        while(!cas(state, false, true)) {
-            atomicFence();
-        }
-    }
-
-    ///
-    bool tryLock() scope {
-        return cas(state, false, true);
-    }
-
-    ///
-    void unlock() scope {
-        import sidero.base.internal.atomic : atomicStore;
-
-        atomicStore(state, false);
-    }
-}
-
-///
-struct TestTestSetLockInline {
-    private @PrettyPrintIgnore shared(bool) state;
-
-    @disable this(this);
-
-export @safe nothrow @nogc:
-
-    /// Non-pure will yield the thread lock
-    void lock() scope {
-        for(;;) {
-            while(atomicLoad(state)) {
-                Thread.yield;
-            }
-
-            if(cas(state, false, true))
-                return;
-        }
-    }
-
-pure:
-
-    /// A much more limited lock method, that is pure.
-    void pureLock() scope {
-        for(;;) {
-            if(atomicLoad(state))
-                atomicFence();
-
-            if(cas(state, false, true))
-                return;
-        }
-    }
-
-    ///
-    bool tryLock() scope {
-        return cas(state, false, true);
-    }
-
-    ///
-    void unlock() scope {
-        atomicStore(state, false);
     }
 }

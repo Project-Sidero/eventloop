@@ -1,6 +1,6 @@
 module sidero.eventloop.closure.builder;
 import sidero.eventloop.closure.callable;
-import sidero.eventloop.synchronization.system.lock;
+import sidero.base.synchronization.system.lock;
 import sidero.base.errors;
 import sidero.base.allocators;
 
