@@ -185,6 +185,7 @@ export @safe nothrow @nogc:
     /// Tells the kernel that this thread can wait before continuing its work
     static void yield() @trusted {
         import sidero.base.internal.thread;
+
         threadYield;
     }
 
@@ -245,10 +246,12 @@ export @safe nothrow @nogc:
         {
             auto ifExists = allThreads.get(cast(void*)lookupKey, null);
 
-            if (ifExists) {
+            if (ifExists && !ifExists.isNull) {
                 Thread ret;
                 ret.state = ifExists.get;
                 ret.__ctor(ret);
+
+                assert(!ret.isNull);
                 return ret;
             }
         }
@@ -276,7 +279,9 @@ export @safe nothrow @nogc:
             ret.state = state;
             ret.__ctor(ret);
 
+            allThreads[state.handle.handle] = state;
             mutex.unlock;
+            assert(!ret.isNull);
             return ret;
         }
     }
@@ -342,24 +347,30 @@ export @safe nothrow @nogc:
     }
 
     /// Attaching and detaching of this thread to pin it for other thread systems
-    void externalAttach() scope @system {
-        if (isNull)
-            return;
+    static void externalAttach() scope @system {
+        Thread us = Thread.self;
+        assert(!us.isNull);
 
-        if (atomicIncrementAndLoad(state.attachCount, 1) == 1) {
+        if (atomicIncrementAndLoad(us.state.attachCount, 1) == 1) {
             // tell all external thread registration mechanisms
             onAttachOfThread;
+
+            // extra pin for this thread instance
+            atomicIncrementAndLoad(us.state.refCount, 1);
         }
     }
 
     /// Ditto
-    void externalDetach() scope @system {
-        if (isNull)
-            return;
+    static void externalDetach() scope @system {
+        Thread us = Thread.self;
+        assert(!us.isNull);
 
-        if (atomicDecrementAndLoad(state.attachCount, 1) == 0) {
+        if (atomicDecrementAndLoad(us.state.attachCount, 1) == 0) {
             // tell all external thread registration mechanisms
             onDetachOfThread;
+
+            // extra unpin for this thread instance
+            atomicDecrementAndLoad(us.state.refCount, 1);
         }
     }
 
@@ -430,12 +441,14 @@ version (Windows) {
             self.__ctor(self);
 
             efa = *cast(EFA*)self.state.args;
+
             mutex.unlock;
+            onAttachOfThread;
         });
 
-        self.externalAttach;
-        scope (exit)
-            self.externalDetach;
+        scope (exit) {
+            onDetachOfThread;
+        }
 
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return 0;
@@ -492,7 +505,8 @@ version (Windows) {
         self.__ctor(self);
 
         atomicStore(self.state.isRunning, false);
-        self.externalDetach;
+
+        onDetachOfThread;
     }
 
     extern (C) void* start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state_) {
@@ -531,10 +545,11 @@ version (Windows) {
 
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
             allThreads[state.handle.handle] = state;
-            mutex.unlock;
-        });
 
-        self.externalAttach;
+            mutex.unlock;
+
+            onAttachOfThread;
+        });
 
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return null;

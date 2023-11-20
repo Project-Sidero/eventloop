@@ -10,11 +10,9 @@ version(DynamicSideroEventLoop) {
             import core.sys.windows.winnt : DLL_THREAD_ATTACH, DLL_THREAD_DETACH;
 
             if(ulReason == DLL_THREAD_ATTACH) {
-                Thread self = Thread.self;
-                self.externalAttach;
+                Thread.externalAttach;
             } else if(ulReason == DLL_THREAD_DETACH) {
-                Thread self = Thread.self;
-                self.externalDetach;
+                Thread.externalDetach;
             }
             return true;
         }

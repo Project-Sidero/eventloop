@@ -36,12 +36,10 @@ version(D_BetterC) {
     }
 
     static this() {
-        Thread self = Thread.self;
-        self.externalAttach;
+         Thread.externalAttach;
     }
 
     static ~this() {
-        Thread self = Thread.self;
-        self.externalDetach;
+        Thread.externalDetach;
     }
 }
