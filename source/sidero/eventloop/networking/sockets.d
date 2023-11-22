@@ -41,7 +41,7 @@ export @safe nothrow @nogc:
     }
 
     ///
-    bool isNull() scope {
+    bool isNull() scope const {
         return state is null;
     }
 
@@ -106,12 +106,12 @@ export @safe nothrow @nogc:
     }
 
     ///
-    bool isNull() scope {
+    bool isNull() scope const {
         return state is null;
     }
 
     ///
-    bool isAlive() scope {
+    bool isAlive() scope const {
         return !isNull && atomicLoad(state.isAlive);
     }
 
