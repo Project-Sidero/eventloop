@@ -12,6 +12,7 @@ import sidero.base.allocators;
 import sidero.base.path.networking;
 import sidero.base.internal.atomic;
 import sidero.base.errors;
+import sidero.base.typecons : Optional;
 
 struct SocketState {
     private {
@@ -162,7 +163,7 @@ struct SocketState {
         while(didSomeWork);
     }
 
-    ErrorResult startUp(NetworkAddress address, bool keepAlive = true) scope @trusted {
+    ErrorResult startUp(NetworkAddress address, Optional!uint keepAlive) scope @trusted {
         Socket socket;
         socket.state = &this;
         this.rc(true);

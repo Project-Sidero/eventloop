@@ -12,6 +12,7 @@ import sidero.base.path.hostname;
 import sidero.base.errors;
 import sidero.base.allocators;
 import sidero.base.text;
+import sidero.base.typecons : Optional;
 
 @safe nothrow @nogc:
 
@@ -47,7 +48,7 @@ void cleanup(scope PlatformListenSocket* socketState) scope @trusted {
         assert(0);
 }
 
-bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, bool keepAlive) @trusted {
+bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!uint keepAlive) @trusted {
     if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
         auto resolved = listenSocketState.address.resolve();
 
@@ -74,7 +75,7 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
 
 private:
 
-bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, bool keepAlive) @trusted {
+bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, Optional!uint keepAlive) @trusted {
     version (Windows) {
         import sidero.eventloop.internal.event_waiting;
         import sidero.base.internal.atomic;
@@ -156,19 +157,21 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             }
         }
 
-        {
-            if (reuseAddr && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
-                logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
-                        WSAGetLastError(), " on ", Thread.self);
-                closesocket(platformListenSocket.handle);
-                return false;
-            }
+        if (reuseAddr && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
+            logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
+                    WSAGetLastError(), " on ", Thread.self);
+            closesocket(platformListenSocket.handle);
+            return false;
+        }
 
-            if (keepAlive && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
-                logger.debug_("Error could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ",
-                        WSAGetLastError(), " on ", Thread.self);
-                closesocket(platformListenSocket.handle);
-                return false;
+        if (keepAlive) {
+            // keepAlive is in milliseconds
+            uint keepAliveValue = keepAlive.get;
+
+            if(setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
+                logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
+                closesocket(socketState.handle);
+                return ErrorResult(UnknownPlatformBehaviorException("Could not set keep alive status to socket"));
             }
         }
 

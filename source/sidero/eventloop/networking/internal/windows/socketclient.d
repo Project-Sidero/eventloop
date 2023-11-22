@@ -10,6 +10,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.errors;
 import sidero.base.path.networking;
 import sidero.base.path.hostname;
+import sidero.base.typecons : Optional;
 
 @safe nothrow @nogc:
 
@@ -49,7 +50,7 @@ struct PlatformSocket {
     }
 }
 
-ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) @trusted {
+ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!uint keepAlive) @trusted {
     version(Windows) {
         SocketState* socketState = socket.state;
 
@@ -118,8 +119,11 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool
             }
         }
 
-        {
-            if(keepAlive && setsockopt(socketState.handle, SOL_SOCKET, SO_KEEPALIVE, cast(char*)&keepAlive, 1) != 0) {
+        if (keepAlive) {
+            // keepAlive is in milliseconds
+            uint keepAliveValue = keepAlive.get;
+
+            if(setsockopt(socketState.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", socketState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(socketState.handle);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not set keep alive status to socket"));

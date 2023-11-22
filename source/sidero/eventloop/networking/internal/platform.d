@@ -3,6 +3,7 @@ import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.networking.sockets;
 import sidero.base.errors;
 import sidero.base.path.networking;
+import sidero.base.typecons : Optional;
 
 @safe nothrow @nogc:
 
@@ -35,7 +36,7 @@ version(Windows) {
     @safe nothrow @nogc:
     }
 
-    ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, bool keepAlive) {
+    ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!uint keepAlive) {
         assert(0);
     }
 
@@ -75,7 +76,7 @@ version(Windows) {
         }
     }
 
-    bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, bool keepAlive) {
+    bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!uint keepAlive) {
         assert(0);
     }
 

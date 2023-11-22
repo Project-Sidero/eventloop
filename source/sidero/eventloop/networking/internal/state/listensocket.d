@@ -7,6 +7,7 @@ import sidero.base.path.networking;
 import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.allocators;
 import sidero.base.internal.atomic;
+import sidero.base.typecons : Optional;
 
 @safe nothrow @nogc:
 
@@ -90,7 +91,7 @@ struct ListenSocketState {
             rc(false);
     }
 
-    bool startUp(bool reuseAddr = true, bool keepAlive = true) scope @trusted {
+    bool startUp(bool reuseAddr, Optional!uint keepAlive) scope @trusted {
         return listenOnAddress(&this, reuseAddr, keepAlive);
     }
 }
