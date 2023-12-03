@@ -265,6 +265,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
 
         if (err == 0) {
             logger.info("Failed to read initiate closing for ", socketState.handle, " on ", Thread.self);
+            socketState.rawReading.complete(socketState, 0);
             socketState.unpin;
             return false;
         } else if (err > 0) {
@@ -272,6 +273,8 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
             socketState.rawReading.complete(socketState, err);
             return true;
         } else {
+            socketState.rawReading.complete(socketState, 0);
+
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 logger.debug_("Reading failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
                 return socketState.needToBeRetriggered(socketState);

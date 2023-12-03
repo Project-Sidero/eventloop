@@ -23,8 +23,10 @@ struct RawWritingState {
     }
 
     package(sidero.eventloop.networking.internal.state) bool tryWrite(scope SocketState* socketState) scope @trusted {
-        if(triggered)
+        if(triggered) {
+            logger.debug_("Write is currently triggered");
             return false;
+        }
 
         for(;;) {
             auto firstItem = queue.peek;
@@ -36,27 +38,32 @@ struct RawWritingState {
                     if(firstItem.length == 0) {
                         cast(void)queue.pop;
                         amountFromFirst = 0;
+                        logger.debug_("Done with first item");
                         continue;
                     } else {
                         logger.debug_("Attempting to write ", firstItem.length, " with offset ", amountFromFirst,
                                 " items to socket ", socketState.handle, " on thread ", Thread.self);
+                        triggered = true;
                         bool result = socketState.tryWrite(cast(ubyte[])firstItem.unsafeGetLiteral);
 
                         if(result) {
                             logger.debug_("Have triggered ", firstItem.length, " items to socket ", socketState.handle,
                                     " on thread ", Thread.self);
-                            triggered = true;
                             return true;
                         } else {
                             logger.info("Have failed to trigger ", firstItem.length, " items to socket ",
                                     socketState.handle, " on thread ", Thread.self);
+                            triggered = false;
                             return false;
                         }
                     }
-                } else
+                } else {
                     return false;
-            } else
+                }
+            } else {
+                logger.debug_("Empty raw write queue");
                 return false;
+            }
         }
 
         assert(0);
@@ -80,7 +87,7 @@ struct RawWritingState {
         const proposedAmount = amountFromFirst + completedAmount;
 
         if(proposedAmount < firstItem.length) {
-            amountFromFirst += completedAmount;
+            amountFromFirst = completedAmount;
         } else {
             cast(void)queue.pop;
             amountFromFirst = 0;

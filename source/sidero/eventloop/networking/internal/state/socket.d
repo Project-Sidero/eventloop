@@ -7,6 +7,7 @@ import sidero.eventloop.networking.internal.state.rawreading;
 import sidero.eventloop.networking.internal.state.rawwriting;
 import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.networking.sockets;
+import sidero.eventloop.threads.osthread;
 import sidero.base.synchronization.system.lock;
 import sidero.base.allocators;
 import sidero.base.path.networking;
@@ -137,7 +138,15 @@ struct SocketState {
     void performReadWrite() scope @trusted {
         bool didSomeWork;
 
+        logger.debug_("Starting read/write for ", this.handle, " on ", Thread.self);
+
+        scope(exit) {
+            logger.debug_("Done with read/write for ", this.handle, " on ", Thread.self);
+        }
+
         do {
+            logger.debug_("Doing read/write for ", this.handle);
+
             didSomeWork = this.rawReading.tryRead(&this);
 
             if(this.encryption.enabled && this.encryption.negotiating) {

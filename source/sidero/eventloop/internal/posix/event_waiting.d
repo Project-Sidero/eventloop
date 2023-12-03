@@ -58,6 +58,7 @@ struct EventWaiterThread {
             import core.sys.posix.fcntl;
 
             logger.info("Starting event waiter thread ", thread);
+            atomicStore(isAlive, true);
 
             {
                 const err = pipe(candcPipes);
@@ -146,6 +147,8 @@ size_t maximumNumberOfHandlesPerEventWaiter() {
 
 void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
     version (Posix) {
+        import core.stdc.errno;
+
         // step five: wake up threads and set the handles to the new ones
         foreach (threadState; eventWaiterThreads) {
             assert(threadState);
@@ -153,10 +156,12 @@ void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
                 continue;
 
             int dummy;
-            write(threadState.candcPipes[1], &dummy, 4);
-
-            logger.debug_("Triggered update handles APC handles ", threadState.nextEventHandles.length, " procedures ",
-                    threadState.nextEventProcs.length, " to ", threadState.thread);
+            if (write(threadState.candcPipes[1], &dummy, 4) < 4) {
+                logger.info("Failed to trigger update by writing to ", threadState.thread, " with error ", errno);
+            } else {
+                logger.debug_("Triggered update handles for handles ", threadState.nextEventHandles.length, " procedures ",
+                threadState.nextEventProcs.length, " to ", threadState.thread);
+            }
         }
     } else
         assert(0);
