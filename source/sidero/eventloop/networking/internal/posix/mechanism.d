@@ -57,6 +57,8 @@ bool startUpNetworkingMechanism() @trusted {
 
             timerfd_settime(timerHandle, TFD_NONBLOCK | TFD_CLOEXEC, &spec, null);
             addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
+
+            logger.notice("Initialized Linux socket rearming succesfully");
         }
     } else version(Posix) {
         {
@@ -74,9 +76,9 @@ bool startUpNetworkingMechanism() @trusted {
                 return false;
             }
 
-            logger.notice("Initialized Posix socket rearming succesfully");
-
             timerThread = Thread.create(&timerThreadProc);
+
+            logger.notice("Initialized Posix socket rearming succesfully");
         }
     } else
         assert(0);
@@ -91,6 +93,8 @@ void shutdownNetworkingMechanism() @trusted {
         removeEventWaiterHandle(cast(void*)timerHandle);
         close(timerHandle);
         timerHandle = 0;
+
+        logger.notice("Shutdown Linux socket rearming");
     } else version(Posix) {
         atomicStore(timerThreadInShutdown, true);
         pthread_cond_broadcast(&timerCondition);
@@ -110,12 +114,18 @@ private:
 
 void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     version(linux) {
+        logger.debug_("Socket timer callback start");
+        size_t handled;
+
         while(!socketRetryQueue.empty) {
             auto got = socketRetryQueue.pop;
             if(got) {
+                handled++;
                 got.state.haveBeenRetriggered(got.state);
             }
         }
+
+        logger.debug_("Socket timer callback handled ", handled);
     } else
         assert(0);
 }
@@ -123,6 +133,7 @@ void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @tr
 void timerThreadProc() @trusted {
     version(Posix) {
         import sidero.base.internal.atomic;
+        logger.debug_("Socket rearm thread start");
 
         while(!atomicLoad(timerThreadInShutdown)) {
             pthread_mutex_lock(&timerMutex);
@@ -135,21 +146,30 @@ void timerThreadProc() @trusted {
                 pthread_cond_timedwait(&timerCondition, &timerMutex, &next);
             }
 
+            logger.debug_("Socket rearm triggered");
+
             if(atomicLoad(timerThreadInShutdown)) {
                 pthread_mutex_unlock(&timerMutex);
                 pthread_cond_broadcast(&timerCondition);
                 timerThread = Thread.init;
+
+                logger.debug_("Socket rearm thread end");
                 return;
             }
 
             pthread_mutex_unlock(&timerMutex);
 
+            size_t handled;
+
             while(!socketRetryQueue.empty) {
                 auto got = socketRetryQueue.pop;
                 if(got) {
+                    handled++;
                     got.state.haveBeenRetriggered(got.state);
                 }
             }
+
+            logger.debug_("Socket rearm thread handled ", handled);
         }
     }
 }

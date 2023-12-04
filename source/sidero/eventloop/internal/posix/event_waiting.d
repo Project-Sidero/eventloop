@@ -65,6 +65,14 @@ struct EventWaiterThread {
                 if (err != 0)
                     return;
                 fcntl(candcPipes[0], F_SETFL, O_NONBLOCK | FD_CLOEXEC);
+
+                pollfds[0].fd = candcPipes[0];
+                pollfds[0].events = short.max;
+
+                foreach (i, eh; this.eventHandles) {
+                    pollfds[i + 1].fd = cast(int)eh;
+                    pollfds[i + 1].events = short.max;
+                }
             }
 
             scope (exit) {
@@ -82,6 +90,7 @@ struct EventWaiterThread {
                 if (!this.nextEventHandles.isNull)
                     handleReSet();
 
+                logger.debug_("Event waiter poll starting ", pollfds[0 .. eventHandles.length + 1]);
                 const err = poll(pollfds.ptr, eventHandles.length + 1, -1);
                 logger.debug_("Event waiter poll complete ", err);
 

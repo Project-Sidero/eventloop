@@ -232,6 +232,7 @@ void forceClose(scope SocketState* socketState) @trusted {
         if (cas(socketState.isClosed, false, true)) {
             logger.debug_("Forcing closed socket ", socketState.handle);
             close(socketState.fd);
+             removeEventWaiterHandle(socketState.handle);
         }
     } else
         assert(0);
@@ -298,6 +299,7 @@ void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @
         if (revent != 0) {
             if ((revent & POLLIN) == POLLIN || (revent & POLLOUT) == POLLOUT) {
                 // all ok nothing to do here
+                socketState.guard(&socketState.performReadWrite);
             } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
                 socketState.unpin();
