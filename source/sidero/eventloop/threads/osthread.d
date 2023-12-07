@@ -19,7 +19,7 @@ Thread abstraction over an OS thread.
 If you need a unique id use the result of toHash.
 */
 struct Thread {
-    private {
+    package(sidero.eventloop.threads) {
         State* state;
     }
 
@@ -280,6 +280,9 @@ export @safe nothrow @nogc:
             ret.__ctor(ret);
 
             allThreads[state.handle.handle] = state;
+
+            // FIXME: on Posix how do we remove from allThreads?
+
             mutex.unlock;
             assert(!ret.isNull);
             return ret;
@@ -405,6 +408,13 @@ private:
     }
 }
 
+package(sidero.eventloop.threads):
+
+export void accessGlobals(scope void delegate(ref SystemLock mutex, ref HashMap!(void*, Thread.State*) allThreads,
+        ref HouseKeepingAllocator!() threadAllocator) nothrow @nogc del) nothrow @nogc {
+    del(mutex, allThreads, threadAllocator);
+}
+
 private:
 import sidero.eventloop.threads.registration;
 import sidero.base.synchronization.system.lock;
@@ -415,11 +425,6 @@ __gshared {
     SystemLock mutex;
     HashMap!(void*, Thread.State*) allThreads;
     HouseKeepingAllocator!() threadAllocator;
-}
-
-export void accessGlobals(scope void delegate(ref SystemLock mutex, ref HashMap!(void*, Thread.State*) allThreads,
-        ref HouseKeepingAllocator!() threadAllocator) nothrow @nogc del) nothrow @nogc {
-    del(mutex, allThreads, threadAllocator);
 }
 
 struct EntryFunctionArgs(Args...) {
@@ -527,22 +532,6 @@ version (Windows) {
 
             atomicStore(state.isRunning, true);
 
-            // copied right out of druntime
-            // https://github.com/dlang/dmd/blob/f4be7f6f7bae75f1613b862940cdd533b5ae99b2/druntime/src/core/thread/osthread.d#L2200
-            // needed because this isn't as simple as it should be
-            static if (__traits(compiles, pthread_cleanup)) {
-                pthread_cleanup cleanup = void;
-
-                void addCleanup(ref pthread_cleanup cleanup, void* state) {
-                    cleanup.push(&cleanupPosixRunning, state);
-                }
-
-                (cast(void delegate(ref pthread_cleanup, void* state)nothrow @nogc)&addCleanup)(cleanup, cast(void*)state);
-            } else static if (__traits(compiles, pthread_cleanup_push)) {
-                pthread_cleanup_push(&cleanupPosixRunning, cast(void*)state);
-            } else
-                static assert(0, "Unimplemented");
-
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
             allThreads[state.handle.handle] = state;
 
@@ -550,6 +539,13 @@ version (Windows) {
 
             onAttachOfThread;
         });
+
+        // Note we could use the pthread method for handling cleanup
+        //  however unwind tables both work and are soooo much simpler to use.
+        // FIXME: also support using pthread_cleanup_push but also remember to call pthread_cleanup_pop with 0 same as druntime
+        scope (exit) {
+            cleanupPosixRunning(state_);
+        }
 
         (cast(void function(FunctionArgs)nothrow)self.state.entry)(efa.args);
         return null;

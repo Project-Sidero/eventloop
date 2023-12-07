@@ -29,13 +29,19 @@ private {
 void shutdownWorkerMechanism() @trusted {
     version (Posix) {
         if (atomicLoad(countAliveThreads) == 0) {
-            pthread_cond_destroy(&workerCondition);
-            pthread_mutex_destroy(&workersWorkMutex);
             logger.debug_("Shutdown Posix workers immediately");
         }
 
         atomicStore(workersInShutdown, true);
         pthread_cond_broadcast(&workerCondition);
+
+        while(atomicLoad(countAliveThreads) > 0) {
+            Thread.yield;
+        }
+
+        pthread_cond_destroy(&workerCondition);
+        pthread_mutex_destroy(&workersWorkMutex);
+
         logger.notice("Shutdown Posix workers");
     }
 }
@@ -79,10 +85,7 @@ void workerProc() @trusted {
         scope (exit) {
             logger.info("Stopping Posix worker ", Thread.self);
 
-            if (atomicDecrementAndLoad(countAliveThreads, 1) == 0 && atomicLoad(workersInShutdown)) {
-                pthread_cond_destroy(&workerCondition);
-                pthread_mutex_destroy(&workersWorkMutex);
-            }
+            atomicDecrementAndLoad(countAliveThreads, 1);
         }
 
         logger.info("Starting Posix worker ", Thread.self);
