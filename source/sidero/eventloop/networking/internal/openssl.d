@@ -58,6 +58,15 @@ private {
                 SSL_CTX_set_options(openSSLContext, SSL_OP_ALL | SSL_OP_NO_SSLv3);
             }
 
+            {
+                auto err = SSL_CTX_set_default_verify_paths(openSSLContext);
+
+                if (err != 1) {
+                    logger.info("OpenSSL loading of default paths failed");
+                    return false;
+                }
+            }
+
             atomicStore(isOpenSSLSetup, true);
             return true;
         }

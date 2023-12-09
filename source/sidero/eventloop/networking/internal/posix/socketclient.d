@@ -232,7 +232,7 @@ void forceClose(scope SocketState* socketState) @trusted {
         if (cas(socketState.isClosed, false, true)) {
             logger.debug_("Forcing closed socket ", socketState.handle);
             close(socketState.fd);
-             removeEventWaiterHandle(socketState.handle);
+            removeEventWaiterHandle(socketState.handle);
         }
     } else
         assert(0);
