@@ -194,11 +194,13 @@ struct OpenSSLEncryptionStateImpl {
     }
 
     Slice!ubyte encrypt(scope SocketState* socketState, return scope Slice!ubyte decrypted, out size_t consumed) scope @trusted {
+         if (decrypted.length == 0)
+            return typeof(return).init;
+
         socketState.rawReading.readRaw((rawReadBuffer) @trusted {
-        
             {
                 updateRawReadBuffer(socketState, rawReadBuffer.unsafeGetLiteral);
-                logger.trace("Encrypt raw read buffer ", bufRawRead, rawReadBuffer);
+                logger.trace("Encrypt raw read buffer ", bufRawRead, rawReadBuffer.toString());
 
                 SSL_do_handshake(openSSL);
                 applyRawWriteBuffer(socketState);
@@ -209,10 +211,12 @@ struct OpenSSLEncryptionStateImpl {
             Loop: while(toEncrypt.length > 0) {
                 size_t written;
                 const err = SSL_write_ex(this.openSSL, toEncrypt.ptr, toEncrypt.length, &written);
+                applyRawWriteBuffer(socketState);
 
                 if(err == 1) {
                     toEncrypt = toEncrypt[written .. $];
                     consumed += written;
+                    logger.debug_("Socket openssl TLS encrypted ", written, " for ", socketState.handle, " on ", Thread.self);
                 } else {
                     const error = SSL_get_error(this.openSSL, err);
 
@@ -225,11 +229,9 @@ struct OpenSSLEncryptionStateImpl {
                     default:
                         logger.debug_("Socket openssl TLS encrypt unknown error ", error, " for socket ",
                             socketState.handle, " on ", Thread.self);
-                        break;
+                        break Loop;
                     }
                 }
-
-                applyRawWriteBuffer(socketState);
             }
 
             return rawReadBuffer.length - bufRawRead.length;
@@ -240,17 +242,20 @@ struct OpenSSLEncryptionStateImpl {
     }
 
     Slice!ubyte decrypt(scope SocketState* socketState, return scope DynamicArray!ubyte encrypted, out size_t consumed) scope @trusted {
+        if (encrypted.length == 0)
+            return typeof(return).init;
+
         ubyte[16 * 1024] buffer = void;
 
         updateRawReadBuffer(socketState, encrypted.unsafeGetLiteral);
-
         const startingLength = bufRawRead.length;
+
         scope(exit) {
             consumed = startingLength - bufRawRead.length;
         }
 
         {
-            logger.trace("Decrypt raw read buffer ", bufRawRead, encrypted);
+            logger.trace("Decrypt raw read buffer ", bufRawRead, " ", encrypted.toString());
             const err = SSL_do_handshake(openSSL);
             applyRawWriteBuffer(socketState);
 
@@ -260,8 +265,10 @@ struct OpenSSLEncryptionStateImpl {
         Loop: while(bufRawRead.length > 0) {
             size_t readBytes;
             const err = SSL_read_ex(this.openSSL, buffer.ptr, buffer.length, &readBytes);
+            applyRawWriteBuffer(socketState);
 
             if(err == 1) {
+                logger.trace("Pushing ", readBytes, " to socket decrypt of ", socketState.handle, " on ", Thread.self);
                 socketState.reading.queue.push(Slice!ubyte(buffer[0 .. readBytes]).dup);
             } else {
                 const error = SSL_get_error(this.openSSL, err);
@@ -275,14 +282,13 @@ struct OpenSSLEncryptionStateImpl {
                 default:
                     logger.debug_("Socket openssl TLS decrypt unknown error ", error, " for socket ",
                             socketState.handle, " on ", Thread.self);
-                    break;
+                    break Loop;
                 }
             }
-
-            applyRawWriteBuffer(socketState);
         }
 
         // we'll push straight to reading
+        logger.debug_("OpenSSL TLS decryption has done ", startingLength, " != ", bufRawRead.length, " for socket ", socketState.handle, " on ", Thread.self);
         return Slice!ubyte.init;
     }
 
@@ -296,6 +302,7 @@ struct OpenSSLEncryptionStateImpl {
             if(err == 1) {
                 socketState.encryption.negotiating = false;
                 ret = true;
+                logger.debug_("Socket openssl TLS finished negotiating ", socketState.handle, " on ", Thread.self);
             } else {
                 const error = SSL_get_error(openSSL, err);
                 ret = false;
