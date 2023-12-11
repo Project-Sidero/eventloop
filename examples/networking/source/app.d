@@ -7,12 +7,18 @@ import sidero.base.path.hostname;
 import sidero.eventloop.certificates;
 import sidero.eventloop.coroutine;
 
-version = UseTLS;
-version = UseRemote;
-version = UseClient;
+//version = UseTLS;
+//version = UseRemote;
+//version = UseClient;
 
 //version = UseServerTLS;
 //version = UseServer;
+
+version(Windows) {
+    //version = UseServerOpenSSL;
+} else {
+    version = UseServerOpenSSL;
+}
 
 int main(string[] args) {
     import sidero.base.text.format;
@@ -64,15 +70,25 @@ int main(string[] args) {
         assert(addresses.length > 0);
     }
 
-    CertificateStore store = CertificateStore.from(CertificateStore.WinCryptStore.Personal);
-    assert(!store.isNull);
-    auto certificates = store.byFriendlyName(String_UTF8("TestCertificate3"));
-    assert(certificates.length == 1);
+    Certificate certificateToUseForServerTLS;
+
+    version(UseServerOpenSSL) {
+        // TODO: use a certificate we commit and load directly
+    } else {
+        CertificateStore store = CertificateStore.from(CertificateStore.WinCryptStore.Personal);
+        assert(!store.isNull);
+
+        // TODO: explain how to create the TestCertificate and load into personal store
+
+        auto certificates = store.byFriendlyName(String_UTF8("TestCertificate"));
+        assert(certificates.length == 1);
+        certificateToUseForServerTLS = certificates[0].assumeOkay;
+    }
 
     version(UseServer) {
         version(UseServerTLS) {
             auto listenSocket = ListenSocket.from(createServerCo(), NetworkAddress.fromAnyIPv4(portToListenOn),
-                    Socket.Protocol.TCP, Socket.EncryptionProtocol.Best_TLS, certificates[0].assumeOkay);
+                    Socket.Protocol.TCP, Socket.EncryptionProtocol.Best_TLS, certificateToUseForServerTLS);
         } else {
             auto listenSocket = ListenSocket.from(createServerCo(), NetworkAddress.fromAnyIPv4(portToListenOn),
                     Socket.Protocol.TCP, Socket.EncryptionProtocol.None);
