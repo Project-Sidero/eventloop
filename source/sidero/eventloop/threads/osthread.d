@@ -3,6 +3,9 @@ import sidero.eventloop.handles;
 import sidero.base.errors;
 import sidero.base.datetime.duration;
 import sidero.base.internal.atomic;
+import sidero.base.attributes;
+import sidero.base.text;
+import sidero.base.allocators;
 
 ///
 enum ThreadHandleIdentifier = SystemHandleType.from("thread");
@@ -19,7 +22,7 @@ Thread abstraction over an OS thread.
 If you need a unique id use the result of toHash.
 */
 struct Thread {
-    package(sidero.eventloop.threads) {
+    package(sidero.eventloop.threads) @PrettyPrintIgnore {
         State* state;
     }
 
@@ -395,6 +398,32 @@ export @safe nothrow @nogc:
     /// A unique id, not the system handle.
     ulong toHash() scope const {
         return cast(size_t)state;
+    }
+
+    @PrintIgnore @PrettyPrintIgnore {
+        ///
+        String_UTF8 toString(RCAllocator allocator = RCAllocator.init) @trusted {
+            StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
+            toString(ret);
+            return ret.asReadOnly;
+        }
+
+        ///
+        void toString(Sink)(scope ref Sink sink) @trusted {
+            sink.formattedWrite("Thread({:p})", this.unsafeGetHandle().handle);
+        }
+
+        ///
+        String_UTF8 toStringPretty(RCAllocator allocator = RCAllocator.init) @trusted {
+            StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
+            toStringPretty(ret);
+            return ret.asReadOnly;
+        }
+
+        ///
+        void toStringPretty(Sink)(scope ref Sink sink) @trusted {
+            sink.formattedWrite("Thread({:p}@{:p}, isAlive={:s})", this.unsafeGetHandle().handle, cast(void*)this.state, this.isRunning);
+        }
     }
 
 private:
