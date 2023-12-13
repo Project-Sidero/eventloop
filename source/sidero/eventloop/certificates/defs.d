@@ -584,7 +584,7 @@ export @safe nothrow @nogc:
         ///
         OpenSSL,
 
-        /// WinCrypt on Windows
+        /// WinCrypt on Windows, otherwise OpenSSL
         Default,
     }
 }
