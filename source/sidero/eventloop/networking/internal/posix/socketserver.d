@@ -169,11 +169,15 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             }
         }
 
-        if (reuseAddr && setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
-            logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
-                    errno, " on ", Thread.self);
-            close(platformListenSocket.fd);
-            return false;
+        if (reuseAddr) {
+            uint reuseAddrValue = reuseAddr;
+
+            if (setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(uint*)&reuseAddrValue, 4) != 0) {
+                logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
+                errno, " on ", Thread.self);
+                close(platformListenSocket.fd);
+                return false;
+            }
         }
 
         if (keepAlive) {
