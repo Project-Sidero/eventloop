@@ -169,6 +169,9 @@ struct OpenSSLEncryptionStateImpl {
 
             socketState.encryption.currentCertificate.unsafeGetOpenSSLHandles((X509* publicKey, EVP_PKEY* privateKey,
                     STACK_OF!X509_INFO* chain) {
+                import sidero.base.console;
+                debugWriteln("certs ", cast(void*)publicKey, cast(void*)privateKey, cast(void*)chain);
+
                 const countChain = sk_X509_INFO_num(chain);
                 STACK_OF!X509* chain2 = sk_X509_new_reserve(null, countChain);
 
@@ -180,7 +183,10 @@ struct OpenSSLEncryptionStateImpl {
                     }
                 }
 
-                SSL_use_cert_and_key(openSSL, publicKey, privateKey, chain2, 0);
+                if (SSL_use_cert_and_key(openSSL, publicKey, privateKey, chain2, 0) != 1) {
+                    logger.notice("OpenSSL TLS connection could not use public/private key with chain, encryption disabled for socket ", socketState.handle, " on ", Thread.self);
+                    ERR_print_errors;
+                }
                 gotCerts = true;
             });
 

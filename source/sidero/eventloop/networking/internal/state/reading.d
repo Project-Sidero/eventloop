@@ -101,8 +101,11 @@ struct ReadingState {
 
         void handleWithData(AD)(scope AD availableData, scope ref size_t tryingToConsume) @safe {
             void subsetFromAvailable(ptrdiff_t amount) @trusted {
+                if (amount == 0)
+                    return;
+
                 auto sliced = availableData[0 .. amount];
-                assert(sliced);
+                assert(sliced, sliced.getError().toString.unsafeGetLiteral());
                 auto slicedG = sliced.get;
 
                 if(appendingArray.length == 0)

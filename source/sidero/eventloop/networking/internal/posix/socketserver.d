@@ -406,6 +406,11 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
             }
         }
 
+        {
+            const flags = fcntl(acquiredSocket.state.fd, F_GETFL, 0);
+            fcntl(acquiredSocket.state.fd, F_SETFL, flags | O_NONBLOCK | O_CLOEXEC);
+        }
+
         addEventWaiterHandle(acquiredSocket.state.handle, &handleSocketEvent, acquiredSocket.state);
         acquiredSocket.state.pin();
 

@@ -572,6 +572,7 @@ export @safe nothrow @nogc:
             Certificate ret;
             ret.state = allocator.make!State();
             ret.state.allocator = allocator;
+            ret.state.type = Type.OpenSSL;
 
             ret.state.opensslState.toUseX509 = publicKey;
             ret.state.opensslState.toUseEVP_PKEY = privateKey;

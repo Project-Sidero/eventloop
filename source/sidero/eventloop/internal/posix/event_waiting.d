@@ -99,7 +99,7 @@ struct EventWaiterThread {
                     assert(err > 0);
                     // check for revents member
 
-                    foreach (i, ref pfd; pollfds[1 .. eventHandles.length]) {
+                    foreach (i, ref pfd; pollfds[1 .. eventHandles.length + 1]) {
                         auto eventProc = this.eventProcs[i];
                         assert(eventProc);
 
