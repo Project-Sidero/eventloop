@@ -11,18 +11,19 @@ import sidero.eventloop.coroutine;
 //version = UseRemote;
 //version = UseClient;
 
-//version = UseServerTLS;
-//version = UseServer;
+version = UseServerTLS;
+version = UseServer;
 
-version(Windows) {
-    //version = UseServerOpenSSL;
+version (Windows) {
+    //version = UseServerSelfSign;
 } else {
-    version = UseServerOpenSSL;
+    version = UseServerSelfSign;
 }
 
 int main(string[] args) {
     import sidero.base.text.format;
     import sidero.base.path.networking;
+    import sidero.base.datetime;
     import sidero.eventloop.networking.sockets;
     import sidero.eventloop.tasks.workers;
 
@@ -33,17 +34,17 @@ int main(string[] args) {
 
     ushort portToListenOn;
 
-    if(args.length > 1) {
+    if (args.length > 1) {
         String_UTF8 arg = String_UTF8(args[1]);
         auto got = formattedRead(arg, "{:d}", portToListenOn);
-        if(!got) {
+        if (!got) {
             writeln("Could not parse port as a positive integer between 0 and 65535");
             return 2;
         }
     } else
         portToListenOn = 22965;
 
-    version(all) {
+    version (all) {
         import sidero.base.bindings.openssl.libcrypto;
         import sidero.base.bindings.openssl.libssl;
         import sidero.base.path.file;
@@ -57,10 +58,10 @@ int main(string[] args) {
         loadLibSSL(lsFP).debugWriteln;
     }
 
-    version(all) {
-        if(!startUpNetworking)
+    version (all) {
+        if (!startUpNetworking)
             return 3;
-        if(!startWorkers(1))
+        if (!startWorkers(1))
             return 4;
     }
 
@@ -70,23 +71,36 @@ int main(string[] args) {
         assert(addresses.length > 0);
     }
 
-    Certificate certificateToUseForServerTLS;
+    version (UseServer) {
+        Certificate certificateToUseForServerTLS;
 
-    version(UseServerOpenSSL) {
-        // TODO: use a certificate we commit and load directly
-    } else {
-        CertificateStore store = CertificateStore.from(CertificateStore.WinCryptStore.Personal);
-        assert(!store.isNull);
+        version (UseServerSelfSign) {
+            auto gotCertificate = createSelfSigned(2048, 1.day, Hostname.fromEncoded(String_ASCII("localhost")));
+            assert(gotCertificate);
+            certificateToUseForServerTLS = gotCertificate;
+            assert(!certificateToUseForServerTLS.isNull);
+        } else {
+            CertificateStore store = CertificateStore.from(CertificateStore.WinCryptStore.Personal);
+            assert(!store.isNull);
 
-        // TODO: explain how to create the TestCertificate and load into personal store
+            // Using the Certificate Manager (certmgr), under Personal -> Certificates,
+            //  you must have a certificate with the friendly name "TestCertificate".
+            // It is not created by default, this is something that was introduced for this program.
+            // To create it you can use IIS to create the certificate, export it and then import into the personal store.
 
-        auto certificates = store.byFriendlyName(String_UTF8("TestCertificate"));
-        assert(certificates.length == 1);
-        certificateToUseForServerTLS = certificates[0].assumeOkay;
-    }
+            // Don't worry about it getting out of date.
+            // Due to it being self signed, the client is going to have to not verify the server certificate.
 
-    version(UseServer) {
-        version(UseServerTLS) {
+            // Between the following two tutorials you should be able to figure out how to create it.
+            // https://aboutssl.org/how-to-create-a-self-signed-certificate-in-iis/
+            // https://techcommunity.microsoft.com/t5/windows-server-essentials-and/installing-a-self-signed-certificate-as-a-trusted-root-ca-in/ba-p/396105
+
+            auto certificates = store.byFriendlyName(String_UTF8("TestCertificate"));
+            assert(certificates.length == 1);
+            certificateToUseForServerTLS = certificates[0].assumeOkay;
+        }
+
+        version (UseServerTLS) {
             auto listenSocket = ListenSocket.from(createServerCo(), NetworkAddress.fromAnyIPv4(portToListenOn),
                     Socket.Protocol.TCP, Socket.EncryptionProtocol.Best_TLS, certificateToUseForServerTLS);
         } else {
@@ -94,13 +108,13 @@ int main(string[] args) {
                     Socket.Protocol.TCP, Socket.EncryptionProtocol.None);
         }
 
-        if(!listenSocket)
+        if (!listenSocket)
             return 5;
     }
 
-    version(UseClient) {
-        version(UseRemote) {
-            version(UseTLS) {
+    version (UseClient) {
+        version (UseRemote) {
+            version (UseTLS) {
                 auto domainAddress = NetworkAddress.from(Hostname.from("example.com"), 443);
             } else {
                 auto domainAddress = NetworkAddress.from(Hostname.from("example.com"), 80);
@@ -108,13 +122,13 @@ int main(string[] args) {
             auto addresses = domainAddress.resolve();
             assert(addresses.length > 0);
 
-            foreach(address; addresses)
+            foreach (address; addresses)
                 writeln(address);
 
             auto address = addresses[1];
             assert(address);
         } else {
-            version(UseTLS) {
+            version (UseTLS) {
                 auto address = NetworkAddress.fromIPv4(443, 127, 0, 0, 1);
             } else {
                 auto address = NetworkAddress.fromIPv4(80, 127, 0, 0, 1);
@@ -141,9 +155,9 @@ void acceptLoop() {
 
     writeln("Hit enter to stop:");
 
-    for(;;) {
+    for (;;) {
         auto got = readLine(10.seconds);
-        if(atomicLoad(allowedToShutdown) && got && got.length > 0)
+        if (atomicLoad(allowedToShutdown) && got && got.length > 0)
             break;
     }
 }
@@ -164,10 +178,10 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
         ~this() {
             import sidero.base.internal.atomic : atomicStore;
 
-            if(socket.isNull)
+            if (socket.isNull)
                 return;
 
-            if(socket.isAlive)
+            if (socket.isAlive)
                 writeln("Connection can be shutdown ", socket);
             else {
                 writeln("Connection has been shutdown ", socket);
@@ -198,8 +212,8 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
     builder[Stages.OnLine] = (scope ref state) @trusted {
         auto result = state.nextLine.result;
 
-        if(!result) {
-            if(state.socket.isAlive()) {
+        if (!result) {
+            if (state.socket.isAlive()) {
                 writeln("Failed to complete read");
                 return Builder.complete(result.getError());
             } else {
@@ -214,7 +228,7 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
             cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"> "));
             cast(void)state.socket.write(result);
 
-            if(result.get == cast(ubyte[])"DONE\n") {
+            if (result.get == cast(ubyte[])"DONE\n") {
                 state.socket.close;
                 return Builder.complete();
             }
@@ -248,10 +262,10 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
         }
 
         ~this() {
-            if(socket.isNull)
+            if (socket.isNull)
                 return;
 
-            if(socket.isAlive)
+            if (socket.isAlive)
                 writeln("Connection can be shutdown ", socket);
             else
                 writeln("Connection has been shutdown ", socket);
@@ -271,8 +285,8 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
     builder[Stages.OnConnect] = (scope ref state) @trusted {
         writeln("Connection has been made");
 
-        version(UseTLS) {
-            version(UseRemote) {
+        version (UseTLS) {
+            version (UseRemote) {
                 auto socketTLSError = state.socket.addEncryption(Hostname.from("example.com"),
                         Socket.EncryptionProtocol.Best_TLS, Certificate.init, true);
             } else {
@@ -287,7 +301,7 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
 
         cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n"));
 
-        version(UseRemote) {
+        version (UseRemote) {
             cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"Host: example.com\r\n"));
         }
 
@@ -305,8 +319,8 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
     builder[Stages.OnLine] = (scope ref state) @trusted {
         auto result = state.nextLine.result;
 
-        if(!result) {
-            if(state.socket.isAlive()) {
+        if (!result) {
+            if (state.socket.isAlive()) {
                 writeln("Failed to complete read");
                 return Builder.complete(result.getError());
             } else {
@@ -317,9 +331,9 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
 
         {
             String_UTF8 text = String_UTF8(cast(string)result.unsafeGetLiteral());
-            if(text.endsWith("\r\n"))
+            if (text.endsWith("\r\n"))
                 text = text[0 .. $ - 2];
-            else if(text.endsWith("\n"))
+            else if (text.endsWith("\n"))
                 text = text[0 .. $ - 1];
 
             writeln("RECEIVED: ", text);
