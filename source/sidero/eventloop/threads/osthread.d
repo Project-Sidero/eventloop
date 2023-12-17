@@ -40,7 +40,7 @@ export @safe nothrow @nogc:
     ~this() scope @trusted {
         if(this.state !is null && atomicDecrementAndLoad(state.refCount, 1) == 0 && !this.isRunning) {
             mutex.lock.assumeOkay;
-            allThreads.remove(state.handle.handle);
+            allThreads.remove(state.lookupHandle);
 
             if(state.owns) {
                 // destroy handle (not needed with pthreads)
@@ -136,7 +136,7 @@ export @safe nothrow @nogc:
             }
 
             version(Windows) {
-                import core.sys.windows.windows : CreateThread, CREATE_SUSPENDED, ResumeThread;
+                import core.sys.windows.windows : CreateThread, CREATE_SUSPENDED, ResumeThread, GetThreadId;
 
                 auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, CREATE_SUSPENDED, null);
                 if(handle is null) {
@@ -145,12 +145,9 @@ export @safe nothrow @nogc:
                     return;
                 }
 
-                import sidero.base.console;
-
-                debugWriteln("creating ", handle);
-
                 state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-                allThreads[cast(void*)handle] = state;
+                state.lookupHandle = cast(void*)GetThreadId(handle);
+                allThreads[state.lookupHandle] = state;
 
                 mutex.unlock;
                 ResumeThread(handle);
@@ -189,7 +186,8 @@ export @safe nothrow @nogc:
 
                 // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
                 state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-                allThreads[state.handle.handle] = state;
+                state.lookupHandle = state.handle;
+                allThreads[state.lookupHandle] = state;
             }
 
             ret = Result!Thread(retThread);
@@ -249,21 +247,24 @@ export @safe nothrow @nogc:
     static Thread self() @trusted {
         version(Windows) {
             import core.sys.windows.windows : GetCurrentProcess, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, FALSE,
-                HANDLE, GetCurrentThread, DuplicateHandle, CloseHandle, GetLastError;
+                HANDLE, GetCurrentThread, DuplicateHandle, CloseHandle, GetLastError, GetThreadId;
 
             HANDLE handle = GetCurrentThread();
             auto got = DuplicateHandle(GetCurrentProcess(), handle, GetCurrentProcess(), &handle, 0, FALSE,
                     DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS);
             assert(handle !is null);
+
+            auto lookupId = GetThreadId(handle);
         } else version(Posix) {
             import core.sys.posix.pthread : pthread_self, pthread_t;
 
             pthread_t handle = pthread_self();
+            auto lookupId = handle;
         } else
             static assert(0, "Unimplemented platform");
 
         {
-            auto ifExists = allThreads.get(cast(void*)handle, null);
+            auto ifExists = allThreads.get(cast(void*)lookupId, null);
 
             if(ifExists && !ifExists.isNull) {
                 version(Windows) {
@@ -289,12 +290,13 @@ export @safe nothrow @nogc:
             *state = Thread.State.init;
 
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+            state.lookupHandle = cast(void*)lookupId;
 
             Thread ret;
             ret.state = state;
             ret.__ctor(ret);
 
-            allThreads[state.handle.handle] = state;
+            allThreads[cast(void*)lookupId] = state;
 
             mutex.unlock;
             assert(!ret.isNull);
@@ -438,7 +440,10 @@ export @safe nothrow @nogc:
 private:
     static struct State {
         shared(ptrdiff_t) refCount, attachCount;
+
         SystemHandle handle;
+        void* lookupHandle;
+
         bool owns;
         shared(bool) isRunning;
 
@@ -498,13 +503,13 @@ version(Windows) {
 
     ErrorResult waitForJoin(scope void* handle) @trusted nothrow @nogc {
         import core.sys.windows.windows : HANDLE, WaitForMultipleObjectsEx, WAIT_ABANDONED, WAIT_IO_COMPLETION,
-            WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE, LARGE_INTEGER;
+            WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE, LARGE_INTEGER, GetThreadId;
 
         Thread self;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
             mutex.lock.assumeOkay;
-            auto got = allThreads[handle];
+            auto got = allThreads[cast(void*)GetThreadId(handle)];
             if(got && got !is null) {
                 self.state = got;
                 self.__ctor(self);
@@ -572,7 +577,8 @@ version(Windows) {
 
             // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-            allThreads[state.handle.handle] = state;
+            state.lookupHandle = handle;
+            allThreads[state.lookupHandle] = state;
 
             onAttachOfThread(self);
         });
