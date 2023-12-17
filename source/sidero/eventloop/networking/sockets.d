@@ -16,6 +16,7 @@ import sidero.base.errors;
 import sidero.base.internal.atomic;
 import sidero.base.text;
 import sidero.base.typecons : Optional;
+import sidero.base.datetime.duration;
 
 export @safe nothrow @nogc:
 
@@ -61,7 +62,7 @@ export @safe nothrow @nogc:
     /// Listen on port
     static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address, Socket.Protocol protocol,
             Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
-            bool reuseAddr = true, Optional!uint keepAlive = Optional!uint.init, bool validateCertificates = true,
+            bool reuseAddr = true, Optional!Duration keepAlive = Optional!Duration.init, bool validateCertificates = true,
             scope return RCAllocator allocator = RCAllocator.init) @trusted {
 
         if(!onAccept.canInstance)
@@ -259,7 +260,7 @@ export @safe nothrow @nogc:
 
     ///
     static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
-            Socket.Protocol protocol, Optional!uint keepAlive = Optional!uint.init, scope return RCAllocator allocator = RCAllocator.init) @trusted {
+            Socket.Protocol protocol, Optional!Duration keepAlive = Optional!Duration.init, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
         if(!onConnect.canInstance)

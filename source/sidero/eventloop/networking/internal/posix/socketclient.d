@@ -8,6 +8,7 @@ import sidero.base.errors;
 import sidero.base.path.networking;
 import sidero.base.path.hostname;
 import sidero.base.typecons : Optional;
+import sidero.base.datetime.duration;
 
 @safe nothrow @nogc:
 
@@ -54,7 +55,7 @@ struct PlatformSocket {
     }
 }
 
-ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!uint keepAlive) @trusted {
+ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!Duration keepAlive) @trusted {
     version (Posix) {
         SocketState* socketState = socket.state;
 
@@ -124,7 +125,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Opti
         }
 
         if (keepAlive) {
-            uint keepAliveValue = keepAlive.get;
+            uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
 
             if (setsockopt(socketState.fd, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", socketState.handle, " with error ", errno, " on ", Thread.self);

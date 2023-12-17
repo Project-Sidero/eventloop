@@ -11,6 +11,7 @@ import sidero.base.errors;
 import sidero.base.path.networking;
 import sidero.base.path.hostname;
 import sidero.base.typecons : Optional;
+import sidero.base.datetime.duration;
 
 @safe nothrow @nogc:
 
@@ -121,7 +122,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Opti
 
         if (keepAlive) {
             // keepAlive is in milliseconds
-            uint keepAliveValue = keepAlive.get;
+            uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
 
             if(setsockopt(socketState.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", socketState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);

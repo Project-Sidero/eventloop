@@ -8,6 +8,7 @@ import sidero.base.containers.map.concurrenthashmap;
 import sidero.base.allocators;
 import sidero.base.internal.atomic;
 import sidero.base.typecons : Optional;
+import sidero.base.datetime.duration;
 
 @safe nothrow @nogc:
 
@@ -91,7 +92,7 @@ struct ListenSocketState {
             rc(false);
     }
 
-    bool startUp(bool reuseAddr, Optional!uint keepAlive) scope @trusted {
+    bool startUp(bool reuseAddr, Optional!Duration keepAlive) scope @trusted {
         return listenOnAddress(&this, reuseAddr, keepAlive);
     }
 }

@@ -13,6 +13,7 @@ import sidero.base.errors;
 import sidero.base.allocators;
 import sidero.base.text;
 import sidero.base.typecons : Optional;
+import sidero.base.datetime.duration;
 
 @safe nothrow @nogc:
 
@@ -48,7 +49,7 @@ void cleanup(scope PlatformListenSocket* socketState) scope @trusted {
         assert(0);
 }
 
-bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!uint keepAlive) @trusted {
+bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAlive) @trusted {
     if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
         auto resolved = listenSocketState.address.resolve();
 
@@ -75,7 +76,7 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
 
 private:
 
-bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, Optional!uint keepAlive) @trusted {
+bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, Optional!Duration keepAlive) @trusted {
     version (Windows) {
         import sidero.eventloop.internal.event_waiting;
         import sidero.base.internal.atomic;
@@ -166,7 +167,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
         if (keepAlive) {
             // keepAlive is in milliseconds
-            uint keepAliveValue = keepAlive.get;
+            uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
 
             if(setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ", WSAGetLastError(), " on ", Thread.self);

@@ -14,6 +14,7 @@ import sidero.base.path.networking;
 import sidero.base.internal.atomic;
 import sidero.base.errors;
 import sidero.base.typecons : Optional;
+import sidero.base.datetime.duration;
 
 struct SocketState {
     private {
@@ -172,7 +173,7 @@ struct SocketState {
         while(didSomeWork);
     }
 
-    ErrorResult startUp(NetworkAddress address, Optional!uint keepAlive) scope @trusted {
+    ErrorResult startUp(NetworkAddress address, Optional!Duration keepAlive) scope @trusted {
         Socket socket;
         socket.state = &this;
         this.rc(true);
