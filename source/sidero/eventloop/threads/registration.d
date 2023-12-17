@@ -35,29 +35,59 @@ void deregisterThreadRegistration(void* key) {
 package(sidero.eventloop.threads):
 
 // MUST be guarded and be on the thread to attach
-void onAttachOfThread() {
+size_t onAttachOfThread(Thread thread) {
+    if (thread.isNull)
+        return 0;
+
+    size_t done;
     protectAttachDetachMutex.readLock;
 
     foreach (k, ts; threadSystemRegistration) {
+        assert(k);
         assert(ts);
-        if (ts.attachFunc !is null)
+
+        auto isRegistered = thread.state.currentlyRegisteredOnRuntimes.get(k.get, false);
+        assert(isRegistered);
+
+        if (!isRegistered.get && ts.attachFunc !is null) {
+            const set = thread.state.currentlyRegisteredOnRuntimes.update(k.get, true);
+            assert(set);
+
             ts.attachFunc();
+            done++;
+        }
     }
 
     protectAttachDetachMutex.readUnlock;
+    return done;
 }
 
 // MUST be guarded and be on the thread to attach
-void onDetachOfThread() {
+size_t onDetachOfThread(Thread thread) {
+    if (thread.isNull)
+        return 0;
+
+    size_t done;
     protectAttachDetachMutex.readLock;
 
     foreach (k, ts; threadSystemRegistration) {
+        assert(k);
         assert(ts);
-        if (ts.detachThisFunc !is null)
+
+        auto isRegistered = thread.state.currentlyRegisteredOnRuntimes.get(k, false);
+        assert(isRegistered);
+
+        if (isRegistered.get && ts.detachThisFunc !is null) {
+            const set = thread.state.currentlyRegisteredOnRuntimes.update(k.get, false);
+            assert(set);
+
             ts.detachThisFunc();
+            done++;
+        }
     }
 
     protectAttachDetachMutex.readUnlock;
+    return done;
 }
 
 ///
@@ -71,43 +101,39 @@ void deregisterOwnedThreads() {
         foreach(_, threadState; allThreads) {
             assert(threadState);
 
-            // if we don't own it, who cares?
-            if (!threadState.owns && atomicLoad(threadState.attachCount) == 0)
+            if (atomicLoad(threadState.attachCount) == 0)
                 continue;
 
             Thread thread;
             thread.state = threadState;
             thread.__ctor(thread);
 
-            foreach (k, ts; threadSystemRegistration) {
-                assert(ts);
-                if (ts.detachFunc is null)
-                    continue;
+            size_t done;
 
-                ts.detachFunc(thread);
+            foreach (k, ts; threadSystemRegistration) {
+                assert(k);
+                assert(ts);
+
+                auto isRegistered = threadState.currentlyRegisteredOnRuntimes.get(k, false);
+                assert(isRegistered);
+
+                if (isRegistered.get && ts.detachFunc !is null) {
+                    const set = threadState.currentlyRegisteredOnRuntimes.update(k.get, false);
+                    assert(set);
+
+                    ts.detachFunc(thread);
+                    done++;
+                }
             }
 
-            if (!threadState.owns) {
-                atomicDecrementAndLoad(threadState.attachCount, 1);
+            if (atomicDecrementAndLoad(threadState.attachCount, done) == 0) {
+                // extra unpin for this thread instance
                 atomicDecrementAndLoad(threadState.refCount, 1);
             }
         }
 
         mutex.unlock;
     });
-
-    protectAttachDetachMutex.readUnlock;
-}
-
-// MUST be guarded and be on the thread to attach
-void onDetachOfThread(Thread thread) {
-    protectAttachDetachMutex.readLock;
-
-    foreach (k, ts; threadSystemRegistration) {
-        assert(ts);
-        if (ts.detachFunc !is null)
-            ts.detachFunc(thread);
-    }
 
     protectAttachDetachMutex.readUnlock;
 }

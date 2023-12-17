@@ -27,11 +27,11 @@ version(D_BetterC) {
             return Thread.getThis() !is null;
         }
 
-        static extern(C) void detachOfThread(Thread self) @trusted {
+        static extern (C) void detachOfThread(Thread self) @trusted {
             import core.thread.threadbase : thread_detachByAddr;
             import core.thread.types : ThreadID;
 
-            if (self.isNull)
+            if(self.isNull)
                 return;
 
             auto handle = self.unsafeGetHandle();
@@ -39,9 +39,8 @@ version(D_BetterC) {
             thread_detachByAddr(cast(ThreadID)handle.handle);
         }
 
-        registerThreadRegistration(&thread_attachThis, cast(OnAttachThisFunction)&onAttach,
-                cast(OnDetachThisFunction)&onDetach, cast(IsThreadRegisteredFunction)&isRegistered,
-        cast(DetachOfThreadFunction)&detachOfThread);
+        registerThreadRegistration(&thread_attachThis, cast(OnAttachThisFunction)&onAttach, cast(OnDetachThisFunction)&onDetach,
+                cast(IsThreadRegisteredFunction)&isRegistered, cast(DetachOfThreadFunction)&detachOfThread);
     }
 
     shared static ~this() {
@@ -59,7 +58,7 @@ version(D_BetterC) {
     }
 
     static this() {
-         Thread.externalAttach;
+        Thread.externalAttach;
     }
 
     static ~this() {
