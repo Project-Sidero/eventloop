@@ -169,9 +169,6 @@ struct OpenSSLEncryptionStateImpl {
 
             socketState.encryption.currentCertificate.unsafeGetOpenSSLHandles((X509* publicKey, EVP_PKEY* privateKey,
                     STACK_OF!X509_INFO* chain) {
-                import sidero.base.console;
-                debugWriteln("certs ", cast(void*)publicKey, cast(void*)privateKey, cast(void*)chain);
-
                 const countChain = sk_X509_INFO_num(chain);
                 STACK_OF!X509* chain2 = sk_X509_new_reserve(null, countChain);
 
