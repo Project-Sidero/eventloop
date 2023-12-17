@@ -133,7 +133,6 @@ export @safe nothrow @nogc:
 
                 threadAllocator.deallocate(memory);
                 threadAllocator.deallocate(efaMemory);
-                mutex.unlock;
             }
 
             version (Windows) {
@@ -148,6 +147,8 @@ export @safe nothrow @nogc:
 
                 state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
                 allThreads[cast(void*)GetThreadId(handle)] = state;
+
+                mutex.unlock;
                 ResumeThread(handle);
             } else version (Posix) {
                 import core.sys.posix.pthread : pthread_create, pthread_t, pthread_attr_t, pthread_attr_init,
@@ -169,14 +170,22 @@ export @safe nothrow @nogc:
                     return;
                 }
 
+                atomicStore(state.isRunning, true);
+                mutex.unlock;
+
                 pthread_t handle;
                 s = pthread_create(&handle, &attr, &start_routine!(EntryFunctionArgs!Args), cast(void*)state);
                 s |= pthread_attr_destroy(&attr);
                 if (s != 0) {
+                    atomicStore(state.isRunning, false);
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
                     return;
                 }
+
+                // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
+                state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
+                allThreads[state.handle.handle] = state;
             }
 
             ret = Result!Thread(retThread);
@@ -400,30 +409,28 @@ export @safe nothrow @nogc:
         return cast(size_t)state;
     }
 
-    @PrintIgnore @PrettyPrintIgnore {
-        ///
-        String_UTF8 toString(RCAllocator allocator = RCAllocator.init) @trusted {
-            StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
-            toString(ret);
-            return ret.asReadOnly;
-        }
+    ///
+    String_UTF8 toString(RCAllocator allocator = RCAllocator.init) @trusted {
+        StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
+        toString(ret);
+        return ret.asReadOnly;
+    }
 
-        ///
-        void toString(Sink)(scope ref Sink sink) @trusted {
-            sink.formattedWrite("Thread({:p})", this.unsafeGetHandle().handle);
-        }
+    ///
+    void toString(Sink)(scope ref Sink sink) @trusted {
+        sink.formattedWrite("Thread({:p})", this.unsafeGetHandle().handle);
+    }
 
-        ///
-        String_UTF8 toStringPretty(RCAllocator allocator = RCAllocator.init) @trusted {
-            StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
-            toStringPretty(ret);
-            return ret.asReadOnly;
-        }
+    ///
+    String_UTF8 toStringPretty(RCAllocator allocator = RCAllocator.init) @trusted {
+        StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
+        toStringPretty(ret);
+        return ret.asReadOnly;
+    }
 
-        ///
-        void toStringPretty(Sink)(scope ref Sink sink) @trusted {
-            sink.formattedWrite("Thread({:p}@{:p}, isAlive={:s})", this.unsafeGetHandle().handle, cast(void*)this.state, this.isRunning);
-        }
+    ///
+    void toStringPretty(Sink)(scope ref Sink sink) @trusted {
+        sink.formattedWrite("Thread({:p}@{:p}, isAlive={:s})", this.unsafeGetHandle().handle, cast(void*)this.state, this.isRunning);
     }
 
 private:
@@ -476,7 +483,6 @@ version (Windows) {
 
             efa = *cast(EFA*)self.state.args;
 
-            mutex.unlock;
             onAttachOfThread;
         });
 
@@ -551,6 +557,8 @@ version (Windows) {
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) nothrow @nogc {
             assert(state_ !is null);
+
+            mutex.lock.assumeOkay;
             pthread_t handle = pthread_self();
 
             Thread.State* state = cast(Thread.State*)state_;
@@ -558,13 +566,11 @@ version (Windows) {
             self.__ctor(self);
 
             efa = *cast(EFA*)state.args;
+            mutex.unlock;
 
-            atomicStore(state.isRunning, true);
-
+            // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
             allThreads[state.handle.handle] = state;
-
-            mutex.unlock;
 
             onAttachOfThread;
         });
