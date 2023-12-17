@@ -171,8 +171,8 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
             if(setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
-                closesocket(socketState.handle);
-                return ErrorResult(UnknownPlatformBehaviorException("Could not set keep alive status to socket"));
+                closesocket(platformListenSocket.handle);
+                return false;
             }
         }
 

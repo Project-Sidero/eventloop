@@ -59,6 +59,7 @@ bool startUpNetworkingMechanism() @trusted {
             addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
 
             logger.notice("Initialized Linux socket rearming succesfully");
+            return true;
         }
     } else version(Posix) {
         {
@@ -79,11 +80,10 @@ bool startUpNetworkingMechanism() @trusted {
             timerThread = Thread.create(&timerThreadProc);
 
             logger.notice("Initialized Posix socket rearming succesfully");
+            return true;
         }
     } else
         assert(0);
-
-    return true;
 }
 
 void shutdownNetworkingMechanism() @trusted {

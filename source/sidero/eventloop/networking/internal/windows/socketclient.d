@@ -51,7 +51,7 @@ struct PlatformSocket {
     }
 }
 
-ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!uint keepAlive) @trusted {
+ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!Duration keepAlive) @trusted {
     version(Windows) {
         SocketState* socketState = socket.state;
 
