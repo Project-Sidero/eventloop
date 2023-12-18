@@ -2,8 +2,8 @@ module sidero.eventloop.internal.windows.bindings;
 
 version(Windows) {
     public import core.sys.windows.windows : SOCKET, WORD, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT, ULONG, LONG, LONGLONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, BOOL,
-        LPCWSTR, ULONG_PTR, PLUID, WSAENOTSOCK, GetLastError, MAKEWORD;
+        WAIT_TIMEOUT, ULONG, LONG, LONGLONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, LPCSTR, LPWSTR, BOOL,
+        LPCWSTR, ULONG_PTR, PLUID, WSAENOTSOCK, GetLastError, MAKEWORD, LPCWSTR, LocalAlloc, LocalFree;
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
@@ -33,6 +33,12 @@ version(Windows) {
         int WSASend(SOCKET, WSABUF*, DWORD, DWORD*, DWORD, OVERLAPPED*, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
         bool CancelIoEx(SOCKET, OVERLAPPED*);
 
+        bool CryptEncodeObjectEx(DWORD, LPCSTR, const(void)*, DWORD, CRYPT_ENCODE_PARAM*, void*, DWORD*);
+        bool CertStrToNameW(DWORD, LPCWSTR, DWORD, void*, ubyte*, DWORD*, LPCWSTR*);
+        PCCERT_CONTEXT CertCreateSelfSignCertificate(HANDLE hCryptProvOrNCryptKey,
+                CERT_NAME_BLOB* pSubjectIssuerBlob, DWORD dwFlags,
+                CRYPT_KEY_PROV_INFO* pKeyProvInfo,
+                CRYPT_ALGORITHM_IDENTIFIER* pSignatureAlgorithm, SYSTEMTIME* pStartTime, SYSTEMTIME* pEndTime, CERT_EXTENSIONS* pExtensions);
         PCCERT_CONTEXT CertDuplicateCertificateContext(PCCERT_CONTEXT);
         PCCERT_CONTEXT CertEnumCertificatesInStore(HCERTSTORE, PCCERT_CONTEXT);
         DWORD CertEnumCertificateContextProperties(PCCERT_CONTEXT, DWORD);
@@ -121,12 +127,16 @@ version(Windows) {
 
         szOID_COMMON_NAME = "2.5.4.3",
         szOID_PKCS_12_FRIENDLY_NAME_ATTR = "1.2.840.113549.1.9.20",
+        szOID_SUBJECT_ALT_NAME = "2.5.29.7",
+        szOID_SUBJECT_ALT_NAME2 = "2.5.29.17",
         CERT_RDN_PRINTABLE_STRING = 4,
         CERT_RDN_UNICODE_STRING = 12,
         CERT_RDN_UTF8_STRING = 13,
         CERT_FRIENDLY_NAME_PROP_ID = 11,
         CERT_NAME_RDN_TYPE = 2,
         CERT_NAME_ISSUER_FLAG = 1,
+        CRYPT_ENCODE_ALLOC_FLAG = 0x8000,
+        CERT_ALT_NAME_DNS_NAME = 3,
 
         SCHANNEL_CRED_VERSION = 4,
         SCH_CREDENTIALS_VERSION = 5,
@@ -197,6 +207,8 @@ version(Windows) {
         INADDR_ANY = 0,
         IN6ADDR_ANY = in6_addr.init,
 
+        CERT_X500_NAME_STR = 3,
+        CERT_NAME_STR_COMMA_FLAG = 0x04000000,
     }
 
     struct OVERLAPPED {
@@ -272,6 +284,44 @@ version(Windows) {
         ubyte* buf;
     }
 
+    struct CERT_OTHER_NAME {
+        LPSTR pszObjId;
+        CRYPT_OBJID_BLOB Value;
+    }
+
+    struct CRYPT_DATA_BLOB {
+        DWORD cbData;
+        ubyte* pbData;
+    }
+
+    struct CERT_ALT_NAME_ENTRY {
+        DWORD dwAltNameChoice;
+
+        union {
+            CERT_OTHER_NAME* pOtherName;
+            LPWSTR pwszRfc822Name;
+            LPWSTR pwszDNSName;
+            CERT_NAME_BLOB DirectoryName;
+            LPWSTR pwszURL;
+            CRYPT_DATA_BLOB IPAddress;
+            LPSTR pszRegisteredID;
+        }
+    }
+
+    struct CERT_ALT_NAME_INFO {
+        DWORD cAltEntry;
+        CERT_ALT_NAME_ENTRY* rgAltEntry;
+    }
+
+    alias PFN_CRYPT_ALLOC = extern(Windows) void* function(size_t);
+    alias PFN_CRYPT_FREE = extern(Windows) void function(void*);
+
+    struct CRYPT_ENCODE_PARAM {
+        DWORD cbSize;
+        PFN_CRYPT_ALLOC pfnAlloc;
+        PFN_CRYPT_FREE pfnFree;
+    }
+
     struct CERT_RDN_ATTR {
         LPSTR pszObjId;
         DWORD dwValueType;
@@ -281,6 +331,43 @@ version(Windows) {
     struct CERT_RDN {
         DWORD cRDNAttr;
         CERT_RDN_ATTR* rgRDNAttr;
+    }
+
+    struct CRYPT_KEY_PROV_PARAM {
+        DWORD dwParam;
+        ubyte* pbData;
+        DWORD cbData;
+        DWORD dwFlags;
+    }
+
+    struct CRYPT_KEY_PROV_INFO {
+        LPWSTR pwszContainerName;
+        LPWSTR pwszProvName;
+        DWORD dwProvType;
+        DWORD cProvParam;
+        CRYPT_KEY_PROV_PARAM* rgProvParam;
+        DWORD dwKeySpec;
+    }
+
+    struct CRYPT_ALGORITHM_IDENTIFIER {
+        LPSTR pszObjId;
+        CRYPT_OBJID_BLOB Parameters;
+    }
+
+    struct CRYPT_OBJID_BLOB {
+        DWORD cbData;
+        ubyte* pbData;
+    }
+
+    struct CERT_EXTENSION {
+        LPSTR pszObjId;
+        bool fCritical;
+        CRYPT_OBJID_BLOB Value;
+    }
+
+    struct CERT_EXTENSIONS {
+        DWORD cExtension;
+        CERT_EXTENSION* rgExtension;
     }
 
     static immutable WinCrypt_Stores_Strings = ["CA"w, "MY"w, "ROOT"w, "SPC"w];

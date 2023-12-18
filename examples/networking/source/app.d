@@ -75,7 +75,7 @@ int main(string[] args) {
         Certificate certificateToUseForServerTLS;
 
         version (UseServerSelfSign) {
-            auto gotCertificate = createSelfSigned(2048, 1.day, Hostname.fromEncoded(String_ASCII("localhost")));
+            auto gotCertificate = createSelfSigned(2048, 1.day, String_UTF8("Self signed localhost certificate"), Hostname.fromEncoded(String_ASCII("localhost")));
             assert(gotCertificate);
             certificateToUseForServerTLS = gotCertificate;
             assert(!certificateToUseForServerTLS.isNull);
