@@ -257,15 +257,29 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
             HashMap!(String_UTF8, String_UTF8) tempEnv;
 
             if(!overrideParentEnvironment) {
-                // TODO: grab parent env
-                // TODO: store environment into it
+                tempEnv = EnvironmentVariables.toHashMap();
+
+                foreach(k, v; environment) {
+                    tempEnv[k] = v;
+                }
             } else {
                 tempEnv = environment;
             }
 
             StringBuilder_UTF16 temp;
-            // don't forget that string builder will remove last \0, so gotta add 2
-            // TODO: compose envString before putting in envString
+
+            foreach(k, v; tempEnv) {
+                assert(k);
+                assert(v);
+
+                temp ~= k;
+                temp ~= "="w;
+                temp ~= v;
+                temp ~= "\0"w;
+            }
+            temp ~= "\0\0"w;
+
+            envString = temp.asReadOnly;
         }
 
         STARTUPINFOW startupInfo;
