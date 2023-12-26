@@ -46,7 +46,10 @@
             ]
         },
         {
-            "name": "unittest"
+            "name": "unittest",
+            "buildOptions": [
+                "betterC"
+            ]
         },
         {
             "name": "executable",

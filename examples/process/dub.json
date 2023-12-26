@@ -1,0 +1,11 @@
+{
+    "name": "example_process",
+    "dependencies": {
+        "sidero_eventloop": {
+            "path": "../.."
+        }
+    },
+    "preBuildCommands": [
+        "$DC torun.d"
+    ]
+}

@@ -2,8 +2,8 @@ module sidero.eventloop.internal.windows.bindings;
 
 version(Windows) {
     public import core.sys.windows.windows : SOCKET, WORD, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT, ULONG, LONG, LONGLONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, LPCSTR, LPWSTR, BOOL,
-        LPCWSTR, ULONG_PTR, PLUID, WSAENOTSOCK, GetLastError, MAKEWORD, LPCWSTR, LocalAlloc, LocalFree;
+        WAIT_TIMEOUT, ULONG, LONG, LONGLONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, LPCSTR,
+        LPWSTR, BOOL, LPCWSTR, ULONG_PTR, PLUID, WSAENOTSOCK, GetLastError, MAKEWORD, LPCWSTR, LocalAlloc, LocalFree;
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
@@ -35,10 +35,10 @@ version(Windows) {
 
         bool CryptEncodeObjectEx(DWORD, LPCSTR, const(void)*, DWORD, CRYPT_ENCODE_PARAM*, void*, DWORD*);
         bool CertStrToNameW(DWORD, LPCWSTR, DWORD, void*, ubyte*, DWORD*, LPCWSTR*);
-        PCCERT_CONTEXT CertCreateSelfSignCertificate(HANDLE hCryptProvOrNCryptKey,
-                CERT_NAME_BLOB* pSubjectIssuerBlob, DWORD dwFlags,
-                CRYPT_KEY_PROV_INFO* pKeyProvInfo,
-                CRYPT_ALGORITHM_IDENTIFIER* pSignatureAlgorithm, SYSTEMTIME* pStartTime, SYSTEMTIME* pEndTime, CERT_EXTENSIONS* pExtensions);
+        PCCERT_CONTEXT CertCreateSelfSignCertificate(HANDLE hCryptProvOrNCryptKey, CERT_NAME_BLOB* pSubjectIssuerBlob,
+                DWORD dwFlags, CRYPT_KEY_PROV_INFO* pKeyProvInfo,
+                CRYPT_ALGORITHM_IDENTIFIER* pSignatureAlgorithm, SYSTEMTIME* pStartTime, SYSTEMTIME* pEndTime,
+                CERT_EXTENSIONS* pExtensions);
         PCCERT_CONTEXT CertDuplicateCertificateContext(PCCERT_CONTEXT);
         PCCERT_CONTEXT CertEnumCertificatesInStore(HCERTSTORE, PCCERT_CONTEXT);
         DWORD CertEnumCertificateContextProperties(PCCERT_CONTEXT, DWORD);
@@ -83,6 +83,9 @@ version(Windows) {
         SOCKET accept(SOCKET s, sockaddr* addr, int* addrlen);
         int listen(SOCKET s, int backlog);
         int getsockname(SOCKET s, sockaddr* name, int* namelen);
+
+        bool GetExitCodeProcess(HANDLE, DWORD*);
+        bool CreateProcessW(wchar*, wchar*, SECURITY_ATTRIBUTES*, SECURITY_ATTRIBUTES*, bool, DWORD, void*, wchar*, STARTUPINFOW*, PROCESS_INFORMATION*);
     }
 
     enum {
@@ -209,6 +212,10 @@ version(Windows) {
 
         CERT_X500_NAME_STR = 3,
         CERT_NAME_STR_COMMA_FLAG = 0x04000000,
+
+        NORMAL_PRIORITY_CLASS = 0x00000020,
+        CREATE_UNICODE_ENVIRONMENT = 0x00000400,
+
     }
 
     struct OVERLAPPED {
@@ -313,8 +320,8 @@ version(Windows) {
         CERT_ALT_NAME_ENTRY* rgAltEntry;
     }
 
-    alias PFN_CRYPT_ALLOC = extern(Windows) void* function(size_t);
-    alias PFN_CRYPT_FREE = extern(Windows) void function(void*);
+    alias PFN_CRYPT_ALLOC = extern (Windows) void* function(size_t);
+    alias PFN_CRYPT_FREE = extern (Windows) void function(void*);
 
     struct CRYPT_ENCODE_PARAM {
         DWORD cbSize;
@@ -507,5 +514,33 @@ version(Windows) {
         uint sin6_flowinfo;
         in6_addr sin6_addr;
         uint sin6_scope_id;
+    }
+
+    struct STARTUPINFOW {
+        DWORD cb;
+        LPWSTR lpReserved;
+        LPWSTR lpDesktop;
+        LPWSTR lpTitle;
+        DWORD dwX;
+        DWORD dwY;
+        DWORD dwXSize;
+        DWORD dwYSize;
+        DWORD dwXCountChars;
+        DWORD dwYCountChars;
+        DWORD dwFillAttribute;
+        DWORD dwFlags;
+        WORD wShowWindow;
+        WORD cbReserved2;
+        ubyte* lpReserved2;
+        HANDLE hStdInput;
+        HANDLE hStdOutput;
+        HANDLE hStdError;
+    }
+
+    struct PROCESS_INFORMATION {
+        HANDLE hProcess;
+        HANDLE hThread;
+        DWORD dwProcessId;
+        DWORD dwThreadId;
     }
 }
