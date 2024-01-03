@@ -334,7 +334,7 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
     ret.state = allocator.make!State(1, allocator);
 
     version (Posix) {
-        import core.sys.posix.unistd : fork, chdir, pipe, _exit, execvp, close, read, write;
+        import core.sys.posix.unistd : fork, chdir, pipe, _exit, execv, execvp, close, read, write;
         import core.stdc.errno : errno, ECONNRESET, ENOTCONN;
         import core.sys.posix.fcntl;
 
@@ -498,8 +498,11 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                 // TODO: setup pipes
             }
 
-            if (execvp(application.ptr, argStringPtrs.ptr) != 0) {
-                writeError(9);
+            // we use two different variants that differ based upon their lookup rules
+            if (execv(application.ptr, argStringPtrs.ptr) != 0) {
+                if (execvp(application.ptr, argStringPtrs.ptr) != 0) {
+                    writeError(9);
+                }
             }
         } else if (pid > 0) {
             // parent
