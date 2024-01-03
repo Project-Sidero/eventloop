@@ -65,6 +65,7 @@ void removeProcessFromList(Process process) @trusted {
 
 void requireCleanupTimer() @trusted {
     version (Posix) {
+        import core.stdc.errno;
         mutex.lock;
 
         scope (exit)
@@ -75,21 +76,25 @@ void requireCleanupTimer() @trusted {
             if (!logger)
                 return;
 
-            version (none) {
+            version (linux) {
                 {
                     import sidero.eventloop.internal.event_waiting;
 
-                    timerHandle = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+                    timerHandle = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
+                    if (timerHandle < 0) {
+                        logger.error("Could not create Linux cleanup timer ", errno);
+                        return;
+                    }
 
                     // reactivate every 5 seconds
                     itimerspec spec;
-                    spec.it_value.tv_sec = time_t.max;
+                    spec.it_value.tv_sec = 5;
                     spec.it_interval.tv_sec = 5;
 
-                    timerfd_settime(timerHandle, TFD_NONBLOCK | TFD_CLOEXEC, &spec, null);
+                    timerfd_settime(timerHandle, 0, &spec, null);
                     addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
 
-                    logger.notice("Initialized Linux socket rearming succesfully");
+                    logger.notice("Initialized Linux cleanup timer rearming succesfully");
                 }
             } else {
                 {
@@ -97,13 +102,13 @@ void requireCleanupTimer() @trusted {
 
                     int err = pthread_cond_init(&timerCondition, null);
                     if (err != 0) {
-                        logger.error("Failed to initialize Posix socket rearming condition ", err);
+                        logger.error("Failed to initialize Posix cleanup timer rearming condition ", err);
                         return;
                     }
 
                     err = pthread_mutex_init(&timerMutex, null);
                     if (err != 0) {
-                        logger.error("Failed to initialize Posix socket rearming mutex ", err);
+                        logger.error("Failed to initialize Posix cleanup timer rearming mutex ", err);
                         return;
                     }
 
@@ -114,7 +119,7 @@ void requireCleanupTimer() @trusted {
                     }
                     timerThread = gotThread;
 
-                    logger.notice("Initialized Posix socket rearming succesfully");
+                    logger.notice("Initialized Posix cleanup timer rearming succesfully");
                     return;
                 }
             }
@@ -126,7 +131,7 @@ pragma(crt_destructor) extern (C) void deinitializeCleanupTimer() @trusted {
     if (!logger || !logger.isNull) {
         socketRetryQueue = typeof(socketRetryQueue).init;
 
-        version (none) {
+        version (linux) {
             import sidero.eventloop.internal.event_waiting;
 
             removeEventWaiterHandle(cast(void*)timerHandle);
