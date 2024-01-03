@@ -65,6 +65,7 @@ struct EventWaiterThread {
                 if (err != 0)
                     return;
                 fcntl(candcPipes[0], F_SETFL, O_NONBLOCK | FD_CLOEXEC);
+                fcntl(candcPipes[1], F_SETFL, O_NONBLOCK | FD_CLOEXEC);
 
                 pollfds[0].fd = candcPipes[0];
                 pollfds[0].events = short.max;

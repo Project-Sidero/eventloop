@@ -33,6 +33,8 @@ struct PlatformSocket {
 
     // NOTE: needs to be guarded
     private bool needToBeRetriggered(scope SocketState* socketState) scope @trusted {
+        import sidero.eventloop.internal.posix.cleanup_timer;
+
         if (isWaitingForRetrigger)
             return false;
 
@@ -46,7 +48,7 @@ struct PlatformSocket {
     }
 
     // NOTE: must not be guarded
-    package(sidero.eventloop.networking.internal.posix) {
+    package(sidero.eventloop) {
         void haveBeenRetriggered(scope SocketState* socketState) scope {
             isWaitingForRetrigger = false;
 

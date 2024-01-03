@@ -186,7 +186,7 @@ export @safe nothrow @nogc:
 
                 // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
                 state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-                state.lookupHandle = state.handle;
+                state.lookupHandle = cast(void*)handle;
                 allThreads[state.lookupHandle] = state;
             }
 
@@ -216,18 +216,12 @@ export @safe nothrow @nogc:
             if(result == WAIT_IO_COMPLETION)
                 return ErrorResult(EarlyThreadReturnException("Thread sleep completed early due APC IO execution"));
         } else version(Posix) {
-            import core.sys.posix.time : timespec, clock_gettime, CLOCK_REALTIME, nanosleep;
+            import core.sys.posix.time : timespec, nanosleep;
             import core.stdc.errno : EINTR, errno;
 
-            long secs = timeout.totalSeconds();
-            long nsecs = (timeout - secs.seconds()).totalNanoSeconds();
-
             timespec ts;
-            if(clock_gettime(CLOCK_REALTIME, &ts) != 0)
-                return ErrorResult(UnknownPlatformBehaviorException("Could not get time to compute timeout for thread join"));
-
-            ts.tv_sec += secs;
-            ts.tv_nsec += nsecs;
+            ts.tv_sec = timeout.totalSeconds();
+            ts.tv_nsec = (timeout - ts.tv_sec.seconds()).totalNanoSeconds();
 
             errno = 0;
             auto result = nanosleep(&ts, null);
@@ -577,7 +571,7 @@ version(Windows) {
 
             // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
-            state.lookupHandle = handle;
+            state.lookupHandle = cast(void*)handle;
             allThreads[state.lookupHandle] = state;
 
             onAttachOfThread(self);
