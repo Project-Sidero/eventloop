@@ -63,7 +63,7 @@ struct EncryptionState {
 
 @safe nothrow @nogc:
 
-    size_t amountOfBytesToRead() {
+    size_t amountOfBytesToRead() scope {
         // openssl uses 16kb for TLS packet size, so we'll use that here
         return bufferSize > 0 ? bufferSize : (16 * 1024);
     }
@@ -229,7 +229,7 @@ struct EncryptionState {
                     if (encrypted.length > 0) {
                         logger.debug_("Encrypted data for socket ", socketState.handle, " as ", encrypted.length,
                                 " from ", got.length, " and consumed ", consumed, " on ", Thread.self);
-                        socketState.rawWriting.queue.push(encrypted);
+                        socketState.rawWriting.push(encrypted);
                         didSomething = true;
                     } else if (encrypted.length > 0) {
                         logger.debug_("Failed to encrypt data for socket ", socketState.handle, " with ",

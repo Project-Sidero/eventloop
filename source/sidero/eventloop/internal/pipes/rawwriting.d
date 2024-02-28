@@ -1,13 +1,17 @@
-module sidero.eventloop.networking.internal.state.rawwriting;
+module sidero.eventloop.internal.pipes.rawwriting;
 import sidero.eventloop.networking.internal.state.defs;
 import sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.threads.osthread;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.readonlyslice;
+import sidero.base.logger;
+import sidero.base.errors;
 
-struct RawWritingState {
-    package(sidero.eventloop.networking.internal) {
+struct RawWritingState(StateObject, string TitleOfPipe) {
+    private {
         FiFoConcurrentQueue!(Slice!ubyte) queue;
+
+        LoggerReference logger;
     }
 
     private {
@@ -17,12 +21,31 @@ struct RawWritingState {
 
 @safe nothrow @nogc:
 
+    bool initialize() {
+        import sidero.base.text;
+
+        logger = Logger.forName(String_UTF8(__MODULE__ ~ "$" ~ TitleOfPipe));
+        if(!logger)
+            return false;
+        return true;
+    }
+
+    // NOTE: this needs guarding
+    void push(Slice!ubyte data) scope {
+        queue.push(data);
+    }
+
+    // NOTE: this needs guarding
+    Result!(Slice!ubyte) pop() scope {
+        return queue.pop;
+    }
+
     // NOTE: this needs guarding
     bool inProgress() scope {
         return triggered || !queue.empty;
     }
 
-    package(sidero.eventloop.networking.internal.state) bool tryWrite(scope SocketState* socketState) scope @trusted {
+    bool tryWrite(scope StateObject* stateObject) scope @trusted {
         if(triggered) {
             logger.debug_("Write is currently triggered");
             return false;
@@ -42,17 +65,17 @@ struct RawWritingState {
                         continue;
                     } else {
                         logger.debug_("Attempting to write ", firstItem.length, " with offset ", amountFromFirst,
-                                " items to socket ", socketState.handle, " on thread ", Thread.self);
+                                " items to " ~ TitleOfPipe ~ " ", stateObject.writeHandle, " on thread ", Thread.self);
                         triggered = true;
-                        bool result = socketState.tryWrite(cast(ubyte[])firstItem.unsafeGetLiteral);
+                        bool result = stateObject.tryWrite(cast(ubyte[])firstItem.unsafeGetLiteral);
 
                         if(result) {
-                            logger.debug_("Have triggered ", firstItem.length, " items to socket ", socketState.handle,
-                                    " on thread ", Thread.self);
+                            logger.debug_("Have triggered ", firstItem.length, " items to " ~ TitleOfPipe ~ " ",
+                                    stateObject.writeHandle, " on thread ", Thread.self);
                             return true;
                         } else {
-                            logger.info("Have failed to trigger ", firstItem.length, " items to socket ",
-                                    socketState.handle, " on thread ", Thread.self);
+                            logger.info("Have failed to trigger ", firstItem.length, " items to " ~ TitleOfPipe ~ " ",
+                                    stateObject.writeHandle, " on thread ", Thread.self);
                             triggered = false;
                             return false;
                         }
@@ -70,19 +93,19 @@ struct RawWritingState {
     }
 
     // NOTE: this needs guarding
-    void complete(scope SocketState* socketState, size_t completedAmount) scope @trusted {
+    void complete(scope StateObject* stateObject, size_t completedAmount) scope @trusted {
         auto firstItem = queue.peek;
         triggered = false;
 
         if(!firstItem) {
             logger.info("Received notification of written data but no data was waiting for write ", completedAmount,
-                    " on socket ", socketState.handle, " on thread ", Thread.self);
+                    " on " ~ TitleOfPipe ~ " ", stateObject.writeHandle, " on thread ", Thread.self);
             amountFromFirst = 0;
             return;
         }
 
-        logger.debug_("Received notification of written data for amount ", completedAmount, " on socket ",
-                socketState.handle, " on thread ", Thread.self);
+        logger.debug_("Received notification of written data for amount ", completedAmount, " on " ~ TitleOfPipe ~ " ",
+                stateObject.writeHandle, " on thread ", Thread.self);
 
         const proposedAmount = amountFromFirst + completedAmount;
 

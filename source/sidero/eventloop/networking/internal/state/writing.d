@@ -13,7 +13,7 @@ struct WritingState {
         if (socketState.encryption.enabled) {
             queue.push(slice);
         } else {
-            socketState.rawWriting.queue.push(slice);
+            socketState.rawWriting.push(slice);
         }
     }
 
@@ -22,7 +22,7 @@ struct WritingState {
         if (socketState.encryption.enabled) {
             queue.push(slice, false);
         } else {
-            socketState.rawWriting.queue.push(slice);
+            socketState.rawWriting.push(slice);
         }
     }
 }

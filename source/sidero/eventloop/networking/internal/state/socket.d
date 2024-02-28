@@ -3,8 +3,8 @@ import sidero.eventloop.networking.internal.state.defs;
 import sidero.eventloop.networking.internal.state.reading;
 import sidero.eventloop.networking.internal.state.writing;
 import sidero.eventloop.networking.internal.state.encryption;
-import sidero.eventloop.networking.internal.state.rawreading;
-import sidero.eventloop.networking.internal.state.rawwriting;
+import sidero.eventloop.internal.pipes.rawreading;
+import sidero.eventloop.internal.pipes.rawwriting;
 import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.threads.osthread;
@@ -34,8 +34,8 @@ struct SocketState {
     ReadingState reading;
     WritingState writing;
     EncryptionState encryption;
-    RawReadingState rawReading;
-    RawWritingState rawWriting;
+    RawReadingState!(SocketState, "socket") rawReading;
+    RawWritingState!(SocketState, "socket") rawWriting;
 
     PlatformSocket platform;
     alias platform this;
@@ -43,11 +43,16 @@ struct SocketState {
 @safe nothrow @nogc:
 
     this(return scope RCAllocator allocator, Socket.Protocol protocol, bool cameFromServer) scope {
+        import sidero.base.internal.logassert;
+
         checkInit;
         this.allocator = allocator;
         this.refCount = 1;
         this.protocol = protocol;
         this.cameFromServer = cameFromServer;
+
+        logAssert(!rawReading.initialize, "Could not initialize raw reading for socket");
+        logAssert(!rawWriting.initialize, "Could not initialize raw writing for socket");
     }
 
     void rc(bool addRef) scope @trusted {
@@ -158,7 +163,7 @@ struct SocketState {
                 while(!writing.queue.empty) {
                     auto got = writing.queue.pop;
                     if(got)
-                        rawWriting.queue.push(got);
+                        rawWriting.push(got);
                 }
             } else if(this.encryption.enabled && !this.encryption.negotiating) {
                 didSomeWork = this.encryption.encryptDecrypt(&this) || didSomeWork;
@@ -180,7 +185,18 @@ struct SocketState {
         return connectToSpecificAddress(socket, address, keepAlive);
     }
 
-    package(sidero.eventloop.networking.internal) {
+    package(sidero.eventloop) {
+        size_t amountToRead() scope {
+            import std.algorithm : max;
+            return max(this.encryption.amountOfBytesToRead(), 4096);
+        }
+
+        alias readHandle = getHandle;
+        alias writeHandle = getHandle;
+        void* getHandle() scope @trusted {
+            return cast(void*)this.handle;
+        }
+
         // NOTE: this needs guarding
         bool tryWrite(ubyte[] buffer) scope @trusted {
             return tryWriteMechanism(&this, buffer);

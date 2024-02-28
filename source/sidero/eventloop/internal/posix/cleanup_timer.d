@@ -1,7 +1,7 @@
 module sidero.eventloop.internal.posix.cleanup_timer;
 import sidero.eventloop.networking.sockets;
 import sidero.eventloop.threads;
-import sidero.eventloop.processes.defs;
+import sidero.eventloop.processes;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.containers.queue.concurrentqueue;

@@ -374,7 +374,7 @@ private:
         size_t readBytes;
         BIO_read_ex(rawWriteBIO, rawByteBuffer.ptr, rawByteBuffer.length, &readBytes);
 
-        socketState.rawWriting.queue.push(Slice!ubyte(rawByteBuffer[0 .. readBytes]).dup);
+        socketState.rawWriting.push(Slice!ubyte(rawByteBuffer[0 .. readBytes]).dup);
         bufRawWrite.length = 0;
     }
 }

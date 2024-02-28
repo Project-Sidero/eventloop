@@ -1,4 +1,5 @@
-module sidero.eventloop.processes.defs;
+module sidero.eventloop.processes.process;
+import sidero.eventloop.processes.pipe;
 import sidero.eventloop.coroutine.future;
 import sidero.eventloop.tasks.future_completion;
 import sidero.base.text;
@@ -11,16 +12,17 @@ import sidero.base.attributes;
 
 export @safe nothrow @nogc:
 
-version (Windows) {
+version(Windows) {
     import sidero.eventloop.internal.windows.bindings : HANDLE;
 
     alias ProcessID = HANDLE;
-} else version (Posix) {
+} else version(Posix) {
     import core.sys.posix.sys.types : pid_t;
 
     alias ProcessID = pid_t;
 }
 
+///
 struct Process {
     package(sidero.eventloop) @PrettyPrintIgnore {
         State* state;
@@ -34,7 +36,7 @@ export @safe nothrow @nogc:
 
         this.state = other.state;
 
-        if (this.state !is null) {
+        if(this.state !is null) {
             atomicIncrementAndLoad(this.state.refCount, 1);
         }
     }
@@ -45,11 +47,11 @@ export @safe nothrow @nogc:
         import sidero.eventloop.internal.posix.cleanup_timer;
         import sidero.base.internal.atomic;
 
-        if (this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
-            if (atomicLoad(state.isAlive))
+        if(this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
+            if(atomicLoad(state.isAlive))
                 removeEventWaiterHandle(cast(void*)state.id);
 
-            version (Windows) {
+            version(Windows) {
                 import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
                 CloseHandle(state.id);
@@ -67,17 +69,41 @@ export @safe nothrow @nogc:
 
     ///
     ProcessID id() scope return const @trusted {
-        if (isNull)
+        if(isNull)
             return ProcessID.init;
         return cast(ProcessID)state.id;
     }
 
     ///
     Future!int result() scope const @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
         else
             return (cast(State*)state).result;
+    }
+
+    ///
+    WritePipe inputPipe() scope const @trusted {
+        if(isNull)
+            return WritePipe.init;
+        else
+            return (cast(State*)state).inputPipe;
+    }
+
+    ///
+    ReadPipe outputPipe() scope const @trusted {
+        if(isNull)
+            return ReadPipe.init;
+        else
+            return (cast(State*)state).outputPipe;
+    }
+
+    ///
+    ReadPipe errorPipe() scope const @trusted {
+        if(isNull)
+            return ReadPipe.init;
+        else
+            return (cast(State*)state).errorPipe;
     }
 
     ///
@@ -106,7 +132,7 @@ export @safe nothrow @nogc:
 
     ///
     void toString(Sink)(scope ref Sink sink) @trusted {
-        if (isNull)
+        if(isNull)
             sink.formattedWrite("Process(null)");
         else
             sink.formattedWrite("Process({:p})", this.id);
@@ -121,9 +147,9 @@ export @safe nothrow @nogc:
 
     ///
     void toStringPretty(Sink)(scope ref Sink sink) @trusted {
-        if (isNull)
+        if(isNull)
             sink.formattedWrite("Process(null)");
-        else if (!this.state.result.isComplete())
+        else if(!this.state.result.isComplete())
             sink.formattedWrite("Process({:p})", this.id);
         else
             sink.formattedWrite("Process({:p}, exitCode={:s})", this.id, this.state.result.result().assumeOkay);
@@ -134,10 +160,10 @@ export @safe nothrow @nogc:
             scope String_UTF8 currentWorkingDirectory = String_UTF8.init, scope HashMap!(String_UTF8,
                 String_UTF8) environment = HashMap!(String_UTF8,
                 String_UTF8).init, bool inheritStandardIO = true, bool overrideParentEnvironment = false) {
-        version (Windows) {
+        version(Windows) {
             return executeWindows(executable, currentWorkingDirectory, environment, arguments, false,
                     inheritStandardIO, overrideParentEnvironment);
-        } else version (Posix) {
+        } else version(Posix) {
             return executePosix(executable, currentWorkingDirectory, environment, arguments, false, inheritStandardIO,
                     overrideParentEnvironment);
         } else
@@ -149,10 +175,10 @@ export @safe nothrow @nogc:
             scope String_UTF8 currentWorkingDirectory = String_UTF8.init, scope HashMap!(String_UTF8,
                 String_UTF8) environment = HashMap!(String_UTF8,
                 String_UTF8).init, bool inheritStandardIO = true, bool overrideParentEnvironment = false) {
-        version (Windows) {
+        version(Windows) {
             return executeWindows(executable, currentWorkingDirectory, environment, arguments, true, inheritStandardIO,
                     overrideParentEnvironment);
-        } else version (Posix) {
+        } else version(Posix) {
             return executePosix(executable, currentWorkingDirectory, environment, arguments, true, inheritStandardIO,
                     overrideParentEnvironment);
         } else
@@ -170,6 +196,9 @@ struct State {
     shared(bool) isAlive;
     Future!int result;
     FutureTriggerStorage!int* resultStorage;
+
+    WritePipe inputPipe;
+    ReadPipe outputPipe, errorPipe;
 }
 
 Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8 currentWorkingDirectory, scope HashMap!(String_UTF8,
@@ -186,8 +215,8 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
         Process process;
         process.state = cast(State*)user;
 
-        if (cas(process.state.isAlive, true, false)) {
-            version (Windows) {
+        if(cas(process.state.isAlive, true, false)) {
+            version(Windows) {
                 import sidero.eventloop.internal.windows.bindings : DWORD, GetExitCodeProcess;
 
                 DWORD exitCode;
@@ -203,9 +232,9 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
             process.state = null;
     }
 
-    version (Windows) {
+    version(Windows) {
         import sidero.eventloop.internal.windows.bindings : STARTUPINFOW, PROCESS_INFORMATION, CreateProcessW,
-            NORMAL_PRIORITY_CLASS, CREATE_UNICODE_ENVIRONMENT, CloseHandle;
+            NORMAL_PRIORITY_CLASS, CREATE_UNICODE_ENVIRONMENT, CloseHandle, CreatePipe, STARTF_USESTDHANDLES, SECURITY_ATTRIBUTES;
 
         static immutable UserShellVar = "COMSPEC\0"w;
         static immutable SystemShell = "cmd.exe"w;
@@ -228,9 +257,9 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
                 slice.append(`" `w);
             }
 
-            if (withShell) {
+            if(withShell) {
                 String_UTF16 shell = EnvironmentVariables[String_UTF16(UserShellVar)];
-                if (shell.isNull)
+                if(shell.isNull)
                     shell = String_UTF16(SystemShell);
 
                 escapeAdd(shell);
@@ -239,7 +268,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
 
             escapeAdd(executable);
 
-            foreach (arg; arguments) {
+            foreach(arg; arguments) {
                 assert(arg);
                 escapeAdd(arg);
             }
@@ -247,15 +276,15 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
             cmd = builder.asReadOnly;
         }
 
-        if (overrideParentEnvironment || environment.length == 0) {
+        if(overrideParentEnvironment || environment.length == 0) {
             // only set envString if we are not inheriting from parent
 
             HashMap!(String_UTF8, String_UTF8) tempEnv;
 
-            if (!overrideParentEnvironment) {
+            if(!overrideParentEnvironment) {
                 tempEnv = EnvironmentVariables.toHashMap();
 
-                foreach (k, v; environment) {
+                foreach(k, v; environment) {
                     tempEnv[k] = v;
                 }
             } else {
@@ -264,7 +293,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
 
             StringBuilder_UTF16 temp;
 
-            foreach (k, v; tempEnv) {
+            foreach(k, v; tempEnv) {
                 assert(k);
                 assert(v);
 
@@ -281,15 +310,37 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
         STARTUPINFOW startupInfo;
         startupInfo.cb = STARTUPINFOW.sizeof;
 
-        if (inheritStandardIO) {
+        if(inheritStandardIO) {
             // standard IO handles by default will be setup to inherit by sidero.base.console
             // we need to do nothing here (crt_constructor).
         } else {
-            // TODO: set up pipes
-            //startupInfo.dwFlags = STARTF_USESTDHANDLES;
-            // startupInfo.hStdInput =
-            // startupInfo.hStdOutput =
-            // startupInfo.hStdError =
+            startupInfo.dwFlags = STARTF_USESTDHANDLES;
+            HANDLE writeInputH, readOutputH, readErrorH;
+
+            SECURITY_ATTRIBUTES secAttrib;
+            secAttrib.nLength = SECURITY_ATTRIBUTES.sizeof;
+            secAttrib.bInheritHandle = true;
+
+            if(!CreatePipe(&startupInfo.hStdInput, &writeInputH, &secAttrib, 0))
+                return typeof(return)(UnknownPlatformBehaviorException("Could not create input pipes"));
+
+            if(!CreatePipe(&readOutputH, &startupInfo.hStdOutput, &secAttrib, 0)) {
+                CloseHandle(writeInputH);
+                CloseHandle(startupInfo.hStdInput);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not create output pipes"));
+            }
+
+            if(!CreatePipe(&readErrorH, &startupInfo.hStdError, &secAttrib, 0)) {
+                CloseHandle(writeInputH);
+                CloseHandle(readOutputH);
+                CloseHandle(startupInfo.hStdInput);
+                CloseHandle(startupInfo.hStdOutput);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not create error pipes"));
+            }
+
+            ret.state.inputPipe = WritePipe.fromSystemHandle(writeInputH);
+            ret.state.outputPipe = ReadPipe.fromSystemHandle(readOutputH);
+            ret.state.errorPipe = ReadPipe.fromSystemHandle(readErrorH);
         }
 
         PROCESS_INFORMATION processInformation;
@@ -297,7 +348,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
         // do not use application name
         // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-process_information
         // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
-        if (CreateProcessW(null, cast(wchar*)cmd.ptr, null, null, false,
+        if(CreateProcessW(null, cast(wchar*)cmd.ptr, null, null, false,
                 NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT, cast(wchar*)envString.ptr, cast(wchar*)cwd.ptr,
                 &startupInfo, &processInformation) != 0) {
             atomicStore(ret.state.refCount, 2); // pin
@@ -333,34 +384,83 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
     Process ret;
     ret.state = allocator.make!State(1, allocator);
 
-    version (Posix) {
-        import core.sys.posix.unistd : fork, chdir, pipe, _exit, execv, execvp, close, read, write;
+    version(Posix) {
+        import core.sys.posix.unistd : fork, chdir, pipe, _exit, execv, execvp, close, read, write, dup2, STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO;
         import core.stdc.errno : errno, ECONNRESET, ENOTCONN;
         import core.sys.posix.fcntl;
 
         enum UserShellVar = "SHELL";
         enum ShellInvokeSwitch = "-c ";
-        version (Android) {
+        version(Android) {
             enum SystemShell = "/system/bin/sh";
         } else {
             enum SystemShell = "/bin/sh";
         }
 
         int[2] childCommunicationPipes;
-        if (pipe(childCommunicationPipes) != 0)
-            return typeof(return)(UnknownPlatformBehaviorException("Could not create error pipes"));
+        if(pipe(childCommunicationPipes) != 0)
+            return typeof(return)(UnknownPlatformBehaviorException("Could not create error message pipes"));
 
-        if (inheritStandardIO) {
+        int[2] inputPipes, outputPipes, errorPipes;
+
+        if(inheritStandardIO) {
             // standard IO handles by default will be setup to inherit by sidero.base.console
             // we need to do nothing here (crt_constructor).
         } else {
-            // TODO: set up pipes
+            if(pipe(inputPipes) != 0) {
+                close(childCommunicationPipes[0]);
+                close(childCommunicationPipes[1]);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not create process input pipes"));
+            }
+
+            if(pipe(outputPipes) != 0) {
+                close(childCommunicationPipes[0]);
+                close(childCommunicationPipes[1]);
+                close(inputPipes[0]);
+                close(inputPipes[1]);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not create process output pipes"));
+            }
+
+            if(pipe(errorPipes) != 0) {
+                close(childCommunicationPipes[0]);
+                close(childCommunicationPipes[1]);
+                close(inputPipes[0]);
+                close(inputPipes[1]);
+                close(outputPipes[0]);
+                close(outputPipes[1]);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not create process error pipes"));
+            }
+
+            ret.state.inputPipe = WritePipe.fromSystemHandle(inputPipes[1]);
+            ret.state.outputPipe = ReadPipe.fromSystemHandle(outputPipes[0]);
+            ret.state.errorPipe = ReadPipe.fromSystemHandle(errorPipes[0]);
         }
 
         ProcessID pid = fork();
 
-        if (pid == 0) {
+        if(pid == 0) {
             // child
+
+            void writeError(int message) {
+                write(childCommunicationPipes[1], &message, 4);
+                close(childCommunicationPipes[1]);
+                _exit(-1);
+            }
+
+            if(!inheritStandardIO) {
+                if (dup2(STDIN_FILENO, inputPipes[0]) < 0)
+                    writeError(10);
+
+                if (dup2(STDOUT_FILENO, outputPipes[1]) < 0)
+                    writeError(11);
+
+                if (dup2(STDERR_FILENO, errorPipes[1]) < 0)
+                    writeError(12);
+
+                close(inputPipes[1]);
+                close(outputPipes[0]);
+                close(errorPipes[0]);
+            }
 
             close(childCommunicationPipes[0]);
             fcntl(childCommunicationPipes[1], F_SETFD, FD_CLOEXEC);
@@ -372,28 +472,22 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             DynamicArray!String_UTF8 envStrings;
             DynamicArray!(char*) envStringPtrs;
 
-            if (!cwd.isPtrNullTerminated())
+            if(!cwd.isPtrNullTerminated())
                 cwd = cwd.dup;
 
-            void writeError(int message) {
-                write(childCommunicationPipes[1], &message, 4);
-                close(childCommunicationPipes[1]);
-                _exit(-1);
-            }
-
-            if (currentWorkingDirectory.length > 0) {
+            if(currentWorkingDirectory.length > 0) {
                 // https://man7.org/linux/man-pages/man2/chdir.2.html
-                if (!currentWorkingDirectory.isPtrNullTerminated)
+                if(!currentWorkingDirectory.isPtrNullTerminated)
                     currentWorkingDirectory = currentWorkingDirectory.dup;
 
-                if (chdir(currentWorkingDirectory.ptr) != 0)
+                if(chdir(currentWorkingDirectory.ptr) != 0)
                     writeError(1);
             }
 
             {
-                if (withShell) {
+                if(withShell) {
                     String_UTF8 shell = EnvironmentVariables[String_UTF8(UserShellVar)];
-                    if (shell.isNull)
+                    if(shell.isNull)
                         shell = String_UTF8(SystemShell);
 
                     application = shell;
@@ -405,41 +499,41 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                     argStringPtrs.length = 2 + arguments.length;
                 }
 
-                if (application.isPtrNullTerminated())
+                if(application.isPtrNullTerminated())
                     application = application.dup;
 
-                if (!(argStrings[0] = application))
+                if(!(argStrings[0] = application))
                     writeError(2);
-                if (!(argStringPtrs[0] = cast(char*)application.ptr))
+                if(!(argStringPtrs[0] = cast(char*)application.ptr))
                     writeError(3);
 
-                if (withShell) {
-                    if (!(argStringPtrs[1] = cast(char*)ShellInvokeSwitch.ptr))
+                if(withShell) {
+                    if(!(argStringPtrs[1] = cast(char*)ShellInvokeSwitch.ptr))
                         writeError(4);
 
-                    foreach (i, arg; arguments) {
+                    foreach(i, arg; arguments) {
                         assert(arg);
 
                         String_UTF8 val = arg;
-                        if (!val.isPtrNullTerminated())
+                        if(!val.isPtrNullTerminated())
                             val = val.dup;
 
-                        if (!(argStrings[2 + i] = val))
+                        if(!(argStrings[2 + i] = val))
                             writeError(5);
-                        if (!(argStringPtrs[2 + i] = cast(char*)val.ptr))
+                        if(!(argStringPtrs[2 + i] = cast(char*)val.ptr))
                             writeError(6);
                     }
                 } else {
-                    foreach (i, arg; arguments) {
+                    foreach(i, arg; arguments) {
                         assert(arg);
 
                         String_UTF8 val = arg;
-                        if (!val.isPtrNullTerminated())
+                        if(!val.isPtrNullTerminated())
                             val = val.dup;
 
-                        if (!(argStrings[1 + i] = val))
+                        if(!(argStrings[1 + i] = val))
                             writeError(7);
-                        if (!(argStringPtrs[1 + i] = cast(char*)val.ptr))
+                        if(!(argStringPtrs[1 + i] = cast(char*)val.ptr))
                             writeError(8);
                     }
                 }
@@ -451,10 +545,10 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
 
                 HashMap!(String_UTF8, String_UTF8) tempEnv;
 
-                if (!overrideParentEnvironment) {
+                if(!overrideParentEnvironment) {
                     tempEnv = EnvironmentVariables.toHashMap();
 
-                    foreach (k, v; environment) {
+                    foreach(k, v; environment) {
                         tempEnv[k] = v;
                     }
                 } else {
@@ -465,7 +559,7 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                 envStringPtrs.length = tempEnv.length + 1; // null terminator string
                 size_t offset;
 
-                foreach (k, v; tempEnv) {
+                foreach(k, v; tempEnv) {
                     assert(k);
                     assert(v);
 
@@ -485,7 +579,7 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             //  and set the environment variable in a single function,
             // Thanks POSIX!!!
             // The new process will inherit from it being set
-            version (Drawin) {
+            version(Drawin) {
                 import core.sys.darwin.crt_externs : _NSGetEnviron;
 
                 *_NSGetEnviron() = envStringPtrs.ptr;
@@ -494,17 +588,13 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                 environ = envStringPtrs.ptr;
             }
 
-            if (!inheritStandardIO) {
-                // TODO: setup pipes
-            }
-
             // we use two different variants that differ based upon their lookup rules
-            if (execv(application.ptr, argStringPtrs.ptr) != 0) {
-                if (execvp(application.ptr, argStringPtrs.ptr) != 0) {
+            if(execv(application.ptr, argStringPtrs.ptr) != 0) {
+                if(execvp(application.ptr, argStringPtrs.ptr) != 0) {
                     writeError(9);
                 }
             }
-        } else if (pid > 0) {
+        } else if(pid > 0) {
             // parent
             ret.state.id = pid;
 
@@ -515,11 +605,11 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                 auto error = read(childCommunicationPipes[0], &toRead, 4);
                 close(childCommunicationPipes[0]);
 
-                if (error < 0 && (errno != ECONNRESET && errno != ENOTCONN))
+                if(error < 0 && (errno != ECONNRESET && errno != ENOTCONN))
                     return typeof(return)(UnknownPlatformBehaviorException("Could not read child process error pipe"));
             }
 
-            switch (toRead) {
+            switch(toRead) {
             case 1:
                 return typeof(return)(UnknownPlatformBehaviorException("Could not set current working directory of child process"));
             case 2:
@@ -538,6 +628,12 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                 return typeof(return)(UnknownPlatformBehaviorException("Could not set argument pointer"));
             case 9:
                 return typeof(return)(UnknownPlatformBehaviorException("Could not set execute"));
+            case 10:
+                return typeof(return)(UnknownPlatformBehaviorException("Could not configure input pipe for process"));
+            case 11:
+                return typeof(return)(UnknownPlatformBehaviorException("Could not configure output pipe for process"));
+            case 12:
+                return typeof(return)(UnknownPlatformBehaviorException("Could not configure error pipe for process"));
 
             case 0:
             default:
@@ -555,7 +651,7 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
 
             requireCleanupTimer;
             addProcessToList(ret);
-        } else if (pid < 0) {
+        } else if(pid < 0) {
             // parent, has error
 
             close(childCommunicationPipes[0]);
@@ -569,9 +665,9 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
 }
 
 // we have to define our own environ variable, because somebody put const on it in druntime???
-version (Posix) {
+version(Posix) {
     extern (C) {
-        version (CRuntime_UClibc) {
+        version(CRuntime_UClibc) {
             extern __gshared char** __environ;
             alias environ = __environ;
         } else {

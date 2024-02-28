@@ -76,7 +76,7 @@ struct NegotationState {
                     logger.debug_("Sending data for server socket ", socketState.handle, " for length ", sliced.length,
                         " on ", Thread.self);
 
-                    socketState.rawWriting.queue.push(sliced.dup);
+                    socketState.rawWriting.push(sliced.dup);
                     FreeContextBuffer(buffersOut[0].pvBuffer);
                 }
 
@@ -159,7 +159,7 @@ struct NegotationState {
                     logger.debug_("Sending data for client socket ", socketState.handle, " for length ", sliced.length,
                         " on ", Thread.self);
 
-                    socketState.rawWriting.queue.push(sliced.dup);
+                    socketState.rawWriting.push(sliced.dup);
                     FreeContextBuffer(buffersOut[0].pvBuffer);
                 }
 
