@@ -87,6 +87,10 @@ version(Windows) {
         bool GetExitCodeProcess(HANDLE, DWORD*);
         bool CreateProcessW(wchar*, wchar*, SECURITY_ATTRIBUTES*, SECURITY_ATTRIBUTES*, bool, DWORD, void*, wchar*, STARTUPINFOW*, PROCESS_INFORMATION*);
         bool CreatePipe(HANDLE*, HANDLE*, SECURITY_ATTRIBUTES*, DWORD);
+        bool SetHandleInformation(HANDLE, DWORD, DWORD);
+        bool PeekNamedPipe(HANDLE, void*, DWORD, DWORD*, DWORD*, DWORD*);
+        bool ReadFile(HANDLE, void*, DWORD, DWORD*, OVERLAPPED*);
+        bool WriteFile(HANDLE, void*, DWORD, DWORD*, OVERLAPPED*);
     }
 
     enum {
@@ -218,6 +222,7 @@ version(Windows) {
         CREATE_UNICODE_ENVIRONMENT = 0x00000400,
 
         STARTF_USESTDHANDLES = 0x00000100,
+        HANDLE_FLAG_INHERIT = 0x00000001,
     }
 
     struct OVERLAPPED {

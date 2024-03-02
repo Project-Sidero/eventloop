@@ -34,6 +34,8 @@ struct SocketState {
     ReadingState reading;
     WritingState writing;
     EncryptionState encryption;
+
+    enum attemptReadLater = false;
     RawReadingState!(SocketState, "socket") rawReading;
     RawWritingState!(SocketState, "socket") rawWriting;
 
@@ -189,6 +191,10 @@ struct SocketState {
         size_t amountToRead() scope {
             import std.algorithm : max;
             return max(this.encryption.amountOfBytesToRead(), 4096);
+        }
+
+        void delayReadForLater() scope {
+            assert(0);
         }
 
         alias readHandle = getHandle;

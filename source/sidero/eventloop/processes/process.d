@@ -44,7 +44,6 @@ export @safe nothrow @nogc:
     ///
     ~this() scope @trusted {
         import sidero.eventloop.internal.event_waiting;
-        import sidero.eventloop.internal.posix.cleanup_timer;
         import sidero.base.internal.atomic;
 
         if(this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
@@ -234,7 +233,8 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
 
     version(Windows) {
         import sidero.eventloop.internal.windows.bindings : STARTUPINFOW, PROCESS_INFORMATION, CreateProcessW,
-            NORMAL_PRIORITY_CLASS, CREATE_UNICODE_ENVIRONMENT, CloseHandle, CreatePipe, STARTF_USESTDHANDLES, SECURITY_ATTRIBUTES;
+            NORMAL_PRIORITY_CLASS, CREATE_UNICODE_ENVIRONMENT,
+            CloseHandle, CreatePipe, STARTF_USESTDHANDLES, SECURITY_ATTRIBUTES, SetHandleInformation, HANDLE_FLAG_INHERIT;
 
         static immutable UserShellVar = "COMSPEC\0"w;
         static immutable SystemShell = "cmd.exe"w;
@@ -324,10 +324,24 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
             if(!CreatePipe(&startupInfo.hStdInput, &writeInputH, &secAttrib, 0))
                 return typeof(return)(UnknownPlatformBehaviorException("Could not create input pipes"));
 
+            if(!SetHandleInformation(writeInputH, HANDLE_FLAG_INHERIT, 0)) {
+                CloseHandle(writeInputH);
+                CloseHandle(startupInfo.hStdInput);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not set input pipe non inheritance"));
+            }
+
             if(!CreatePipe(&readOutputH, &startupInfo.hStdOutput, &secAttrib, 0)) {
                 CloseHandle(writeInputH);
                 CloseHandle(startupInfo.hStdInput);
                 return typeof(return)(UnknownPlatformBehaviorException("Could not create output pipes"));
+            }
+
+            if(!SetHandleInformation(readOutputH, HANDLE_FLAG_INHERIT, 0)) {
+                CloseHandle(writeInputH);
+                CloseHandle(readOutputH);
+                CloseHandle(startupInfo.hStdInput);
+                CloseHandle(startupInfo.hStdOutput);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not set input pipe non inheritance"));
             }
 
             if(!CreatePipe(&readErrorH, &startupInfo.hStdError, &secAttrib, 0)) {
@@ -336,6 +350,16 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
                 CloseHandle(startupInfo.hStdInput);
                 CloseHandle(startupInfo.hStdOutput);
                 return typeof(return)(UnknownPlatformBehaviorException("Could not create error pipes"));
+            }
+
+            if(!SetHandleInformation(readErrorH, HANDLE_FLAG_INHERIT, 0)) {
+                CloseHandle(writeInputH);
+                CloseHandle(readOutputH);
+                CloseHandle(readErrorH);
+                CloseHandle(startupInfo.hStdInput);
+                CloseHandle(startupInfo.hStdOutput);
+                CloseHandle(startupInfo.hStdError);
+                return typeof(return)(UnknownPlatformBehaviorException("Could not set input pipe non inheritance"));
             }
 
             ret.state.inputPipe = WritePipe.fromSystemHandle(writeInputH);
@@ -385,7 +409,8 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
     ret.state = allocator.make!State(1, allocator);
 
     version(Posix) {
-        import core.sys.posix.unistd : fork, chdir, pipe, _exit, execv, execvp, close, read, write, dup2, STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO;
+        import core.sys.posix.unistd : fork, chdir, pipe, _exit, execv, execvp, close, read, write, dup2, STDIN_FILENO,
+            STDOUT_FILENO, STDERR_FILENO;
         import core.stdc.errno : errno, ECONNRESET, ENOTCONN;
         import core.sys.posix.fcntl;
 
@@ -448,13 +473,13 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             }
 
             if(!inheritStandardIO) {
-                if (dup2(STDIN_FILENO, inputPipes[0]) < 0)
+                if(dup2(STDIN_FILENO, inputPipes[0]) < 0)
                     writeError(10);
 
-                if (dup2(STDOUT_FILENO, outputPipes[1]) < 0)
+                if(dup2(STDOUT_FILENO, outputPipes[1]) < 0)
                     writeError(11);
 
-                if (dup2(STDERR_FILENO, errorPipes[1]) < 0)
+                if(dup2(STDERR_FILENO, errorPipes[1]) < 0)
                     writeError(12);
 
                 close(inputPipes[1]);

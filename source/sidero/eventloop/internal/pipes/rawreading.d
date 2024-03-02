@@ -31,6 +31,7 @@ package(sidero.eventloop):
         return triggered;
     }
 
+    // NOTE: this needs guarding
     bool tryRead(scope StateObject* stateObject) scope @trusted {
         if(triggered)
             return false;
@@ -55,19 +56,34 @@ package(sidero.eventloop):
             amountPrepared = toRead;
         }
 
-        auto slice = buffer.unsafeGetLiteral;
-
-        triggered = true;
-        if(stateObject.tryRead(slice[amountFilled .. $])) {
-            logger.debug_("Successfully set up raw reading for " ~ TitleOfPipe ~ " with a buffer of ", toRead, " for a length of ",
-                    buffer.length, " from ", oldLength, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
+        if(attemptRead(stateObject)) {
             return true;
         } else {
-            logger.debug_("Failed to setup up raw reading for " ~ TitleOfPipe ~ " with a buffer of ", toRead, " for a length of ",
-                    buffer.length, " from ", oldLength, " for socket ", stateObject.readHandle, " on thread ", Thread.self);
-            triggered = false;
-            return false;
+            if(stateObject.attemptReadLater) {
+                stateObject.delayReadForLater;
+                return true;
+            } else {
+                logger.debug_("Failed to setup up raw reading for " ~ TitleOfPipe ~ " with a buffer of ", toRead, " for a length of ",
+                        buffer.length, " from ", oldLength, " for socket ", stateObject.readHandle, " on thread ", Thread.self);
+                triggered = false;
+                return false;
+            }
         }
+    }
+
+    // NOTE: this needs guarding
+    bool attemptRead(scope StateObject* stateObject) scope @trusted {
+        if(!triggered)
+            return false;
+
+        auto slice = buffer.unsafeGetLiteral;
+
+        if(stateObject.tryRead(slice[amountFilled .. $])) {
+            logger.debug_("Successfully performed raw reading for " ~ TitleOfPipe ~ " for a length of ",
+                    buffer.length, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
+            return true;
+        } else
+            return false;
     }
 
     void readRaw(scope size_t delegate(DynamicArray!ubyte data) @safe nothrow @nogc del) scope @trusted {
