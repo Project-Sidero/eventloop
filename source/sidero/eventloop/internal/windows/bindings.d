@@ -91,6 +91,8 @@ version(Windows) {
         bool PeekNamedPipe(HANDLE, void*, DWORD, DWORD*, DWORD*, DWORD*);
         bool ReadFile(HANDLE, void*, DWORD, DWORD*, OVERLAPPED*);
         bool WriteFile(HANDLE, void*, DWORD, DWORD*, OVERLAPPED*);
+
+        bool SetNamedPipeHandleState(HANDLE, DWORD*, DWORD*, DWORD*);
     }
 
     enum {
@@ -223,6 +225,9 @@ version(Windows) {
 
         STARTF_USESTDHANDLES = 0x00000100,
         HANDLE_FLAG_INHERIT = 0x00000001,
+
+        PIPE_READMODE_BYTE = 0x00000000,
+        PIPE_NOWAIT = 0x00000001,
     }
 
     struct OVERLAPPED {

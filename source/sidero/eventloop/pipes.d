@@ -20,7 +20,7 @@ static immutable WriteOnlyPipeHandleType = SystemHandleType.from("wopipe");
 ///
 ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, RCAllocator allocator = RCAllocator.init) {
     version(Windows) {
-        import sidero.eventloop.internal.windows.bindings : CreatePipe;
+        import sidero.eventloop.internal.windows.bindings : CreatePipe, PIPE_READMODE_BYTE, PIPE_NOWAIT, SetNamedPipeHandleState, DWORD;
         import sidero.base.internal.atomic;
         import sidero.base.internal.logassert;
 
@@ -39,6 +39,12 @@ ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, 
         readPipe.state.allocator = allocator;
         readPipe.state.readHandle = readPipeHandle;
         readPipe.state.writeHandle = writePipeHandle;
+
+        DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+
+        // If this fails, it'll block (not a bad thing)
+        // It just means that WriteFile won't return ASAP even if it can't write
+        SetNamedPipeHandleState(writePipeHandle, &mode, null, null);
 
         logAssert(readPipe.state.reading.initialize, "Could not initialize reading for read pipe");
         logAssert(readPipe.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
@@ -269,7 +275,7 @@ export @safe nothrow @nogc:
 
     version(Windows) {
         ///
-        static WritePipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) {
+        static WritePipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) @trusted {
             import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
 
@@ -282,6 +288,16 @@ export @safe nothrow @nogc:
 
             ret.state.allocator = allocator;
             ret.state.writeHandle = handle;
+
+            version(Windows) {
+                import sidero.eventloop.internal.windows.bindings : PIPE_READMODE_BYTE, PIPE_NOWAIT, SetNamedPipeHandleState, DWORD;
+
+                DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+
+                // If this fails, it'll block (not a bad thing)
+                // It just means that WriteFile won't return ASAP even if it can't write
+                SetNamedPipeHandleState(handle, &mode, null, null);
+            }
 
             logAssert(ret.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
             return ret;
@@ -408,6 +424,10 @@ struct State {
             DWORD canBeWritten;
 
             if(!WriteFile(this.writeHandle, data.ptr, cast(DWORD)data.length, &canBeWritten, null))
+                return false;
+
+            // not a failure, but also needs to to a delay write
+            if (canBeWritten == 0)
                 return false;
 
             rawWriting.complete(&this, canBeWritten);
