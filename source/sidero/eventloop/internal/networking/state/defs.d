@@ -1,11 +1,11 @@
-module sidero.eventloop.networking.internal.state.defs;
+module sidero.eventloop.internal.networking.state.defs;
 import sidero.base.synchronization.mutualexclusion;
 import sidero.base.logger;
 import sidero.base.text;
 
 @safe nothrow @nogc:
 
-package(sidero.eventloop.networking.internal.state) {
+package(sidero.eventloop.internal.networking.state) {
     __gshared {
         TestTestSetLockInline initLock;
         LoggerReference logger;

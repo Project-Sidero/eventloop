@@ -1,5 +1,5 @@
-module sidero.eventloop.networking.internal.openssl;
-import sidero.eventloop.networking.internal.state;
+module sidero.eventloop.internal.networking.openssl;
+import sidero.eventloop.internal.networking.state;
 import sidero.eventloop.threads;
 import sidero.base.bindings.openssl.libcrypto;
 import sidero.base.bindings.openssl.libssl;

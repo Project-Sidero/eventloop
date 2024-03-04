@@ -1,7 +1,7 @@
-module sidero.eventloop.networking.internal.windows.socketserver;
-import sidero.eventloop.networking.internal.windows.mechanism;
-import sidero.eventloop.networking.internal.windows.socketclient;
-import sidero.eventloop.networking.internal.state;
+module sidero.eventloop.internal.networking.windows.socketserver;
+import sidero.eventloop.internal.networking.windows.mechanism;
+import sidero.eventloop.internal.networking.windows.socketclient;
+import sidero.eventloop.internal.networking.state;
 import sidero.eventloop.sockets;
 import sidero.eventloop.internal.windows.bindings;
 import sidero.eventloop.threads;
@@ -262,7 +262,7 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
 }
 
 void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
-    import sidero.eventloop.networking.internal.windows.socketclient;
+    import sidero.eventloop.internal.networking.windows.socketclient;
     import sidero.eventloop.tasks.workers : registerAsTask;
     import sidero.eventloop.internal.windows.iocp;
     import sidero.eventloop.internal.event_waiting;

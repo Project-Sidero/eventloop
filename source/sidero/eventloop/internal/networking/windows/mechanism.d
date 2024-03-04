@@ -1,11 +1,11 @@
-module sidero.eventloop.networking.internal.windows.mechanism;
+module sidero.eventloop.internal.networking.windows.mechanism;
 import sidero.eventloop.sockets;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.containers.queue.concurrentqueue;
 
 __gshared {
-    package(sidero.eventloop.networking.internal.windows) {
+    package(sidero.eventloop.internal.networking.windows) {
         LoggerReference logger;
     }
 }

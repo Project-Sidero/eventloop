@@ -1,4 +1,4 @@
-module sidero.eventloop.networking.internal.utils.tls;
+module sidero.eventloop.internal.networking.utils.tls;
 import sidero.base.containers.dynamicarray;
 import sidero.base.text;
 

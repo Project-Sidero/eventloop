@@ -1,6 +1,4 @@
 module sidero.eventloop.internal.pipes.rawwriting;
-import sidero.eventloop.networking.internal.state.defs;
-import sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.threads.osthread;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.readonlyslice;

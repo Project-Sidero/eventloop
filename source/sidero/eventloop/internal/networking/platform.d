@@ -1,5 +1,5 @@
-module sidero.eventloop.networking.internal.platform;
-import sidero.eventloop.networking.internal.state;
+module sidero.eventloop.internal.networking.platform;
+import sidero.eventloop.internal.networking.state;
 import sidero.eventloop.sockets;
 import sidero.base.errors;
 import sidero.base.path.networking;
@@ -8,9 +8,9 @@ import sidero.base.typecons : Optional;
 @safe nothrow @nogc:
 
 version(Windows) {
-    public import sidero.eventloop.networking.internal.windows.mechanism;
+    public import sidero.eventloop.internal.networking.windows.mechanism;
 } else version(Posix) {
-    public import sidero.eventloop.networking.internal.posix.mechanism;
+    public import sidero.eventloop.internal.networking.posix.mechanism;
 } else {
     static assert(0, "Unimplemented");
 
@@ -24,9 +24,9 @@ version(Windows) {
 }
 
 version(Windows) {
-    public import sidero.eventloop.networking.internal.windows.socketclient;
+    public import sidero.eventloop.internal.networking.windows.socketclient;
 } else version(Posix) {
-    public import sidero.eventloop.networking.internal.posix.socketclient;
+    public import sidero.eventloop.internal.networking.posix.socketclient;
 } else {
     static assert(0, "Unimplemented");
 
@@ -58,9 +58,9 @@ version(Windows) {
 }
 
 version(Windows) {
-    public import sidero.eventloop.networking.internal.windows.socketserver;
+    public import sidero.eventloop.internal.networking.windows.socketserver;
 } else version(Posix) {
-    public import sidero.eventloop.networking.internal.posix.socketserver;
+    public import sidero.eventloop.internal.networking.posix.socketserver;
 } else {
     static assert(0, "Unimplemented");
 

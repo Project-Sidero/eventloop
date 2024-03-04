@@ -1,11 +1,11 @@
-module sidero.eventloop.networking.internal.state.socket;
-import sidero.eventloop.networking.internal.state.defs;
-import sidero.eventloop.networking.internal.state.writing;
-import sidero.eventloop.networking.internal.state.encryption;
+module sidero.eventloop.internal.networking.state.socket;
+import sidero.eventloop.internal.networking.state.defs;
+import sidero.eventloop.internal.networking.state.writing;
+import sidero.eventloop.internal.networking.state.encryption;
 import sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.internal.pipes.rawwriting;
-import sidero.eventloop.networking.internal.platform;
+import sidero.eventloop.internal.networking.platform;
 import sidero.eventloop.sockets;
 import sidero.eventloop.threads.osthread;
 import sidero.base.synchronization.system.lock;
@@ -107,7 +107,7 @@ struct SocketState {
         return atomicLoad(this.isShutdown);
     }
 
-    package(sidero.eventloop.networking.internal) void unpinGuarded() scope @trusted {
+    package(sidero.eventloop.internal.networking) void unpinGuarded() scope @trusted {
         if(!atomicLoad(isAlive)) {
             return;
         }

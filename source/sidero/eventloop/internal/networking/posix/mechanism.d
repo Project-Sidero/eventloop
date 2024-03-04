@@ -1,9 +1,9 @@
-module sidero.eventloop.networking.internal.posix.mechanism;
+module sidero.eventloop.internal.networking.posix.mechanism;
 import sidero.base.logger;
 import sidero.base.text;
 
 __gshared {
-    package(sidero.eventloop.networking.internal.posix) {
+    package(sidero.eventloop.internal.networking.posix) {
         LoggerReference logger;
     }
 }

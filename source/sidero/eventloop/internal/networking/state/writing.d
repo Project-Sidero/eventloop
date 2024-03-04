@@ -1,5 +1,5 @@
-module sidero.eventloop.networking.internal.state.writing;
-import sidero.eventloop.networking.internal.state.socket;
+module sidero.eventloop.internal.networking.state.writing;
+import sidero.eventloop.internal.networking.state.socket;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.readonlyslice;
 

@@ -8,7 +8,7 @@ import sidero.base.internal.atomic;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
-    import sidero.eventloop.networking.internal.state;
+    import sidero.eventloop.internal.networking.state;
     import core.sys.windows.windows : HANDLE;
 
     private __gshared {

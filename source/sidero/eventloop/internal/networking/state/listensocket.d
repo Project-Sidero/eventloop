@@ -1,5 +1,5 @@
-module sidero.eventloop.networking.internal.state.listensocket;
-import sidero.eventloop.networking.internal.platform;
+module sidero.eventloop.internal.networking.state.listensocket;
+import sidero.eventloop.internal.networking.platform;
 import sidero.eventloop.coroutine.instanceable;
 import sidero.eventloop.sockets;
 import sidero.eventloop.certificates;

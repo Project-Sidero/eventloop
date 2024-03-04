@@ -1,6 +1,6 @@
-module sidero.eventloop.networking.internal.state.encryption;
-import sidero.eventloop.networking.internal.state.defs;
-import sidero.eventloop.networking.internal.state.socket;
+module sidero.eventloop.internal.networking.state.encryption;
+import sidero.eventloop.internal.networking.state.defs;
+import sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.sockets;
 import sidero.eventloop.certificates;
 import sidero.eventloop.closure.callable;
@@ -37,9 +37,9 @@ version (none) {
 }
 
 struct EncryptionState {
-    import sidero.eventloop.networking.internal.openssl : OpenSSLEncryptionStateImpl;
+    import sidero.eventloop.internal.networking.openssl : OpenSSLEncryptionStateImpl;
 
-    package(sidero.eventloop.networking.internal) {
+    package(sidero.eventloop.internal.networking) {
         Certificate.Type encryptionEngine;
         Certificate currentCertificate, fallbackCertificate;
         Socket.EncryptionProtocol currentProtocol;
@@ -49,7 +49,7 @@ struct EncryptionState {
         size_t bufferSize;
 
         version (Windows) {
-            import sidero.eventloop.networking.internal.windows.encryption.state;
+            import sidero.eventloop.internal.networking.windows.encryption.state;
 
             EncryptionStateWinCrypt winCrypt;
         }
@@ -103,7 +103,7 @@ struct EncryptionState {
                     this.currentCertificate = this.fallbackCertificate;
                 } else {
                     socketState.rawReading.readRaw((data) @trusted {
-                        import sidero.eventloop.networking.internal.utils.tls;
+                        import sidero.eventloop.internal.networking.utils.tls;
 
                         if (data.length == 0) {
                             noDataForSNI = true;

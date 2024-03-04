@@ -24,7 +24,6 @@ int main(string[] args) {
     import sidero.base.text.format;
     import sidero.base.path.networking;
     import sidero.base.datetime;
-    import sidero.eventloop.networking.sockets;
     import sidero.eventloop.tasks.workers;
 
     /+if(args.length < 2) {

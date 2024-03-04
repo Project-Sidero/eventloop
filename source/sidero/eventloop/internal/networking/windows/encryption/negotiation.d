@@ -1,7 +1,7 @@
-module sidero.eventloop.networking.internal.windows.encryption.negotiation;
-import sidero.eventloop.networking.internal.windows.encryption.state;
-import sidero.eventloop.networking.internal.windows.mechanism : logger;
-import sidero.eventloop.networking.internal.state.socket;
+module sidero.eventloop.internal.networking.windows.encryption.negotiation;
+import sidero.eventloop.internal.networking.windows.encryption.state;
+import sidero.eventloop.internal.networking.windows.mechanism : logger;
+import sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.threads;
 import sidero.eventloop.certificates;
 import sidero.base.synchronization.mutualexclusion;
