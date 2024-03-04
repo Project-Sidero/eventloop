@@ -1,4 +1,4 @@
-module sidero.eventloop.networking.sockets;
+module sidero.eventloop.sockets;
 import sidero.eventloop.networking.internal.state;
 import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.certificates;

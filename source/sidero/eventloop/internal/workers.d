@@ -67,6 +67,7 @@ bool startWorkers(size_t workerMultiplier) @trusted {
     logger = Logger.forName(String_UTF8(__MODULE__));
     if(!logger)
         return false;
+    logger.setLevel = LogLevel.Warning;
 
     if(coroutinesForWorkers.isNull) {
         coroutinesForWorkers = FiFoConcurrentQueue!GenericCoroutine(RCAllocator.init);

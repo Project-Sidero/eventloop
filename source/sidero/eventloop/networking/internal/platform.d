@@ -1,6 +1,6 @@
 module sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.networking.internal.state;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.base.errors;
 import sidero.base.path.networking;
 import sidero.base.typecons : Optional;

@@ -1,5 +1,5 @@
 module sidero.eventloop.networking.internal.windows.mechanism;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.containers.queue.concurrentqueue;

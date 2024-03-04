@@ -4,7 +4,7 @@ import sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.internal.windows.iocp;
 import sidero.eventloop.internal.windows.bindings;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.containers.readonlyslice;
 import sidero.base.errors;

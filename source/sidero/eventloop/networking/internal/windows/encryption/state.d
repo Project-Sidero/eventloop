@@ -3,7 +3,7 @@ import sidero.eventloop.networking.internal.windows.encryption.negotiation;
 import sidero.eventloop.networking.internal.windows.mechanism : logger;
 import sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.certificates;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.path.hostname;
 import sidero.base.containers.readonlyslice;

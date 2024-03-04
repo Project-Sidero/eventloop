@@ -1,11 +1,11 @@
 import sidero.base.text;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
+import sidero.eventloop.certificates;
+import sidero.eventloop.coroutine;
 import sidero.base.console;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.readonlyslice;
 import sidero.base.path.hostname;
-import sidero.eventloop.certificates;
-import sidero.eventloop.coroutine;
 
 //version = UseTLS;
 //version = UseRemote;

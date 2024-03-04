@@ -1,8 +1,8 @@
 module sidero.eventloop.internal.cleanup_timer;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.processes;
 import sidero.eventloop.threads;
-import sidero.eventloop.processes.pipe;
+import sidero.eventloop.pipes;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.containers.queue.concurrentqueue;
@@ -60,6 +60,7 @@ bool startUpCleanupTimer() @trusted {
     logger = Logger.forName(String_UTF8(__MODULE__));
     if(!logger)
         return false;
+    logger.setLevel = LogLevel.Warning;
 
     version(Windows) {
         // unfortunately there can be a case where sockets need to be re-triggered at a later date

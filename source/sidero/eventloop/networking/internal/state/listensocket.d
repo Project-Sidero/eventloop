@@ -1,7 +1,7 @@
 module sidero.eventloop.networking.internal.state.listensocket;
 import sidero.eventloop.networking.internal.platform;
 import sidero.eventloop.coroutine.instanceable;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.certificates;
 import sidero.base.path.networking;
 import sidero.base.containers.map.concurrenthashmap;

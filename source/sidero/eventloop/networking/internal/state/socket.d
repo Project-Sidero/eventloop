@@ -6,7 +6,7 @@ import sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.internal.pipes.rawwriting;
 import sidero.eventloop.networking.internal.platform;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.threads.osthread;
 import sidero.base.synchronization.system.lock;
 import sidero.base.allocators;

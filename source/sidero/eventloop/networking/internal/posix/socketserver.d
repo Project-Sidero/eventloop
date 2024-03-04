@@ -2,7 +2,7 @@ module sidero.eventloop.networking.internal.posix.socketserver;
 import sidero.eventloop.networking.internal.posix.mechanism;
 import sidero.eventloop.networking.internal.posix.socketclient;
 import sidero.eventloop.networking.internal.state;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.eventloop.certificates;
 import sidero.eventloop.closure.callable;

@@ -1,6 +1,6 @@
 module sidero.eventloop.internal.windows.iocp;
 import sidero.eventloop.internal.workers;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.logger;
 import sidero.base.text;
@@ -34,6 +34,7 @@ version(Windows) {
         logger = Logger.forName(String_UTF8(__MODULE__));
         if(!logger || logger.isNull)
             return false;
+        logger.setLevel = LogLevel.Warning;
 
         requiredWorkers = cast(uint)numberOfWorkers;
 

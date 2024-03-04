@@ -1,4 +1,4 @@
-module sidero.eventloop.processes.pipe;
+module sidero.eventloop.pipes;
 import sidero.eventloop.handles;
 import sidero.eventloop.coroutine.future;
 import sidero.base.allocators;

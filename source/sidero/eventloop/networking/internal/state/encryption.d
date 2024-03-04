@@ -1,7 +1,7 @@
 module sidero.eventloop.networking.internal.state.encryption;
 import sidero.eventloop.networking.internal.state.defs;
 import sidero.eventloop.networking.internal.state.socket;
-import sidero.eventloop.networking.sockets;
+import sidero.eventloop.sockets;
 import sidero.eventloop.certificates;
 import sidero.eventloop.closure.callable;
 import sidero.eventloop.threads;
