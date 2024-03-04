@@ -5,6 +5,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.containers.map.hashmap;
 import sidero.base.datetime;
 import sidero.base.console;
+import sidero.base.system;
 
 void main() {
     auto process = Process.execute(String_UTF8("torun"), Slice!String_UTF8([String_UTF8("test\"aaa")]),
@@ -19,7 +20,9 @@ void main() {
     auto textToRead = pstdout.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
     assert(!textToRead.isNull);
 
-    process.inputPipe.write(Slice!ubyte(cast(ubyte[])"Rikki!\n"));
+    String_UTF8 un = userName();
+    process.inputPipe.write(Slice!ubyte(cast(ubyte[])un.unsafeGetLiteral));
+    process.inputPipe.write(Slice!ubyte(cast(ubyte[])"!\n"));
 
     while(!result.isComplete || !textToRead.isComplete) {
         cast(void)Thread.sleep(1.second);
