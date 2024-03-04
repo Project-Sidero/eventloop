@@ -274,7 +274,7 @@ struct OpenSSLEncryptionStateImpl {
 
             if (err == 1) {
                 logger.trace("Pushing ", readBytes, " to socket decrypt of ", socketState.handle, " on ", Thread.self);
-                socketState.reading.queue.push(Slice!ubyte(buffer[0 .. readBytes]).dup);
+                socketState.reading.push(Slice!ubyte(buffer[0 .. readBytes]).dup);
             } else {
                 const error = SSL_get_error(this.openSSL, err);
 

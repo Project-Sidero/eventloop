@@ -278,7 +278,7 @@ struct EncryptionState {
                             " from ", encryptedLength, " and consumed ", consumed, " on ", Thread.self);
 
                     if (decrypted.length > 0)
-                        socketState.reading.queue.push(decrypted);
+                        socketState.reading.push(decrypted);
                     didSomething = true;
                 } else if (haveDecrypted && encryptedLength > 0) {
                     logger.debug_("Failed to decrypt data for socket ", socketState.handle, " with ",

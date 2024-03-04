@@ -50,6 +50,10 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         return triggerForHandler !is null;
     }
 
+    void push(Slice!ubyte data) scope {
+        queue.push(data);
+    }
+
     // NOTE: needs guarding
     bool requestFromUser(size_t amount, out Future!(Slice!ubyte) future) scope @trusted {
         assert(amount > 0);

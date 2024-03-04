@@ -1,8 +1,8 @@
 module sidero.eventloop.networking.internal.state.socket;
 import sidero.eventloop.networking.internal.state.defs;
-import sidero.eventloop.networking.internal.state.reading;
 import sidero.eventloop.networking.internal.state.writing;
 import sidero.eventloop.networking.internal.state.encryption;
+import sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.internal.pipes.rawwriting;
 import sidero.eventloop.networking.internal.platform;
@@ -31,11 +31,11 @@ struct SocketState {
     NetworkAddress localAddress, remoteAddress;
     bool cameFromServer;
 
-    ReadingState reading;
     WritingState writing;
     EncryptionState encryption;
 
     enum attemptReadLater = false;
+    ReadingState!(SocketState, "socket", true) reading;
     RawReadingState!(SocketState, "socket") rawReading;
     RawWritingState!(SocketState, "socket") rawWriting;
 
