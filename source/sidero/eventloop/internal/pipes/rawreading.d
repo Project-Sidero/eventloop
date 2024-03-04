@@ -56,6 +56,7 @@ package(sidero.eventloop):
             amountPrepared = toRead;
         }
 
+        triggered = true;
         if(attemptRead(stateObject)) {
             return true;
         } else {

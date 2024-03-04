@@ -28,7 +28,7 @@ __gshared {
                 pthread_cond_destroy, pthread_cond_timedwait,
                 pthread_cond_init, pthread_mutex_init, pthread_mutex_t, pthread_mutex_destroy, pthread_mutex_lock, pthread_mutex_unlock;
 
-            version (linux) {
+            version(linux) {
                 import core.sys.linux.timerfd;
                 import core.sys.posix.unistd : close;
                 import core.sys.posix.sys.time : timeval, gettimeofday;
@@ -161,6 +161,10 @@ pragma(crt_destructor) extern (C) void shutdownCleanupTimer() @trusted {
 }
 
 void addSocketToRetrigger(Socket socket) @trusted {
+    import sidero.base.internal.logassert;
+
+    logAssert(startUpCleanupTimer, "Could not initialize cleanup timer");
+
     version(Windows) {
         socketRetryQueue.push(socket);
     } else
@@ -168,15 +172,20 @@ void addSocketToRetrigger(Socket socket) @trusted {
 }
 
 void addProcessToList(Process process) @trusted {
+    import sidero.base.internal.logassert;
+
+    logAssert(startUpCleanupTimer, "Could not initialize cleanup timer");
+
     version(Posix) {
-        startUpCleanupTimer;
         processList ~= process;
     } else
         assert(0);
 }
 
 void addReadPipeToList(ReadPipe pipe) @trusted {
-    startUpCleanupTimer;
+    import sidero.base.internal.logassert;
+
+    logAssert(startUpCleanupTimer, "Could not initialize cleanup timer");
     toReadPipeList ~= pipe;
 }
 
@@ -241,16 +250,23 @@ void whenReady() @trusted {
     }
 
     version(Windows) {
-        foreach (readPipe; toReadPipeList) {
+        foreach(readPipe; toReadPipeList) {
+            assert(readPipe);
             auto handle = readPipe.unsafeGetHandle();
 
-            if (handle.isNull) {
+            if(handle.isNull) {
                 toReadPipeList.remove(readPipe);
                 continue;
             }
 
-            if (readPipe.state.rawReadingState.attemptRead(readPipe.state))
-                toReadPipeList.remove(readPipe);
+            readPipe.state.guard(() @trusted {
+                bool didRead = readPipe.state.rawReading.tryRead(readPipe.state);
+                didRead = readPipe.state.rawReading.attemptRead(readPipe.state);
+
+                if (readPipe.state.reading.tryFulfillRequest(readPipe.state)) {
+                    toReadPipeList.remove(readPipe);
+                }
+            });
         }
     }
 

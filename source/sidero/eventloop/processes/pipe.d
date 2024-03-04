@@ -1,8 +1,12 @@
 module sidero.eventloop.processes.pipe;
 import sidero.eventloop.handles;
+import sidero.eventloop.coroutine.future;
 import sidero.base.allocators;
 import sidero.base.errors;
 import sidero.base.path.file;
+import sidero.base.containers.readonlyslice;
+import sidero.base.containers.dynamicarray;
+import sidero.base.synchronization.system.lock;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings : HANDLE;
@@ -14,17 +18,34 @@ static immutable ReadOnlyPipeHandleType = SystemHandleType.from("ropipe");
 static immutable WriteOnlyPipeHandleType = SystemHandleType.from("wopipe");
 
 ///
-ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe) {
+ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, RCAllocator allocator = RCAllocator.init) {
     version(Windows) {
         import sidero.eventloop.internal.windows.bindings : CreatePipe;
+        import sidero.eventloop.internal.cleanup_timer;
+        import sidero.base.internal.atomic;
+        import sidero.base.internal.logassert;
 
         HANDLE readPipeHandle, writePipeHandle;
 
         if(!CreatePipe(&readPipeHandle, &writePipeHandle, null, 0))
             return ErrorResult(UnknownPlatformBehaviorException("Could not create anonymous pipes"));
 
-        readPipe = ReadPipe.fromSystemHandle(readPipeHandle);
-        writePipe = WritePipe.fromSystemHandle(writePipeHandle);
+        if(allocator.isNull)
+            allocator = globalAllocator();
+
+        readPipe.state = allocator.make!State;
+        writePipe.state = readPipe.state;
+        atomicStore(readPipe.state.refCount, 2);
+
+        readPipe.state.allocator = allocator;
+        readPipe.state.readHandle = readPipeHandle;
+        readPipe.state.writeHandle = writePipeHandle;
+
+        addReadPipeToList(readPipe);
+
+        logAssert(readPipe.state.reading.initialize, "Could not initialize reading for read pipe");
+        logAssert(readPipe.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
+        logAssert(readPipe.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
         return ErrorResult.init;
     } else
         static assert(0, "Unimplemented platform");
@@ -88,6 +109,46 @@ export @safe nothrow @nogc:
     }
 
     ///
+    Future!(Slice!ubyte) read(size_t amount) scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() {
+            const cond = state.reading.requestFromUser(amount, ret);
+
+            if(cond)
+                state.reading.tryFulfillRequest(state);
+        });
+
+        return ret;
+    }
+
+    ///
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition) scope {
+        return this.readUntil(endCondition.asReadOnly());
+    }
+
+    ///
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
+        assert(!isNull);
+        if(isNull)
+            return typeof(return).init;
+
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() @safe {
+            const cond = state.reading.requestFromUser(endCondition, ret);
+
+            if(cond)
+                state.reading.tryFulfillRequest(state);
+        });
+
+        return ret;
+    }
+
+    ///
     int opCmp(scope ReadPipe other) scope const {
         if(other.state is this.state)
             return 0;
@@ -99,21 +160,29 @@ export @safe nothrow @nogc:
 
     version(Windows) {
         ///
-        static ReadPipe fromSystemHandle(HANDLE handle) @system {
+        static ReadPipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) @system {
             import sidero.eventloop.internal.cleanup_timer;
+            import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
 
-            // TODO: allocate state
-            //logAssert(!rawReading.initialize, "Could not initialize raw reading for socket");
-            //logAssert(!rawWriting.initialize, "Could not initialize raw writing for socket");
+            if(allocator.isNull)
+                allocator = globalAllocator();
 
-            // addReadPipeToList(ret);
+            ReadPipe ret;
+            ret.state = allocator.make!State;
+            atomicStore(ret.state.refCount, 1);
 
-            assert(0);
+            ret.state.allocator = allocator;
+            ret.state.readHandle = handle;
+
+            addReadPipeToList(ret);
+            logAssert(ret.state.reading.initialize, "Could not initialize reading for read pipe");
+            logAssert(ret.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
+            return ret;
         }
     } else version(Posix) {
         ///
-        static ReadPipe fromSystemHandle(int handle) @system {
+        static ReadPipe fromSystemHandle(int handle, RCAllocator allocator = RCAllocator.init) @system {
             import sidero.base.internal.logassert;
 
             // TODO: allocate state
@@ -184,18 +253,26 @@ export @safe nothrow @nogc:
 
     version(Windows) {
         ///
-        static WritePipe fromSystemHandle(HANDLE handle) {
+        static WritePipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) {
+            import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
 
-            // TODO: allocate state
-            //logAssert(!rawReading.initialize, "Could not initialize raw reading for socket");
-            //logAssert(!rawWriting.initialize, "Could not initialize raw writing for socket");
+            if(allocator.isNull)
+                allocator = globalAllocator();
 
-            assert(0);
+            WritePipe ret;
+            ret.state = allocator.make!State;
+            atomicStore(ret.state.refCount, 1);
+
+            ret.state.allocator = allocator;
+            ret.state.writeHandle = handle;
+
+            logAssert(ret.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
+            return ret;
         }
     } else version(Posix) {
         ///
-        static WritePipe fromSystemHandle(int handle) @system {
+        static WritePipe fromSystemHandle(int handle, RCAllocator allocator = RCAllocator.init) @system {
             import sidero.base.internal.logassert;
 
             // TODO: allocate state
@@ -212,6 +289,7 @@ export @safe nothrow @nogc:
 }
 
 private:
+import sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.internal.pipes.rawwriting;
 
@@ -219,6 +297,7 @@ struct State {
     shared(ptrdiff_t) refCount;
     RCAllocator allocator;
 
+    SystemLock mutex;
     void* readHandle, writeHandle;
 
     version(Windows) {
@@ -228,22 +307,31 @@ struct State {
     }
 
     enum amountToRead = 4096;
-    RawReadingState!(State, "pipe") rawReadingState;
-    RawWritingState!(State, "pipe") rawWritingState;
+    ReadingState!(State, "pipe", false) reading;
+    RawReadingState!(State, "pipe") rawReading;
+    RawWritingState!(State, "pipe") rawWriting;
 
 @safe nothrow @nogc:
 
     void cleanup() scope @trusted {
+        reading.cleanup;
+
         version(Windows) {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
             CloseHandle(this.readHandle);
             CloseHandle(this.writeHandle);
-
-            this.readHandle = null;
-            this.writeHandle = null;
         } else
             static assert(0);
+
+        this.readHandle = null;
+        this.writeHandle = null;
+    }
+
+    void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
+        mutex.lock.assumeOkay;
+        del(args);
+        mutex.unlock;
     }
 
     void delayReadForLater() scope @trusted {
@@ -261,17 +349,24 @@ struct State {
 
     bool tryRead(ubyte[] data) scope @trusted {
         version(Windows) {
-            import sidero.eventloop.internal.windows.bindings : DWORD, PeekNamedPipe, ReadFile;
+            import sidero.eventloop.internal.windows.bindings : DWORD, PeekNamedPipe, ReadFile, GetLastError;
 
             DWORD canBeRead;
 
-            if(!PeekNamedPipe(this.readHandle, null, cast(DWORD)data.length, &canBeRead, null, null))
+            auto errorCode = PeekNamedPipe(this.readHandle, null, cast(DWORD)data.length, null, &canBeRead, null);
+            if(errorCode == 0 || canBeRead == 0) {
                 return false;
+            }
 
-            if(!ReadFile(this.readHandle, data.ptr, cast(DWORD)data.length, &canBeRead, null))
+            if(canBeRead > data.length)
+                canBeRead = cast(DWORD)data.length;
+
+            errorCode = ReadFile(this.readHandle, data.ptr, canBeRead, &canBeRead, null);
+            if(errorCode == 0) {
                 return false;
+            }
 
-            rawReadingState.complete(&this, canBeRead);
+            rawReading.complete(&this, canBeRead);
             return true;
         } else
             static assert(0);
@@ -286,7 +381,7 @@ struct State {
             if(!WriteFile(this.writeHandle, data.ptr, cast(DWORD)data.length, &canBeWritten, null))
                 return false;
 
-            rawWritingState.complete(&this, canBeWritten);
+            rawWriting.complete(&this, canBeWritten);
             return true;
         } else
             static assert(0);

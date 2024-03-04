@@ -317,26 +317,22 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
             startupInfo.dwFlags = STARTF_USESTDHANDLES;
             HANDLE writeInputH, readOutputH, readErrorH;
 
-            SECURITY_ATTRIBUTES secAttrib;
-            secAttrib.nLength = SECURITY_ATTRIBUTES.sizeof;
-            secAttrib.bInheritHandle = true;
-
-            if(!CreatePipe(&startupInfo.hStdInput, &writeInputH, &secAttrib, 0))
+            if(!CreatePipe(&startupInfo.hStdInput, &writeInputH, null, 0))
                 return typeof(return)(UnknownPlatformBehaviorException("Could not create input pipes"));
 
-            if(!SetHandleInformation(writeInputH, HANDLE_FLAG_INHERIT, 0)) {
+            if(!SetHandleInformation(startupInfo.hStdInput, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
                 CloseHandle(writeInputH);
                 CloseHandle(startupInfo.hStdInput);
                 return typeof(return)(UnknownPlatformBehaviorException("Could not set input pipe non inheritance"));
             }
 
-            if(!CreatePipe(&readOutputH, &startupInfo.hStdOutput, &secAttrib, 0)) {
+            if(!CreatePipe(&readOutputH, &startupInfo.hStdOutput, null, 0)) {
                 CloseHandle(writeInputH);
                 CloseHandle(startupInfo.hStdInput);
                 return typeof(return)(UnknownPlatformBehaviorException("Could not create output pipes"));
             }
 
-            if(!SetHandleInformation(readOutputH, HANDLE_FLAG_INHERIT, 0)) {
+            if(!SetHandleInformation(startupInfo.hStdOutput, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
                 CloseHandle(writeInputH);
                 CloseHandle(readOutputH);
                 CloseHandle(startupInfo.hStdInput);
@@ -344,7 +340,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
                 return typeof(return)(UnknownPlatformBehaviorException("Could not set input pipe non inheritance"));
             }
 
-            if(!CreatePipe(&readErrorH, &startupInfo.hStdError, &secAttrib, 0)) {
+            if(!CreatePipe(&readErrorH, &startupInfo.hStdError, null, 0)) {
                 CloseHandle(writeInputH);
                 CloseHandle(readOutputH);
                 CloseHandle(startupInfo.hStdInput);
@@ -352,7 +348,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
                 return typeof(return)(UnknownPlatformBehaviorException("Could not create error pipes"));
             }
 
-            if(!SetHandleInformation(readErrorH, HANDLE_FLAG_INHERIT, 0)) {
+            if(!SetHandleInformation(startupInfo.hStdError, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
                 CloseHandle(writeInputH);
                 CloseHandle(readOutputH);
                 CloseHandle(readErrorH);
@@ -372,7 +368,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
         // do not use application name
         // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-process_information
         // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
-        if(CreateProcessW(null, cast(wchar*)cmd.ptr, null, null, false,
+        if(CreateProcessW(null, cast(wchar*)cmd.ptr, null, null, !inheritStandardIO,
                 NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT, cast(wchar*)envString.ptr, cast(wchar*)cwd.ptr,
                 &startupInfo, &processInformation) != 0) {
             atomicStore(ret.state.refCount, 2); // pin

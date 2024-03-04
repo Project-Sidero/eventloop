@@ -1,3 +1,5 @@
+import std.stdio;
+
 int main(string[] args) {
     int ret;
 
@@ -5,5 +7,6 @@ int main(string[] args) {
         ret += arg.length;
     }
 
+    writeln("world!");
     return ret;
 }

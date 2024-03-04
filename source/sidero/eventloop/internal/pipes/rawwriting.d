@@ -21,10 +21,11 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
 
 @safe nothrow @nogc:
 
-    bool initialize() {
+    bool initialize() scope {
         import sidero.base.text;
 
         logger = Logger.forName(String_UTF8(__MODULE__ ~ "$" ~ TitleOfPipe));
+
         if(!logger)
             return false;
         return true;
