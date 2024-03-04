@@ -105,6 +105,13 @@ export @safe nothrow @nogc:
     }
 
     ///
+    bool isOpen() scope const {
+        import sidero.base.internal.atomic;
+
+        return state !is null && atomicLoad(state.readStillOpen);
+    }
+
+    ///
     SystemHandle unsafeGetHandle() scope const @trusted {
         if(isNull)
             return SystemHandle.init;
@@ -113,7 +120,7 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
-        if(isNull)
+        if(isNull || !isOpen)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
@@ -137,7 +144,7 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
-        if(isNull)
+        if(isNull || !isOpen)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
@@ -239,6 +246,13 @@ export @safe nothrow @nogc:
     }
 
     ///
+    bool isOpen() scope const {
+        import sidero.base.internal.atomic;
+
+        return state !is null && atomicLoad(state.writeStillOpen);
+    }
+
+    ///
     SystemHandle unsafeGetHandle() scope const @trusted {
         if(isNull)
             return SystemHandle.init;
@@ -252,7 +266,7 @@ export @safe nothrow @nogc:
 
     ///
     void write(scope return Slice!ubyte data) scope {
-        if(isNull)
+        if(isNull || !isOpen)
             return;
 
         state.guard(() @trusted {
@@ -331,6 +345,7 @@ struct State {
 
     SystemLock mutex;
     void* readHandle, writeHandle;
+    shared(bool) readStillOpen = true, writeStillOpen = true;
 
     version(Windows) {
         enum attemptReadLater = true;
@@ -345,18 +360,38 @@ struct State {
 
 @safe nothrow @nogc:
 
-    void cleanup() scope @trusted {
+    void cleanup() scope {
+        cleanupRead;
+        cleanupWrite;
+    }
+
+    void cleanupRead() scope @trusted {
+        if (this.readHandle is null)
+            return;
+
         reading.cleanup;
 
         version(Windows) {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
             CloseHandle(this.readHandle);
-            CloseHandle(this.writeHandle);
         } else
             static assert(0);
 
         this.readHandle = null;
+    }
+
+    void cleanupWrite() scope @trusted {
+        if (this.writeHandle is null)
+            return;
+
+        version(Windows) {
+            import sidero.eventloop.internal.windows.bindings : CloseHandle;
+
+            CloseHandle(this.writeHandle);
+        } else
+            static assert(0);
+
         this.writeHandle = null;
     }
 
@@ -393,12 +428,29 @@ struct State {
     }
 
     bool tryRead(ubyte[] data) scope @trusted {
+        import sidero.base.internal.atomic;
+
+        if(!atomicLoad(readStillOpen))
+            return false;
+
         version(Windows) {
-            import sidero.eventloop.internal.windows.bindings : DWORD, PeekNamedPipe, ReadFile, GetLastError;
+            import sidero.eventloop.internal.windows.bindings : DWORD, PeekNamedPipe, ReadFile, GetLastError, ERROR_BROKEN_PIPE;
 
             DWORD canBeRead;
 
             auto errorCode = PeekNamedPipe(this.readHandle, null, cast(DWORD)data.length, null, &canBeRead, null);
+
+            if(errorCode == 0) {
+                auto error = GetLastError();
+
+                if(error == ERROR_BROKEN_PIPE) {
+                    atomicStore(readStillOpen, false);
+                    this.cleanupRead;
+                }
+
+                return false;
+            }
+
             if(errorCode == 0 || canBeRead == 0) {
                 return false;
             }
@@ -406,8 +458,16 @@ struct State {
             if(canBeRead > data.length)
                 canBeRead = cast(DWORD)data.length;
 
-            errorCode = ReadFile(this.readHandle, data.ptr, canBeRead, &canBeRead, null);
+            errorCode = ReadFile(this.readHandle, data.ptr, cast(DWORD)data.length, &canBeRead, null);
+
             if(errorCode == 0) {
+                auto error = GetLastError();
+
+                if(error == ERROR_BROKEN_PIPE) {
+                    atomicStore(readStillOpen, false);
+                    this.cleanupRead;
+                }
+
                 return false;
             }
 
@@ -418,16 +478,28 @@ struct State {
     }
 
     bool tryWrite(ubyte[] data) scope @trusted {
+        import sidero.base.internal.atomic;
+
         version(Windows) {
-            import sidero.eventloop.internal.windows.bindings : DWORD, WriteFile;
+            import sidero.eventloop.internal.windows.bindings : DWORD, WriteFile, GetLastError, ERROR_BROKEN_PIPE;
 
             DWORD canBeWritten;
 
-            if(!WriteFile(this.writeHandle, data.ptr, cast(DWORD)data.length, &canBeWritten, null))
+            auto errorCode = WriteFile(this.writeHandle, data.ptr, cast(DWORD)data.length, &canBeWritten, null);
+
+            if(errorCode == 0) {
+                auto error = GetLastError();
+
+                if(error == ERROR_BROKEN_PIPE) {
+                    atomicStore(writeStillOpen, false);
+                    this.cleanupWrite;
+                }
+
                 return false;
+            }
 
             // not a failure, but also needs to to a delay write
-            if (canBeWritten == 0)
+            if(canBeWritten == 0)
                 return false;
 
             rawWriting.complete(&this, canBeWritten);

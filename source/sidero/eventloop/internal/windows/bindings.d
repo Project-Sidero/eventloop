@@ -228,6 +228,7 @@ version(Windows) {
 
         PIPE_READMODE_BYTE = 0x00000000,
         PIPE_NOWAIT = 0x00000001,
+        ERROR_BROKEN_PIPE = 0x6D,
     }
 
     struct OVERLAPPED {
