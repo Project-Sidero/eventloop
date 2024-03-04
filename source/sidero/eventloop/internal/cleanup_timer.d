@@ -17,6 +17,7 @@ __gshared {
         FiFoConcurrentQueue!Socket socketRetryQueue;
         ConcurrentLinkedList!Process processList;
         ConcurrentLinkedList!ReadPipe toReadPipeList;
+        ConcurrentLinkedList!WritePipe toWritePipeList;
 
         version(Windows) {
             import sidero.eventloop.internal.windows.bindings;
@@ -190,6 +191,13 @@ void addReadPipeToList(ReadPipe pipe) @trusted {
     toReadPipeList ~= pipe;
 }
 
+void addWritePipeToList(WritePipe pipe) @trusted {
+    import sidero.base.internal.logassert;
+
+    logAssert(startUpCleanupTimer, "Could not initialize cleanup timer");
+    toWritePipeList ~= pipe;
+}
+
 private:
 
 void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @trusted {
@@ -266,6 +274,22 @@ void whenReady() @trusted {
 
                 if (readPipe.state.reading.tryFulfillRequest(readPipe.state)) {
                     toReadPipeList.remove(readPipe);
+                }
+            });
+        }
+
+        foreach(writePipe; toWritePipeList) {
+            assert(writePipe);
+            auto handle = writePipe.unsafeGetHandle();
+
+            if(handle.isNull) {
+                toWritePipeList.remove(writePipe);
+                continue;
+            }
+
+            writePipe.state.guard(() @trusted {
+                if (writePipe.state.rawWriting.tryWrite(writePipe.state)) {
+                    toWritePipeList.remove(writePipe);
                 }
             });
         }

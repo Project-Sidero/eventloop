@@ -131,7 +131,6 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
-        assert(!isNull);
         if(isNull)
             return typeof(return).init;
 
@@ -199,14 +198,14 @@ export @safe nothrow @nogc:
 
 ///
 struct WritePipe {
-    private {
+    package(sidero.eventloop) {
         State* state;
     }
 
 export @safe nothrow @nogc:
 
     ///
-    this(scope ref ReadPipe other) scope @trusted {
+    this(scope ref WritePipe other) scope @trusted {
         import sidero.base.internal.atomic;
 
         this.state = other.state;
@@ -238,6 +237,24 @@ export @safe nothrow @nogc:
         if(isNull)
             return SystemHandle.init;
         return SystemHandle(cast(void*)state.writeHandle, WriteOnlyPipeHandleType);
+    }
+
+    ///
+    void write(scope return DynamicArray!ubyte data) scope {
+        this.write(data.asReadOnly());
+    }
+
+    ///
+    void write(scope return Slice!ubyte data) scope {
+        if(isNull)
+            return;
+
+        state.guard(() @trusted {
+            state.rawWriting.push(data);
+
+            if(!state.rawWriting.tryWrite(state))
+                state.delayWriteForLater;
+        });
     }
 
     ///
@@ -342,6 +359,19 @@ struct State {
             rp.__ctor(rp);
 
             addReadPipeToList(rp);
+        } else
+            assert(0);
+    }
+
+    void delayWriteForLater() scope @trusted {
+        import sidero.eventloop.internal.cleanup_timer;
+
+        version(Windows) {
+            WritePipe wp;
+            wp.state = &this;
+            wp.__ctor(wp);
+
+            addWritePipeToList(wp);
         } else
             assert(0);
     }

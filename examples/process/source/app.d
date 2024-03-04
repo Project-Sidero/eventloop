@@ -16,8 +16,10 @@ void main() {
 
     auto pstdout = process.outputPipe;
     assert(!pstdout.isNull);
-    auto textToRead = pstdout.read("world!".length);
+    auto textToRead = pstdout.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
     assert(!textToRead.isNull);
+
+    process.inputPipe.write(Slice!ubyte(cast(ubyte[])"Rikki!\n"));
 
     while(!result.isComplete || !textToRead.isComplete) {
         cast(void)Thread.sleep(1.second);
@@ -31,5 +33,5 @@ void main() {
     assert(resultCode);
     assert(resultText);
 
-    writeln("Hello ", cast(string)resultText.unsafeGetLiteral, " ", resultCode);
+    writeln("Hello ", String_UTF8(cast(string)resultText.unsafeGetLiteral).strip, " ", resultCode);
 }

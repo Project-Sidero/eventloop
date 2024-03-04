@@ -166,7 +166,6 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
-        assert(!isNull);
         if(isNull)
             return typeof(return).init;
 

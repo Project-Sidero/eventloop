@@ -7,6 +7,7 @@ int main(string[] args) {
         ret += arg.length;
     }
 
-    writeln("world!");
+    string name = readln;
+    writeln(name);
     return ret;
 }
