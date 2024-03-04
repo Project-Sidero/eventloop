@@ -21,7 +21,6 @@ static immutable WriteOnlyPipeHandleType = SystemHandleType.from("wopipe");
 ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, RCAllocator allocator = RCAllocator.init) {
     version(Windows) {
         import sidero.eventloop.internal.windows.bindings : CreatePipe;
-        import sidero.eventloop.internal.cleanup_timer;
         import sidero.base.internal.atomic;
         import sidero.base.internal.logassert;
 
@@ -40,8 +39,6 @@ ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, 
         readPipe.state.allocator = allocator;
         readPipe.state.readHandle = readPipeHandle;
         readPipe.state.writeHandle = writePipeHandle;
-
-        addReadPipeToList(readPipe);
 
         logAssert(readPipe.state.reading.initialize, "Could not initialize reading for read pipe");
         logAssert(readPipe.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
@@ -118,8 +115,10 @@ export @safe nothrow @nogc:
         state.guard(() {
             const cond = state.reading.requestFromUser(amount, ret);
 
-            if(cond)
+            if(cond) {
+                state.rawReading.tryRead(state);
                 state.reading.tryFulfillRequest(state);
+            }
         });
 
         return ret;
@@ -141,8 +140,10 @@ export @safe nothrow @nogc:
         state.guard(() @safe {
             const cond = state.reading.requestFromUser(endCondition, ret);
 
-            if(cond)
+            if(cond) {
+                state.rawReading.tryRead(state);
                 state.reading.tryFulfillRequest(state);
+            }
         });
 
         return ret;
@@ -161,7 +162,6 @@ export @safe nothrow @nogc:
     version(Windows) {
         ///
         static ReadPipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) @system {
-            import sidero.eventloop.internal.cleanup_timer;
             import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
 
@@ -175,7 +175,6 @@ export @safe nothrow @nogc:
             ret.state.allocator = allocator;
             ret.state.readHandle = handle;
 
-            addReadPipeToList(ret);
             logAssert(ret.state.reading.initialize, "Could not initialize reading for read pipe");
             logAssert(ret.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
             return ret;
