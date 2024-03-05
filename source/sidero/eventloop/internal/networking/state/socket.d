@@ -200,7 +200,9 @@ struct SocketState {
         alias readHandle = getHandle;
         alias writeHandle = getHandle;
         void* getHandle() scope @trusted {
-            return cast(void*)this.handle;
+            // for some reason it didn't want to be returned
+            auto val = cast(void*)this.handle;
+            return val;
         }
 
         // NOTE: this needs guarding

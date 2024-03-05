@@ -8,6 +8,7 @@ import sidero.base.text;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.synchronization.mutualexclusion;
+import sidero.base.errors;
 
 __gshared {
     private {
