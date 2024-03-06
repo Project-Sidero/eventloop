@@ -409,6 +409,7 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             STDOUT_FILENO, STDERR_FILENO;
         import core.stdc.errno : errno, ECONNRESET, ENOTCONN;
         import core.sys.posix.fcntl;
+        import sidero.eventloop.internal.posix.bindings : environ;
 
         enum UserShellVar = "SHELL";
         enum ShellInvokeSwitch = "-c ";
@@ -682,16 +683,4 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
     }
 
     return ret;
-}
-
-// we have to define our own environ variable, because somebody put const on it in druntime???
-version(Posix) {
-    extern (C) {
-        version(CRuntime_UClibc) {
-            extern __gshared char** __environ;
-            alias environ = __environ;
-        } else {
-            extern __gshared char** environ;
-        }
-    }
 }
