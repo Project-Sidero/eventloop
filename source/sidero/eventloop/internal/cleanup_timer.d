@@ -298,7 +298,8 @@ void whenReady() @trusted {
 
     version(Posix) {
         import sidero.eventloop.tasks.future_completion;
-        import core.sys.posix.sys.wait : waitpid, WNOHANG, WIFEXITED, WEXITSTATUS, WIFSIGNALED, WTERMSIG;
+        import sidero.eventloop.internal.posix.bindings : WIFEXITED, WEXITSTATUS, WIFSIGNALED, WTERMSIG;
+        import core.sys.posix.sys.wait : waitpid, WNOHANG;
         import core.stdc.errno : errno;
 
         foreach(process; processList) {

@@ -396,7 +396,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
 Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 currentWorkingDirectory, scope HashMap!(String_UTF8,
         String_UTF8) environment, scope T arguments, bool withShell, bool inheritStandardIO, bool overrideParentEnvironment) @trusted {
     import sidero.eventloop.internal.event_waiting;
-    import sidero.eventloop.internal.posix.cleanup_timer;
+    import sidero.eventloop.internal.cleanup_timer;
     import sidero.base.system : EnvironmentVariables;
     import sidero.base.internal.atomic;
 
@@ -670,7 +670,6 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             auto waitError = waitOnTrigger(ret.state.result, ret.state.resultStorage);
             assert(waitError);
 
-            requireCleanupTimer;
             addProcessToList(ret);
         } else if(pid < 0) {
             // parent, has error

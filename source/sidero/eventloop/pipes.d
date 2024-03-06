@@ -26,10 +26,10 @@ ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, 
 
         HANDLE readPipeHandle, writePipeHandle;
 
-        if(!CreatePipe(&readPipeHandle, &writePipeHandle, null, 0))
+        if (!CreatePipe(&readPipeHandle, &writePipeHandle, null, 0))
             return ErrorResult(UnknownPlatformBehaviorException("Could not create anonymous pipes"));
 
-        if(allocator.isNull)
+        if (allocator.isNull)
             allocator = globalAllocator();
 
         readPipe.state = allocator.make!State;
@@ -50,6 +50,8 @@ ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, 
         logAssert(readPipe.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
         logAssert(readPipe.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
         return ErrorResult.init;
+    } else version(Posix) {
+        assert(0);
     } else
         static assert(0, "Unimplemented platform");
 }
@@ -375,6 +377,8 @@ struct State {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
             CloseHandle(this.readHandle);
+        } else version(Posix) {
+            assert(0);
         } else
             static assert(0);
 
@@ -389,6 +393,8 @@ struct State {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
             CloseHandle(this.writeHandle);
+        } else version(Posix) {
+            assert(0);
         } else
             static assert(0);
 
@@ -473,6 +479,8 @@ struct State {
 
             rawReading.complete(&this, canBeRead);
             return true;
+        } else version(Posix) {
+            assert(0);
         } else
             static assert(0);
     }
@@ -504,6 +512,8 @@ struct State {
 
             rawWriting.complete(&this, canBeWritten);
             return true;
+        } else version(Posix) {
+            assert(0);
         } else
             static assert(0);
     }
