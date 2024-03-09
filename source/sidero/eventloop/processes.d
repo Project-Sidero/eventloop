@@ -405,11 +405,11 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
     ret.state = allocator.make!State(1, allocator);
 
     version(Posix) {
+        import sidero.eventloop.internal.posix.bindings : environ;
         import core.sys.posix.unistd : fork, chdir, pipe, _exit, execv, execvp, close, read, write, dup2, STDIN_FILENO,
             STDOUT_FILENO, STDERR_FILENO;
         import core.stdc.errno : errno, ECONNRESET, ENOTCONN;
         import core.sys.posix.fcntl;
-        import sidero.eventloop.internal.posix.bindings : environ;
 
         enum UserShellVar = "SHELL";
         enum ShellInvokeSwitch = "-c ";
@@ -470,13 +470,13 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             }
 
             if(!inheritStandardIO) {
-                if(dup2(STDIN_FILENO, inputPipes[0]) < 0)
+                if(dup2(inputPipes[0], STDIN_FILENO) < 0)
                     writeError(10);
 
-                if(dup2(STDOUT_FILENO, outputPipes[1]) < 0)
+                if(dup2(outputPipes[1], STDOUT_FILENO) < 0)
                     writeError(11);
 
-                if(dup2(STDERR_FILENO, errorPipes[1]) < 0)
+                if(dup2(errorPipes[1], STDERR_FILENO) < 0)
                     writeError(12);
 
                 close(inputPipes[1]);

@@ -40,10 +40,10 @@ bool startUpNetworkingMechanism() @trusted {
                 logger.info("WSA initialized successfully");
             }
         }
+
+        return true;
     } else
         assert(0);
-
-    return true;
 }
 
 void shutdownNetworkingMechanism() @trusted {
@@ -54,8 +54,8 @@ void shutdownNetworkingMechanism() @trusted {
 
         WSACleanup;
         logger.info("WSA uninitialized");
+
+        shutdownCleanupTimer();
     } else
         assert(0);
-
-    shutdownCleanupTimer();
 }

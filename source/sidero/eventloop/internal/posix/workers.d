@@ -53,6 +53,7 @@ bool initializeWorkerMechanism(size_t count) @trusted {
         logger = Logger.forName(String_UTF8(__MODULE__));
         if (!logger)
             return false;
+        logger.setLevel(LogLevel.Warning);
 
         int err = pthread_cond_init(&workerCondition, null);
         if (err != 0) {

@@ -1,8 +1,8 @@
 module sidero.eventloop.internal.networking.posix.socketclient;
 import sidero.eventloop.internal.networking.posix.mechanism;
 import sidero.eventloop.internal.networking.state;
-import sidero.eventloop.sockets;
 import sidero.eventloop.internal.event_waiting;
+import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.errors;
 import sidero.base.path.networking;

@@ -83,6 +83,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
                     return false;
                 }
             } else {
+                assert(logger);
                 logger.debug_("Empty raw write queue");
                 return false;
             }

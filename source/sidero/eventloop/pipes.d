@@ -1,6 +1,7 @@
 module sidero.eventloop.pipes;
 import sidero.eventloop.handles;
 import sidero.eventloop.coroutine.future;
+import sidero.eventloop.threads;
 import sidero.base.allocators;
 import sidero.base.errors;
 import sidero.base.path.file;
@@ -8,7 +9,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
 import sidero.base.synchronization.system.lock;
 
-version(Windows) {
+version (Windows) {
     import sidero.eventloop.internal.windows.bindings : HANDLE;
 }
 
@@ -19,41 +20,64 @@ static immutable WriteOnlyPipeHandleType = SystemHandleType.from("wopipe");
 
 ///
 ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, RCAllocator allocator = RCAllocator.init) {
-    version(Windows) {
+    import sidero.base.internal.logassert;
+    import sidero.base.internal.atomic;
+
+    if (allocator.isNull)
+        allocator = globalAllocator();
+
+    version (Windows) {
         import sidero.eventloop.internal.windows.bindings : CreatePipe, PIPE_READMODE_BYTE, PIPE_NOWAIT, SetNamedPipeHandleState, DWORD;
-        import sidero.base.internal.atomic;
-        import sidero.base.internal.logassert;
 
         HANDLE readPipeHandle, writePipeHandle;
 
         if (!CreatePipe(&readPipeHandle, &writePipeHandle, null, 0))
             return ErrorResult(UnknownPlatformBehaviorException("Could not create anonymous pipes"));
 
-        if (allocator.isNull)
-            allocator = globalAllocator();
-
-        readPipe.state = allocator.make!State;
-        writePipe.state = readPipe.state;
-        atomicStore(readPipe.state.refCount, 2);
-
-        readPipe.state.allocator = allocator;
-        readPipe.state.readHandle = readPipeHandle;
-        readPipe.state.writeHandle = writePipeHandle;
-
         DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
 
         // If this fails, it'll block (not a bad thing)
         // It just means that WriteFile won't return ASAP even if it can't write
         SetNamedPipeHandleState(writePipeHandle, &mode, null, null);
+    } else version (Posix) {
+        import core.sys.posix.unistd : pipe, close;
+        import core.sys.posix.fcntl : fcntl, F_SETFL, O_NONBLOCK;
 
-        logAssert(readPipe.state.reading.initialize, "Could not initialize reading for read pipe");
-        logAssert(readPipe.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
-        logAssert(readPipe.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
-        return ErrorResult.init;
-    } else version(Posix) {
-        assert(0);
+        int[2] handles;
+
+        if (pipe(handles) != 0)
+            return ErrorResult(UnknownPlatformBehaviorException("Could not create anonymous pipes"));
+
+        if (fcntl(handles[0], F_SETFL, O_NONBLOCK) != 0) {
+            close(handles[0]);
+            close(handles[1]);
+            return ErrorResult(UnknownPlatformBehaviorException("Could not set non block on anonymous read pipes"));
+        }
+
+        if (fcntl(handles[1], F_SETFL, O_NONBLOCK) != 0) {
+            close(handles[0]);
+            close(handles[1]);
+            return ErrorResult(UnknownPlatformBehaviorException("Could not set non block on anonymous write pipes"));
+        }
+
+        int readPipeHandle = handles[0], writePipeHandle = handles[1];
     } else
         static assert(0, "Unimplemented platform");
+
+    readPipe.state = allocator.make!State;
+    writePipe.state = readPipe.state;
+    atomicStore(readPipe.state.refCount, 2);
+
+    readPipe.state.allocator = allocator;
+    readPipe.state.readHandle = cast(void*)readPipeHandle;
+    readPipe.state.writeHandle = cast(void*)writePipeHandle;
+
+    logAssert(readPipe.state.reading.initialize, "Could not initialize reading for read pipe");
+    logAssert(readPipe.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
+    logAssert(readPipe.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
+
+    readPipe.state.addToEventWait;
+    return ErrorResult.init;
 }
 
 ///
@@ -84,7 +108,7 @@ export @safe nothrow @nogc:
 
         this.state = other.state;
 
-        if(this.state !is null) {
+        if (this.state !is null) {
             atomicIncrementAndLoad(this.state.refCount, 1);
         }
     }
@@ -93,7 +117,7 @@ export @safe nothrow @nogc:
     ~this() scope {
         import sidero.base.internal.atomic;
 
-        if(this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
+        if (this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
             this.state.cleanup;
 
             RCAllocator allocator = state.allocator;
@@ -115,14 +139,14 @@ export @safe nothrow @nogc:
 
     ///
     SystemHandle unsafeGetHandle() scope const @trusted {
-        if(isNull)
+        if (isNull)
             return SystemHandle.init;
         return SystemHandle(cast(void*)state.readHandle, ReadOnlyPipeHandleType);
     }
 
     ///
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
-        if(isNull || !isOpen)
+        if (isNull || !isOpen)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
@@ -130,7 +154,7 @@ export @safe nothrow @nogc:
         state.guard(() {
             const cond = state.reading.requestFromUser(amount, ret);
 
-            if(cond) {
+            if (cond) {
                 state.rawReading.tryRead(state);
                 state.reading.tryFulfillRequest(state);
             }
@@ -146,7 +170,7 @@ export @safe nothrow @nogc:
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
-        if(isNull || !isOpen)
+        if (isNull || !isOpen)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
@@ -154,7 +178,7 @@ export @safe nothrow @nogc:
         state.guard(() @safe {
             const cond = state.reading.requestFromUser(endCondition, ret);
 
-            if(cond) {
+            if (cond) {
                 state.rawReading.tryRead(state);
                 state.reading.tryFulfillRequest(state);
             }
@@ -165,21 +189,21 @@ export @safe nothrow @nogc:
 
     ///
     int opCmp(scope ReadPipe other) scope const {
-        if(other.state is this.state)
+        if (other.state is this.state)
             return 0;
-        else if(other.state > this.state)
+        else if (other.state > this.state)
             return -1;
         else
             return 1;
     }
 
-    version(Windows) {
+    version (Windows) {
         ///
         static ReadPipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) @system {
             import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
 
-            if(allocator.isNull)
+            if (allocator.isNull)
                 allocator = globalAllocator();
 
             ReadPipe ret;
@@ -191,22 +215,34 @@ export @safe nothrow @nogc:
 
             logAssert(ret.state.reading.initialize, "Could not initialize reading for read pipe");
             logAssert(ret.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
+
+            ret.state.addToEventWait;
             return ret;
         }
-    } else version(Posix) {
+    } else version (Posix) {
         ///
         static ReadPipe fromSystemHandle(int handle, RCAllocator allocator = RCAllocator.init) @system {
+            import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
+            import core.sys.posix.fcntl;
 
-            // TODO: allocate state
-            //logAssert(!rawReading.initialize, "Could not initialize raw reading for socket");
-            //logAssert(!rawWriting.initialize, "Could not initialize raw writing for socket");
+            fcntl(handle, F_SETFL, fcntl(handle, F_GETFL) | O_NONBLOCK);
 
-            // TODO: add to eventloop for closure and notification of read
+            if (allocator.isNull)
+                allocator = globalAllocator();
 
-            //fcntl(handle, F_SETFL, fcntl(handle, F_GETFL) | O_NONBLOCK);
+            ReadPipe ret;
+            ret.state = allocator.make!State;
+            atomicStore(ret.state.refCount, 1);
 
-            assert(0);
+            ret.state.allocator = allocator;
+            ret.state.readHandle = cast(void*)handle;
+
+            logAssert(ret.state.reading.initialize, "Could not initialize reading for read pipe");
+            logAssert(ret.state.rawReading.initialize, "Could not initialize raw reading for read pipe");
+
+            ret.state.addToEventWait;
+            return ret;
         }
     }
 }
@@ -225,7 +261,7 @@ export @safe nothrow @nogc:
 
         this.state = other.state;
 
-        if(this.state !is null) {
+        if (this.state !is null) {
             atomicIncrementAndLoad(this.state.refCount, 1);
         }
     }
@@ -234,7 +270,7 @@ export @safe nothrow @nogc:
     ~this() scope {
         import sidero.base.internal.atomic;
 
-        if(this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
+        if (this.state !is null && atomicDecrementAndLoad(this.state.refCount, 1) == 0) {
             this.state.cleanup;
 
             RCAllocator allocator = state.allocator;
@@ -256,7 +292,7 @@ export @safe nothrow @nogc:
 
     ///
     SystemHandle unsafeGetHandle() scope const @trusted {
-        if(isNull)
+        if (isNull)
             return SystemHandle.init;
         return SystemHandle(cast(void*)state.writeHandle, WriteOnlyPipeHandleType);
     }
@@ -268,34 +304,35 @@ export @safe nothrow @nogc:
 
     ///
     void write(scope return Slice!ubyte data) scope {
-        if(isNull || !isOpen)
+        if (isNull || !isOpen)
             return;
 
         state.guard(() @trusted {
             state.rawWriting.push(data);
 
-            if(!state.rawWriting.tryWrite(state))
+            if (!state.rawWriting.tryWrite(state))
                 state.delayWriteForLater;
         });
     }
 
     ///
     int opCmp(scope WritePipe other) scope const {
-        if(other.state is this.state)
+        if (other.state is this.state)
             return 0;
-        else if(other.state > this.state)
+        else if (other.state > this.state)
             return -1;
         else
             return 1;
     }
 
-    version(Windows) {
+    version (Windows) {
         ///
         static WritePipe fromSystemHandle(HANDLE handle, RCAllocator allocator = RCAllocator.init) @trusted {
             import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
+            import sidero.eventloop.internal.windows.bindings : PIPE_READMODE_BYTE, PIPE_NOWAIT, SetNamedPipeHandleState, DWORD;
 
-            if(allocator.isNull)
+            if (allocator.isNull)
                 allocator = globalAllocator();
 
             WritePipe ret;
@@ -305,33 +342,38 @@ export @safe nothrow @nogc:
             ret.state.allocator = allocator;
             ret.state.writeHandle = handle;
 
-            version(Windows) {
-                import sidero.eventloop.internal.windows.bindings : PIPE_READMODE_BYTE, PIPE_NOWAIT, SetNamedPipeHandleState, DWORD;
+            DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
 
-                DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
-
-                // If this fails, it'll block (not a bad thing)
-                // It just means that WriteFile won't return ASAP even if it can't write
-                SetNamedPipeHandleState(handle, &mode, null, null);
-            }
+            // If this fails, it'll block (not a bad thing)
+            // It just means that WriteFile won't return ASAP even if it can't write
+            SetNamedPipeHandleState(handle, &mode, null, null);
 
             logAssert(ret.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
+            ret.state.addToEventWait;
             return ret;
         }
-    } else version(Posix) {
+    } else version (Posix) {
         ///
         static WritePipe fromSystemHandle(int handle, RCAllocator allocator = RCAllocator.init) @system {
+            import sidero.base.internal.atomic;
             import sidero.base.internal.logassert;
+            import core.sys.posix.fcntl;
 
-            // TODO: allocate state
-            //logAssert(!rawReading.initialize, "Could not initialize raw reading for socket");
-            //logAssert(!rawWriting.initialize, "Could not initialize raw writing for socket");
+            fcntl(handle, F_SETFL, fcntl(handle, F_GETFL) | O_NONBLOCK);
 
-            // TODO: add to eventloop for closure and notification of read
+            if (allocator.isNull)
+                allocator = globalAllocator();
 
-            //fcntl(handle, F_SETFL, fcntl(handle, F_GETFL) | O_NONBLOCK);
+            WritePipe ret;
+            ret.state = allocator.make!State;
+            atomicStore(ret.state.refCount, 1);
 
-            assert(0);
+            ret.state.allocator = allocator;
+            ret.state.writeHandle = cast(void*)handle;
+
+            logAssert(ret.state.rawWriting.initialize, "Could not initialize raw writing for write pipe");
+            ret.state.addToEventWait;
+            return ret;
         }
     }
 }
@@ -340,6 +382,12 @@ private:
 import sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.internal.pipes.rawwriting;
+import sidero.base.logger;
+import sidero.base.text;
+
+__gshared {
+    LoggerReference logger;
+}
 
 struct State {
     shared(ptrdiff_t) refCount;
@@ -349,12 +397,7 @@ struct State {
     void* readHandle, writeHandle;
     shared(bool) readStillOpen = true, writeStillOpen = true;
 
-    version(Windows) {
-        enum attemptReadLater = true;
-    } else {
-        enum attemptReadLater = false;
-    }
-
+    enum attemptReadLater = true;
     enum amountToRead = 4096;
     ReadingState!(State, "pipe", false) reading;
     RawReadingState!(State, "pipe") rawReading;
@@ -368,17 +411,19 @@ struct State {
     }
 
     void cleanupRead() scope @trusted {
+        import sidero.eventloop.internal.event_waiting;
+
         if (this.readHandle is null)
             return;
 
         reading.cleanup;
 
-        version(Windows) {
+        version (Windows) {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
             CloseHandle(this.readHandle);
-        } else version(Posix) {
-            assert(0);
+        } else version (Posix) {
+            removeEventWaiterHandle(this.readHandle);
         } else
             static assert(0);
 
@@ -386,22 +431,80 @@ struct State {
     }
 
     void cleanupWrite() scope @trusted {
+        import sidero.eventloop.internal.event_waiting;
+
         if (this.writeHandle is null)
             return;
 
-        version(Windows) {
+        version (Windows) {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
 
             CloseHandle(this.writeHandle);
-        } else version(Posix) {
-            assert(0);
+        } else version (Posix) {
+            removeEventWaiterHandle(this.writeHandle);
         } else
             static assert(0);
 
         this.writeHandle = null;
     }
 
-    void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
+    void addToEventWait() scope @trusted {
+        import sidero.eventloop.internal.event_waiting;
+
+        if (!logger || logger.isNull)
+            logger = Logger.forName(String_UTF8(__MODULE__));
+        assert(logger);
+
+        version (Posix) {
+            import core.sys.posix.poll;
+
+            static void handleReadEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
+                State* state = cast(State*)user;
+                const revent = *cast(int*)eventResponsePtr;
+                logger.trace("Read pipe got event ", state.readHandle, " ", revent);
+
+                if (revent != 0) {
+                    if ((revent & POLLIN) == POLLIN) {
+                        state.guard(&state.performARead);
+                    } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
+                        logger.debug_("Read pipe closed ", state.readHandle, " on ", Thread.self);
+                        state.readStillOpen = false;
+                        state.guard(&state.cleanupRead);
+                    } else {
+                        logger.debug_("Read pipe got event and shouldn't have (may indicate a bug) ", revent, " with ",
+                                state.readHandle, " on ", Thread.self);
+                    }
+                }
+            }
+
+            static void handleWriteEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
+                State* state = cast(State*)user;
+                const revent = *cast(int*)eventResponsePtr;
+                logger.trace("Write pipe got event ", state.writeHandle, " ", revent);
+
+                if (revent != 0) {
+                    if ((revent & POLLOUT) == POLLOUT) {
+                        state.guard(&state.performAWrite);
+                    } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
+                        logger.debug_("Write pipe closed ", state.writeHandle, " on ", Thread.self);
+                        state.writeStillOpen = false;
+                        state.guard(&state.cleanupWrite);
+                    } else {
+                        logger.debug_("Write pipe got event and shouldn't have (may indicate a bug) ", revent,
+                                " with ", state.writeHandle, " on ", Thread.self);
+                    }
+                }
+            }
+
+            if (this.readHandle !is null)
+                addEventWaiterHandle(this.readHandle, &handleReadEvent, &this);
+
+            if (this.writeHandle !is null)
+                addEventWaiterHandle(this.writeHandle, &handleWriteEvent, &this);
+        }
+    }
+
+    void guard(Return, Args...)(scope Return delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
         mutex.lock.assumeOkay;
         del(args);
         mutex.unlock;
@@ -410,46 +513,58 @@ struct State {
     void delayReadForLater() scope @trusted {
         import sidero.eventloop.internal.cleanup_timer;
 
-        version(Windows) {
-            ReadPipe rp;
-            rp.state = &this;
-            rp.__ctor(rp);
+        ReadPipe rp;
+        rp.state = &this;
+        rp.__ctor(rp);
 
-            addReadPipeToList(rp);
-        } else
-            assert(0);
+        addReadPipeToList(rp);
     }
 
     void delayWriteForLater() scope @trusted {
         import sidero.eventloop.internal.cleanup_timer;
 
-        version(Windows) {
-            WritePipe wp;
-            wp.state = &this;
-            wp.__ctor(wp);
+        WritePipe wp;
+        wp.state = &this;
+        wp.__ctor(wp);
 
-            addWritePipeToList(wp);
-        } else
-            assert(0);
+        addWritePipeToList(wp);
+    }
+
+    bool performARead() scope @trusted {
+        bool didRead = this.rawReading.tryRead(&this);
+        didRead = this.rawReading.attemptRead(&this);
+        return this.reading.tryFulfillRequest(&this);
+    }
+
+    bool performAWrite() scope @trusted {
+        bool doneOne;
+
+        while (this.rawWriting.tryWrite(&this)) {
+            doneOne = true;
+        }
+
+        return doneOne;
     }
 
     bool tryRead(ubyte[] data) scope @trusted {
         import sidero.base.internal.atomic;
 
-        if(!atomicLoad(readStillOpen))
+        if (!atomicLoad(readStillOpen))
             return false;
 
-        version(Windows) {
+        logger.trace("reading ", data.length);
+
+        version (Windows) {
             import sidero.eventloop.internal.windows.bindings : DWORD, PeekNamedPipe, ReadFile, GetLastError, ERROR_BROKEN_PIPE;
 
             DWORD canBeRead;
 
             auto errorCode = PeekNamedPipe(this.readHandle, null, cast(DWORD)data.length, null, &canBeRead, null);
 
-            if(errorCode == 0) {
+            if (errorCode == 0) {
                 auto error = GetLastError();
 
-                if(error == ERROR_BROKEN_PIPE) {
+                if (error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
                     this.cleanupRead;
                 }
@@ -457,19 +572,19 @@ struct State {
                 return false;
             }
 
-            if(errorCode == 0 || canBeRead == 0) {
+            if (errorCode == 0 || canBeRead == 0) {
                 return false;
             }
 
-            if(canBeRead > data.length)
+            if (canBeRead > data.length)
                 canBeRead = cast(DWORD)data.length;
 
             errorCode = ReadFile(this.readHandle, data.ptr, cast(DWORD)data.length, &canBeRead, null);
 
-            if(errorCode == 0) {
+            if (errorCode == 0) {
                 auto error = GetLastError();
 
-                if(error == ERROR_BROKEN_PIPE) {
+                if (error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
                     this.cleanupRead;
                 }
@@ -479,8 +594,37 @@ struct State {
 
             rawReading.complete(&this, canBeRead);
             return true;
-        } else version(Posix) {
-            assert(0);
+        } else version (Posix) {
+            import core.sys.posix.unistd;
+            import core.stdc.errno;
+
+            auto canBeRead = read(cast(int)this.readHandle, data.ptr, data.length);
+            logger.trace("read ", canBeRead, " errno ", errno);
+
+            if (canBeRead > 0) {
+                rawReading.complete(&this, canBeRead);
+                return true;
+            } else if (canBeRead == 0) {
+                // empty not an error, but didn't complete
+            } else {
+                switch (errno) {
+                case EAGAIN:
+                    // ok not a failure
+                    break;
+
+                case EBADF:
+                    // not a handle
+                    atomicStore(readStillOpen, false);
+                    this.cleanupRead;
+                    break;
+
+                default:
+                    // unknown error
+                    break;
+                }
+            }
+
+            return false;
         } else
             static assert(0);
     }
@@ -488,17 +632,22 @@ struct State {
     bool tryWrite(ubyte[] data) scope @trusted {
         import sidero.base.internal.atomic;
 
-        version(Windows) {
+        if (!atomicLoad(writeStillOpen))
+            return false;
+
+        logger.trace("trying to write ", data.length);
+
+        version (Windows) {
             import sidero.eventloop.internal.windows.bindings : DWORD, WriteFile, GetLastError, ERROR_BROKEN_PIPE;
 
             DWORD canBeWritten;
 
             auto errorCode = WriteFile(this.writeHandle, data.ptr, cast(DWORD)data.length, &canBeWritten, null);
 
-            if(errorCode == 0) {
+            if (errorCode == 0) {
                 auto error = GetLastError();
 
-                if(error == ERROR_BROKEN_PIPE) {
+                if (error == ERROR_BROKEN_PIPE) {
                     atomicStore(writeStillOpen, false);
                     this.cleanupWrite;
                 }
@@ -507,13 +656,42 @@ struct State {
             }
 
             // not a failure, but also needs to to a delay write
-            if(canBeWritten == 0)
+            if (canBeWritten == 0)
                 return false;
 
             rawWriting.complete(&this, canBeWritten);
             return true;
-        } else version(Posix) {
-            assert(0);
+        } else version (Posix) {
+            import core.sys.posix.unistd;
+            import core.stdc.errno;
+
+            auto canBeWritten = write(cast(int)this.writeHandle, data.ptr, data.length);
+            logger.trace("written ", canBeWritten, " errno ", errno);
+
+            if (canBeWritten > 0) {
+                rawWriting.complete(&this, canBeWritten);
+                return true;
+            } else if (canBeWritten == 0) {
+                // empty not an error, but didn't complete
+            } else {
+                switch (errno) {
+                case EAGAIN:
+                    // ok not a failure
+                    break;
+
+                case EBADF:
+                    // not a handle
+                    atomicStore(writeStillOpen, false);
+                    this.cleanupWrite;
+                    break;
+
+                default:
+                    // unknown error
+                    break;
+                }
+            }
+
+            return false;
         } else
             static assert(0);
     }
