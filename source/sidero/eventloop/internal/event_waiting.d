@@ -119,7 +119,6 @@ void updateEventWaiterThreads() @trusted {
     }
 
     logger.debug_("Updating event waiter thread handles");
-    const oldThreadCount = eventWaiterThreads.length;
 
     {
         // step one: cleanup old threads that are no longer alive
@@ -139,6 +138,9 @@ void updateEventWaiterThreads() @trusted {
         // step two: construct the arrays that'll be passed to the threads
         tempHandles.length = allEventHandles.length;
         tempProcs.length = allEventHandles.length;
+        assert(tempHandles.length == allEventHandles.length);
+        assert(tempProcs.length == allEventHandles.length);
+        assert(tempHandles.length == tempProcs.length);
 
         size_t offset;
         foreach(handle, proc; allEventHandles) {
@@ -157,14 +159,19 @@ void updateEventWaiterThreads() @trusted {
             assert(threadState);
 
             if(tempHandles.length > maxEventHandles) {
+                assert(tempHandles.length == tempProcs.length);
                 threadState.nextEventHandles = tempHandles[0 .. maxEventHandles];
                 threadState.nextEventProcs = tempProcs[0 .. maxEventHandles];
+                assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
 
                 tempHandles = tempHandles[maxEventHandles .. $];
                 tempProcs = tempProcs[maxEventHandles .. $];
+                assert(tempHandles.length == tempProcs.length);
             } else {
+                assert(tempHandles.length == tempProcs.length);
                 threadState.nextEventHandles = tempHandles;
                 threadState.nextEventProcs = tempProcs;
+                assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
 
                 tempHandles = typeof(tempHandles).init;
                 tempProcs = typeof(tempProcs).init;
@@ -190,14 +197,19 @@ void updateEventWaiterThreads() @trusted {
             threadState.thread = gotThread.get;
 
             if(tempHandles.length > maxEventHandles) {
-                threadState.eventHandles = tempHandles[0 .. maxEventHandles];
-                threadState.eventProcs = tempProcs[0 .. maxEventHandles];
+                assert(tempHandles.length == tempProcs.length);
+                threadState.nextEventHandles = tempHandles[0 .. maxEventHandles];
+                threadState.nextEventProcs = tempProcs[0 .. maxEventHandles];
+                assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
 
                 tempHandles = tempHandles[maxEventHandles .. $];
                 tempProcs = tempProcs[maxEventHandles .. $];
+                assert(tempHandles.length == tempProcs.length);
             } else {
-                threadState.eventHandles = tempHandles;
-                threadState.eventProcs = tempProcs;
+                assert(tempHandles.length == tempProcs.length);
+                threadState.nextEventHandles = tempHandles;
+                threadState.nextEventProcs = tempProcs;
+                assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
 
                 tempHandles = typeof(tempHandles).init;
                 tempProcs = typeof(tempProcs).init;
@@ -205,7 +217,7 @@ void updateEventWaiterThreads() @trusted {
         }
     }
 
-    triggerUpdatesOnThreads(oldThreadCount);
+    triggerUpdatesOnThreads(eventWaiterThreads.length);
     logger.debug_("Updated event waiting threads and handles");
     eventWaiterMutex.unlock;
 }
@@ -217,10 +229,9 @@ void threadStartProc() @trusted {
     const key = Thread.self().toHash();
     auto threadState = eventWaiterThreads[key];
 
-    if(!threadState) {
-        logger.warning("Could not start event waiter thread, missing thread information for ", Thread.self);
-        eventWaiterMutex.unlock;
-        return;
+    while(!threadState) {
+        Thread.yield;
+        threadState = eventWaiterThreads[key];
     }
 
     logger.debug_("Event waiting thread starting ", Thread.self);

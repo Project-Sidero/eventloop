@@ -20,8 +20,13 @@ struct EventWaiterThread {
 
     shared(bool) isAlive;
 
-    DynamicArray!(void*) nextEventHandles, eventHandles;
-    DynamicArray!(UserEventHandler) nextEventProcs, eventProcs;
+    DynamicArray!(void*) nextEventHandles;
+    DynamicArray!(UserEventHandler) nextEventProcs;
+
+    private {
+        DynamicArray!(void*) eventHandles;
+        DynamicArray!(UserEventHandler) eventProcs;
+    }
 
     version (Posix) {
         import core.sys.posix.poll;
@@ -38,6 +43,8 @@ struct EventWaiterThread {
 
     void handleReSet() scope {
         version (Posix) {
+            assert(this.nextEventHandles.length == this.nextEventProcs.length);
+
             this.eventHandles = this.nextEventHandles;
             this.eventProcs = this.nextEventProcs;
 
@@ -60,10 +67,25 @@ struct EventWaiterThread {
             logger.info("Starting event waiter thread ", thread);
             atomicStore(isAlive, true);
 
+            scope (exit) {
+                atomicStore(isAlive, false);
+
+                if (candcPipes[0] != 0) {
+                    close(candcPipes[0]);
+                    close(candcPipes[1]);
+                }
+
+                candcPipes[0] = 0;
+                candcPipes[1] = 0;
+
+                logger.info("Ending event waiter thread ", thread);
+            }
+
             {
                 const err = pipe(candcPipes);
                 if (err != 0)
                     return;
+
                 fcntl(candcPipes[0], F_SETFL, O_NONBLOCK | FD_CLOEXEC);
                 fcntl(candcPipes[1], F_SETFL, O_NONBLOCK | FD_CLOEXEC);
 
@@ -76,21 +98,7 @@ struct EventWaiterThread {
                 }
             }
 
-            scope (exit) {
-                atomicStore(isAlive, false);
-
-                close(candcPipes[0]);
-                close(candcPipes[1]);
-                candcPipes[0] = 0;
-                candcPipes[1] = 0;
-
-                logger.info("Ending event waiter thread ", thread);
-            }
-
             while (atomicLoad(this.isAlive)) {
-                if (!this.nextEventHandles.isNull)
-                    handleReSet();
-
                 logger.debug_("Event waiter poll starting ", pollfds[0 .. eventHandles.length + 1]);
                 const err = poll(pollfds.ptr, eventHandles.length + 1, -1);
                 logger.debug_("Event waiter poll complete ", err);
@@ -157,13 +165,20 @@ size_t maximumNumberOfHandlesPerEventWaiter() {
 
 void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
     version (Posix) {
+        import sidero.base.internal.atomic;
         import core.stdc.errno;
 
         // step five: wake up threads and set the handles to the new ones
         foreach (threadState; eventWaiterThreads) {
             assert(threadState);
-            if (threadState.nextEventHandles.isNull || threadState.candcPipes[1] == 0)
+            assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
+
+            if (threadState.nextEventHandles.isNull || !atomicLoad(threadState.isAlive))
                 continue;
+
+            while(atomicLoad(threadState.isAlive) && threadState.candcPipes[1] == 0) {
+                Thread.yield;
+            }
 
             int dummy;
             if (write(threadState.candcPipes[1], &dummy, 4) < 4) {

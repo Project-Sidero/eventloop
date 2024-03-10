@@ -45,7 +45,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
     }
 
     bool tryWrite(scope StateObject* stateObject) scope @trusted {
-        if (logger.isNull)
+        if (!logger || logger.isNull)
             return false;
 
         if(triggered) {
@@ -86,7 +86,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
                     return false;
                 }
             } else {
-                assert(logger || logger.isNull);
+                assert(logger && !logger.isNull);
                 logger.debug_("Empty raw write queue");
                 return false;
             }
