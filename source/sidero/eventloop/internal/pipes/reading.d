@@ -30,7 +30,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         import sidero.base.text;
 
         logger = Logger.forName(String_UTF8(__MODULE__ ~ "$" ~ TitleOfPipe));
-        if(!logger)
+        if(!logger || logger.isNull)
             return false;
         return true;
     }

@@ -32,7 +32,7 @@ __gshared {
 
             version (linux) {
                 import core.sys.linux.timerfd;
-                import core.sys.posix.unistd : close;
+                import core.sys.posix.unistd : close, read;
                 import core.sys.posix.sys.time : timeval, gettimeofday;
 
                 int timerHandle;
@@ -88,6 +88,8 @@ bool startUpCleanupTimer() @trusted {
 
         addEventWaiterHandle(timerHandle, &onTimerFunction, null);
     /+} else version (linux) {
+        import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
+
         timerHandle = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
         if (timerHandle < 0) {
             logger.error("Could not create Linux cleanup timer ", errno);
@@ -95,10 +97,17 @@ bool startUpCleanupTimer() @trusted {
             return false;
         }
 
+        timespec ts;
+        if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+            logger.error("Could not create Linux cleanup timer getting of time ", errno);
+            shutdownCleanupTimer;
+            return false;
+        }
+
         // reactivate every 1 seconds
         // was one 5 seconds
         itimerspec spec;
-        spec.it_value.tv_sec = 1;
+        spec.it_value.tv_sec = ts.tv_sec + 1;
         spec.it_interval.tv_sec = 1;
 
         timerfd_settime(timerHandle, 0, &spec, null);
@@ -202,6 +211,13 @@ void addWritePipeToList(WritePipe pipe) @trusted {
 private:
 
 void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @trusted {
+    logger.debug_("on timer ", handle, " ", user, " ", eventResponsePtr);
+
+    version (Posix) {
+        ubyte[8] res;
+        read(timerHandle, res.ptr, res.length);
+    }
+
     whenReady();
 }
 

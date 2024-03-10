@@ -24,7 +24,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
 
         logger = Logger.forName(String_UTF8(__MODULE__ ~ "$" ~ TitleOfPipe));
 
-        if(!logger)
+        if(!logger || logger.isNull)
             return false;
         return true;
     }
@@ -45,6 +45,9 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
     }
 
     bool tryWrite(scope StateObject* stateObject) scope @trusted {
+        if (logger.isNull)
+            return false;
+
         if(triggered) {
             logger.debug_("Write is currently triggered");
             return false;
@@ -83,7 +86,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
                     return false;
                 }
             } else {
-                assert(logger);
+                assert(logger || logger.isNull);
                 logger.debug_("Empty raw write queue");
                 return false;
             }
