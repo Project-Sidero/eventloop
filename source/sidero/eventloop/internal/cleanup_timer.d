@@ -10,6 +10,8 @@ import sidero.base.containers.list.concurrentlinkedlist;
 import sidero.base.synchronization.mutualexclusion;
 import sidero.base.errors;
 
+enum NumberOfSecondsBetweenCleanup = 1;
+
 __gshared {
     private {
         LoggerReference logger;
@@ -78,9 +80,9 @@ bool startUpCleanupTimer() @trusted {
         // Wait 1 seconds and then reactive every 1 seconds.
         // This use to be 15 seconds, but that is too long for pipes and HCI reasons.
         LARGE_INTEGER dueTime;
-        dueTime.QuadPart = -10000000;
+        dueTime.QuadPart = -10000000 * NumberOfSecondsBetweenCleanup;
 
-        if (SetWaitableTimer(timerHandle, &dueTime, 1_000, null, null, false) == 0) {
+        if (SetWaitableTimer(timerHandle, &dueTime, 1_000 * NumberOfSecondsBetweenCleanup, null, null, false) == 0) {
             logger.warning("Error occured while attempting to set time timer for retrying read/write ", WSAGetLastError());
             shutdownCleanupTimer;
             return false;
@@ -107,8 +109,8 @@ bool startUpCleanupTimer() @trusted {
         // reactivate every 1 seconds
         // was one 5 seconds
         itimerspec spec;
-        spec.it_value.tv_sec = ts.tv_sec + 1;
-        spec.it_interval.tv_sec = 1;
+        spec.it_value.tv_sec = ts.tv_sec + NumberOfSecondsBetweenCleanup;
+        spec.it_interval.tv_sec = NumberOfSecondsBetweenCleanup;
 
         timerfd_settime(timerHandle, 0, &spec, null);
         addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);+/
@@ -231,15 +233,17 @@ void timerThreadProc() @trusted {
             pthread_mutex_lock(&timerMutex);
             bool doneOne;
 
-            while (socketRetryQueue.empty && (processList.length == 0 || (processList.length > 0 && !doneOne)) &&
-                    !atomicLoad(timerThreadInShutdown)) {
+            while (socketRetryQueue.empty && !atomicLoad(timerThreadInShutdown) && (processList.length == 0 ||
+                    (processList.length > 0 && !doneOne)) && (toReadPipeList.length == 0 || (toReadPipeList.length > 0 &&
+                    !doneOne)) && (toWritePipeList.length == 0 || (toWritePipeList.length > 0 && !doneOne))) {
+
                 doneOne = true;
 
                 timeval now;
                 gettimeofday(&now, null);
 
                 timespec next;
-                next.tv_sec = now.tv_sec + 1;
+                next.tv_sec = now.tv_sec + NumberOfSecondsBetweenCleanup;
                 // wait 1 second, was 5 seconds
                 pthread_cond_timedwait(&timerCondition, &timerMutex, &next);
             }

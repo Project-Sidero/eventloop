@@ -25,7 +25,7 @@ void main() {
     process.inputPipe.write(Slice!ubyte(cast(ubyte[])"!\n"));
 
     while(!result.isComplete || !textToRead.isComplete) {
-        cast(void)Thread.sleep(1.second);
+        cast(void)Thread.sleep(10.microSecond);
     }
 
     assert(result.isComplete);
