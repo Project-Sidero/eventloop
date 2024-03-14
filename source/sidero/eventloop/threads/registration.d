@@ -15,21 +15,12 @@ alias DetachOfThreadFunction = extern (C) void function(Thread);
 ///
 void registerThreadRegistration(void* key, OnAttachThisFunction onAttach, OnDetachThisFunction onDetach,
         IsThreadRegisteredFunction isRegistered, DetachOfThreadFunction detach) {
-
-    protectAttachDetachMutex.writeLock;
-
     threadSystemRegistration[key] = ThreadSystemRegistrationInfo(onAttach, onDetach, isRegistered, detach);
-
-    protectAttachDetachMutex.pureWriteUnlock;
 }
 
 ///
 void deregisterThreadRegistration(void* key) {
-    protectAttachDetachMutex.writeLock;
-
     threadSystemRegistration.remove(key);
-
-    protectAttachDetachMutex.pureWriteUnlock;
 }
 
 package(sidero.eventloop.threads):
@@ -40,25 +31,17 @@ size_t onAttachOfThread(Thread thread) {
         return 0;
 
     size_t done;
-    protectAttachDetachMutex.readLock;
 
     foreach (k, ts; threadSystemRegistration) {
         assert(k);
         assert(ts);
 
-        auto isRegistered = thread.state.currentlyRegisteredOnRuntimes.get(k.get, false);
-        assert(isRegistered);
-
-        if (!isRegistered.get && ts.attachFunc !is null) {
-            const set = thread.state.currentlyRegisteredOnRuntimes.update(k.get, true);
-            assert(set);
-
+        if (ts.attachFunc !is null && thread.state.currentlyRegisteredOnRuntimes.update(k.get, true)) {
             ts.attachFunc();
             done++;
         }
     }
 
-    protectAttachDetachMutex.readUnlock;
     return done;
 }
 
@@ -68,7 +51,6 @@ size_t onDetachOfThread(Thread thread) {
         return 0;
 
     size_t done;
-    protectAttachDetachMutex.readLock;
 
     foreach (k, ts; threadSystemRegistration) {
         assert(k);
@@ -77,23 +59,17 @@ size_t onDetachOfThread(Thread thread) {
         auto isRegistered = thread.state.currentlyRegisteredOnRuntimes.get(k, false);
         assert(isRegistered);
 
-        if (isRegistered.get && ts.detachThisFunc !is null) {
-            const set = thread.state.currentlyRegisteredOnRuntimes.update(k.get, false);
-            assert(set);
-
+        if (ts.detachThisFunc !is null && thread.state.currentlyRegisteredOnRuntimes.update(k.get, false)) {
             ts.detachThisFunc();
             done++;
         }
     }
 
-    protectAttachDetachMutex.readUnlock;
     return done;
 }
 
 ///
 void deregisterOwnedThreads() {
-    protectAttachDetachMutex.readLock;
-
     accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
         import sidero.base.internal.atomic : atomicLoad, atomicDecrementAndLoad;
         mutex.lock.assumeOkay;
@@ -114,13 +90,7 @@ void deregisterOwnedThreads() {
                 assert(k);
                 assert(ts);
 
-                auto isRegistered = threadState.currentlyRegisteredOnRuntimes.get(k, false);
-                assert(isRegistered);
-
-                if (isRegistered.get && ts.detachFunc !is null) {
-                    const set = threadState.currentlyRegisteredOnRuntimes.update(k.get, false);
-                    assert(set);
-
+                if (ts.detachFunc !is null && threadState.currentlyRegisteredOnRuntimes.get(k, false)) {
                     ts.detachFunc(thread);
                     done++;
                 }
@@ -134,17 +104,13 @@ void deregisterOwnedThreads() {
 
         mutex.unlock;
     });
-
-    protectAttachDetachMutex.readUnlock;
 }
 
 private:
 import sidero.base.allocators.predefined;
 import sidero.base.containers.map.concurrenthashmap;
-import sidero.base.synchronization.rwmutex;
 
 __gshared {
-    ReaderWriterLockInline protectAttachDetachMutex;
     ConcurrentHashMap!(void*, ThreadSystemRegistrationInfo) threadSystemRegistration;
 }
 

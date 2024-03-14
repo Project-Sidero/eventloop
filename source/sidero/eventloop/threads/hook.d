@@ -17,8 +17,8 @@ version(D_BetterC) {
         }
 
         static extern (C) void onDetach() {
-            thread_detachThis;
             rt_moduleTlsDtor;
+            thread_detachThis;
         }
 
         static extern (C) bool isRegistered() {

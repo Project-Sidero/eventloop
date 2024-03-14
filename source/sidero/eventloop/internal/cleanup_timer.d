@@ -89,7 +89,7 @@ bool startUpCleanupTimer() @trusted {
         }
 
         addEventWaiterHandle(timerHandle, &onTimerFunction, null);
-    /+} else version (linux) {
+    } else version (linux) {
         import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
 
         timerHandle = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
@@ -110,10 +110,16 @@ bool startUpCleanupTimer() @trusted {
         // was one 5 seconds
         itimerspec spec;
         spec.it_value.tv_sec = ts.tv_sec + NumberOfSecondsBetweenCleanup;
+        spec.it_value.tv_nsec = ts.tv_nsec;
         spec.it_interval.tv_sec = NumberOfSecondsBetweenCleanup;
 
-        timerfd_settime(timerHandle, 0, &spec, null);
-        addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);+/
+        if (timerfd_settime(timerHandle, TFD_TIMER_ABSTIME, &spec, null) != 0) {
+            logger.error("Could not set Linux cleanup timer getting of time ", errno);
+            shutdownCleanupTimer;
+            return false;
+        }
+
+        addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
     } else version (Posix) {
         atomicStore(timerThreadInShutdown, false);
 
@@ -145,7 +151,7 @@ bool startUpCleanupTimer() @trusted {
     return true;
 }
 
-pragma(crt_destructor) extern (C) void shutdownCleanupTimer() @trusted {
+extern (C) void shutdownCleanupTimer() @trusted {
     import sidero.eventloop.internal.event_waiting;
 
     if (!logger || logger.isNull)
@@ -160,7 +166,6 @@ pragma(crt_destructor) extern (C) void shutdownCleanupTimer() @trusted {
             removeEventWaiterHandle(timerHandle);
             CloseHandle(timerHandle);
         }
-
     } else version (linux) {
         removeEventWaiterHandle(cast(void*)timerHandle);
         close(timerHandle);

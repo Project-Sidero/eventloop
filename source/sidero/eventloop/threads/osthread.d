@@ -469,6 +469,10 @@ __gshared {
 
 struct EntryFunctionArgs(Args...) {
     Args args;
+
+    this(return scope ref EntryFunctionArgs other) @trusted {
+        this.tupleof = other.tupleof;
+    }
 }
 
 version(Windows) {

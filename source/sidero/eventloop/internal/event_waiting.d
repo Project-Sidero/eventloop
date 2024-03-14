@@ -96,6 +96,9 @@ void removeEventWaiterHandle(scope void* handleToNotWaitOn) @trusted {
 }
 
 void shutdownEventWaiterThreads() {
+    import sidero.eventloop.internal.cleanup_timer;
+
+    shutdownCleanupTimer();
     shutdownEventWaiterThreadsMechanism();
 }
 
@@ -114,8 +117,10 @@ void updateEventWaiterThreads() @trusted {
             return;
         }
 
-        if(!initializePlatformEventWaiting())
+        if(!initializePlatformEventWaiting()) {
+            eventWaiterMutex.unlock;
             return;
+        }
     }
 
     logger.debug_("Updating event waiter thread handles");
@@ -136,6 +141,8 @@ void updateEventWaiterThreads() @trusted {
 
     {
         // step two: construct the arrays that'll be passed to the threads
+        logger.debug_("Have ", allEventHandles.length, " event handles to wait for");
+
         tempHandles.length = allEventHandles.length;
         tempProcs.length = allEventHandles.length;
         assert(tempHandles.length == allEventHandles.length);
@@ -151,6 +158,8 @@ void updateEventWaiterThreads() @trusted {
             cast(void)(tempProcs[offset] = proc.assumeOkay);
             offset++;
         }
+
+        logger.trace("Have set", offset, " event handles to wait for");
     }
 
     {
@@ -159,6 +168,8 @@ void updateEventWaiterThreads() @trusted {
             assert(threadState);
 
             if(tempHandles.length > maxEventHandles) {
+                logger.trace("Consuming ", maxEventHandles, " of ", tempHandles.length, " event handles to wait for");
+
                 assert(tempHandles.length == tempProcs.length);
                 threadState.nextEventHandles = tempHandles[0 .. maxEventHandles];
                 threadState.nextEventProcs = tempProcs[0 .. maxEventHandles];
@@ -168,6 +179,8 @@ void updateEventWaiterThreads() @trusted {
                 tempProcs = tempProcs[maxEventHandles .. $];
                 assert(tempHandles.length == tempProcs.length);
             } else {
+                logger.trace("Consuming ", tempHandles.length, " event handles to wait for");
+
                 assert(tempHandles.length == tempProcs.length);
                 threadState.nextEventHandles = tempHandles;
                 threadState.nextEventProcs = tempProcs;
@@ -183,36 +196,37 @@ void updateEventWaiterThreads() @trusted {
         // step four: start up new threads to complete the handles
 
         while(tempHandles.length > 0) {
-            auto gotThread = Thread.create(&threadStartProc);
-            if(!gotThread) {
-                logger.warning("Thread failed to be created, stopping event waiting updating ", gotThread.getError());
-                break;
-            }
-
-            const key = gotThread.get().toHash();
-            eventWaiterThreads[key] = EventWaiterThread.init;
-
-            auto threadState = eventWaiterThreads[key];
-            assert(threadState);
-            threadState.thread = gotThread.get;
+            DynamicArray!(void*) currentHandles;
+            DynamicArray!UserEventHandler currentProcs;
 
             if(tempHandles.length > maxEventHandles) {
+                logger.trace("Consuming ", maxEventHandles, " of ", tempHandles.length, " event handles to wait for");
+
                 assert(tempHandles.length == tempProcs.length);
-                threadState.nextEventHandles = tempHandles[0 .. maxEventHandles];
-                threadState.nextEventProcs = tempProcs[0 .. maxEventHandles];
-                assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
+                currentHandles = tempHandles[0 .. maxEventHandles];
+                currentProcs = tempProcs[0 .. maxEventHandles];
+                assert(currentHandles.length == currentProcs.length);
 
                 tempHandles = tempHandles[maxEventHandles .. $];
                 tempProcs = tempProcs[maxEventHandles .. $];
                 assert(tempHandles.length == tempProcs.length);
             } else {
+                logger.trace("Consuming ", tempHandles.length, " event handles to wait for");
+
                 assert(tempHandles.length == tempProcs.length);
-                threadState.nextEventHandles = tempHandles;
-                threadState.nextEventProcs = tempProcs;
-                assert(threadState.nextEventHandles.length == threadState.nextEventProcs.length);
+                currentHandles = tempHandles;
+                currentProcs = tempProcs;
+                assert(currentHandles.length == currentProcs.length);
 
                 tempHandles = typeof(tempHandles).init;
                 tempProcs = typeof(tempProcs).init;
+                assert(tempHandles.length == tempProcs.length);
+            }
+
+            auto gotThread = Thread.create(&threadStartProc, currentHandles, currentProcs);
+            if(!gotThread) {
+                logger.warning("Thread failed to be created, stopping event waiting updating ", gotThread.getError());
+                break;
             }
         }
     }
@@ -222,23 +236,26 @@ void updateEventWaiterThreads() @trusted {
     eventWaiterMutex.unlock;
 }
 
-void threadStartProc() @trusted {
+void threadStartProc(DynamicArray!(void*) tempHandles, DynamicArray!UserEventHandler tempProcs) @trusted {
     auto lockError = eventWaiterMutex.lock;
     assert(lockError);
 
-    const key = Thread.self().toHash();
+    Thread self = Thread.self;
+    const key = self.toHash();
+
+    logger.debug_("Event waiting thread starting ", self);
+
+    eventWaiterThreads[key] = EventWaiterThread.init;
     auto threadState = eventWaiterThreads[key];
+    assert(threadState);
 
-    while(!threadState) {
-        Thread.yield;
-        threadState = eventWaiterThreads[key];
-    }
+    threadState.thread = self;
+    threadState.nextEventHandles = tempHandles;
+    threadState.nextEventProcs = tempProcs;
 
-    logger.debug_("Event waiting thread starting ", Thread.self);
     eventWaiterMutex.unlock;
-
     scope(exit) {
-        logger.debug_("Event waiting thread finished ", Thread.self);
+        logger.debug_("Event waiting thread finished ", self);
     }
 
     threadState.ourProc();

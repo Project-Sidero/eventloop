@@ -458,6 +458,44 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             ret.state.errorPipe = ReadPipe.fromSystemHandle(errorPipes[0]);
         }
 
+        HashMap!(String_UTF8, String_UTF8) tempEnv;
+        DynamicArray!String_UTF8 envStrings;
+        DynamicArray!(char*) envStringPtrs;
+
+        {
+            if(!overrideParentEnvironment) {
+                tempEnv = EnvironmentVariables.toHashMap();
+
+                foreach(k, v; environment) {
+                    tempEnv[k] = v;
+                }
+            } else {
+                tempEnv = environment;
+            }
+
+            // environment is an array of pointers will a null pointer ending it
+            // split k/v with =
+
+            envStrings.length = tempEnv.length;
+            envStringPtrs.length = tempEnv.length + 1; // null terminator string
+            size_t offset;
+
+            foreach(k, v; tempEnv) {
+                assert(k);
+                assert(v);
+
+                StringBuilder_UTF8 builder;
+                builder ~= k;
+                builder ~= "="c;
+                builder ~= v;
+
+                String_UTF8 text = builder.asReadOnly; // null terminates
+
+                    (envStrings[offset] = text).assumeOkay;
+                    (envStringPtrs[offset++] = cast(char*)text.ptr).assumeOkay;
+            }
+        }
+
         ProcessID pid = fork();
 
         if(pid == 0) {
@@ -491,8 +529,6 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
             String_UTF8 cwd = currentWorkingDirectory;
             DynamicArray!String_UTF8 argStrings;
             DynamicArray!(char*) argStringPtrs;
-            DynamicArray!String_UTF8 envStrings;
-            DynamicArray!(char*) envStringPtrs;
 
             if(!cwd.isPtrNullTerminated())
                 cwd = cwd.dup;
@@ -558,42 +594,6 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
                         if(!(argStringPtrs[1 + i] = cast(char*)val.ptr))
                             writeError(8);
                     }
-                }
-            }
-
-            {
-                // environment is an array of pointers will a null pointer ending it
-                // split k/v with =
-
-                HashMap!(String_UTF8, String_UTF8) tempEnv;
-
-                if(!overrideParentEnvironment) {
-                    tempEnv = EnvironmentVariables.toHashMap();
-
-                    foreach(k, v; environment) {
-                        tempEnv[k] = v;
-                    }
-                } else {
-                    tempEnv = environment;
-                }
-
-                envStrings.length = tempEnv.length;
-                envStringPtrs.length = tempEnv.length + 1; // null terminator string
-                size_t offset;
-
-                foreach(k, v; tempEnv) {
-                    assert(k);
-                    assert(v);
-
-                    StringBuilder_UTF8 builder;
-                    builder ~= k;
-                    builder ~= "="c;
-                    builder ~= v;
-
-                    String_UTF8 text = builder.asReadOnly; // null terminates
-
-                    (envStrings[offset] = text).assumeOkay;
-                    (envStringPtrs[offset++] = cast(char*)text.ptr).assumeOkay;
                 }
             }
 

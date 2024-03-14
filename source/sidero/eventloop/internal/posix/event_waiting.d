@@ -150,7 +150,6 @@ bool initializePlatformEventWaiting() @trusted {
         logger = Logger.forName(String_UTF8(__MODULE__));
         if (!logger)
             return false;
-
         return true;
     } else
         return false;
@@ -215,11 +214,14 @@ void shutdownEventWaiterThreadsMechanism() @trusted {
 
         foreach (threadState; eventWaiterThreads) {
             assert(threadState);
-            cast(void)threadState.thread.join();
+            auto got = threadState.thread.join();
+            if (!got)
+                logger.error("Failed to join event waiter thread ", threadState.thread, " ", got);
         }
 
         eventWaiterThreads = typeof(eventWaiterThreads).init;
         eventWaiterMutex.unlock;
+        logger.notice("Shutdown all event waiter threads");
     } else
         assert(0);
 }
