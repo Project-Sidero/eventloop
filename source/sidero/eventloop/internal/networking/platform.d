@@ -33,7 +33,18 @@ version(Windows) {
     struct PlatformSocket {
         void* handle;
 
+        enum keepAReadAlwaysGoing = false;
+
     @safe nothrow @nogc:
+
+        void initiateAConstantlyRunningReadRequest(scope SocketState* socketState) {
+            // keepAReadAlwaysGoing == true
+            assert(0);
+        }
+
+        void notifiedOfReadComplete(scope SocketState* socketState) {
+            assert(0);
+        }
     }
 
     ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!uint keepAlive) {

@@ -25,6 +25,9 @@ struct PlatformSocket {
 
     shared(bool) isClosed;
     bool isWaitingForRetrigger;
+    bool havePendingAlwaysWaitingRead, havePendingRead;
+
+    enum keepAReadAlwaysGoing = true;
 
 @safe nothrow @nogc:
 
@@ -50,6 +53,69 @@ struct PlatformSocket {
 
             socketState.guard(&socketState.performReadWrite);
         }
+    }
+
+    void initiateAConstantlyRunningReadRequest(scope SocketState* socketState) scope @trusted {
+        if(this.havePendingAlwaysWaitingRead || this.havePendingRead)
+            return;
+
+        this.readOverlapped = OVERLAPPED.init;
+        this.havePendingAlwaysWaitingRead = true;
+
+        DWORD flags;
+        auto result = WSARecv(socketState.handle, null, 0, null, &flags, &this.readOverlapped, null);
+
+        if(result == 0) {
+            // completed, IOCP will be notified of completion
+            logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
+        } else {
+            const errorCode = WSAGetLastError();
+
+            switch(errorCode) {
+            case WSA_OPERATION_ABORTED:
+            case WSAETIMEDOUT:
+            case WSAESHUTDOWN:
+            case WSAENOTSOCK:
+            case WSAENOTCONN:
+            case WSAENETRESET:
+            case WSAENETDOWN:
+            case WSAEINVAL:
+            case WSAEINTR:
+            case WSAEDISCON:
+            case WSAECONNRESET:
+            case WSAECONNABORTED:
+            case WSANOTINITIALISED:
+            case WSAEMSGSIZE:
+            case WSAEFAULT:
+            case WSAEINPROGRESS:
+            case WSAEOPNOTSUPP:
+                // these are all failure modes for a socket
+                // we must make sure to tell the socket that we are no longer connected
+                logger.info("Failed to read initiate closing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
+                socketState.unpin;
+                break;
+
+            case WSAEWOULDBLOCK:
+                // we cannot read right now, so we'll say none is read and attempt again later
+                socketState.needToBeRetriggered(socketState);
+                logger.debug_("Reading failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
+                break;
+
+            case WSA_IO_PENDING:
+                // this is okay, its delayed via IOCP
+                logger.debug_("Reading delayed via IOCP for ", socketState.handle, " on ", Thread.self);
+                break;
+
+            default:
+                logger.notice("Unknown error while reading ", errorCode, " for ", socketState.handle, " on ", Thread.self);
+                break;
+            }
+        }
+    }
+
+    void notifiedOfReadComplete(scope SocketState* socketState) scope @trusted {
+        this.havePendingAlwaysWaitingRead = false;
+        this.havePendingRead = false;
     }
 }
 
@@ -122,7 +188,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Opti
             }
         }
 
-        if (keepAlive) {
+        if(keepAlive) {
             // keepAlive is in milliseconds
             uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
 
@@ -231,7 +297,8 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Opti
             socketState.remoteAddress = address;
         }
 
-        addEventWaiterHandle(socketState.onCloseEvent, &handleSocketEvent, socketState);
+        if(!socketState.keepAReadAlwaysGoing)
+            addEventWaiterHandle(socketState.onCloseEvent, &handleSocketEvent, socketState);
         socketState.pin();
         return ErrorResult.init;
     } else
@@ -255,7 +322,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
                 socketState.onCloseEvent = null;
             }
 
-            if (socketState.rawReading.inProgress) {
+            if(socketState.rawReading.inProgress) {
                 CancelIoEx(socketState.handle, &socketState.readOverlapped);
             }
 
@@ -346,20 +413,25 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
 
 bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version(Windows) {
+        if(socketState.havePendingAlwaysWaitingRead) {
+            CancelIoEx(socketState.handle, &socketState.readOverlapped);
+            socketState.havePendingAlwaysWaitingRead = false;
+        }
+
+        socketState.havePendingRead = true;
+
         socketState.readOverlapped = OVERLAPPED.init;
 
         WSABUF wsaBuffer;
         wsaBuffer.buf = buffer.ptr;
         wsaBuffer.len = cast(uint)buffer.length;
 
-        DWORD transferredBytes;
         DWORD flags;
-        auto result = WSARecv(socketState.handle, &wsaBuffer, 1, &transferredBytes, &flags, &socketState.readOverlapped, null);
+        auto result = WSARecv(socketState.handle, &wsaBuffer, 1, null, &flags, &socketState.readOverlapped, null);
 
         if(result == 0) {
-            // completed, transferredBytes will have the amount of data that was copied in
+            // completed, IOCP will be notified of completion
             logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
-            //socketState.rawReading.complete(socketState, transferredBytes);
             return true;
         } else {
             const errorCode = WSAGetLastError();

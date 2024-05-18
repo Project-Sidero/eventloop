@@ -7,6 +7,7 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
 import sidero.base.allocators;
 import sidero.base.logger;
+import sidero.base.internal.logassert;
 
 struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     private {
@@ -110,12 +111,15 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         bool success;
 
         void handleWithData(AD)(scope AD availableData, scope ref size_t tryingToConsume) @safe {
+            if (availableData.isNull) // nothing we can do
+                return;
+
             void subsetFromAvailable(ptrdiff_t amount) @trusted {
                 if(amount == 0)
                     return;
 
                 auto sliced = availableData[0 .. amount];
-                assert(sliced, sliced.getError().toString.unsafeGetLiteral());
+                logAssert(cast(bool)sliced, null, sliced.getError());
                 auto slicedG = sliced.get;
 
                 if(appendingArray.length == 0)

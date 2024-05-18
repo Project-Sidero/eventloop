@@ -53,8 +53,9 @@ struct SocketState {
         this.protocol = protocol;
         this.cameFromServer = cameFromServer;
 
-        logAssert(!rawReading.initialize, "Could not initialize raw reading for socket");
-        logAssert(!rawWriting.initialize, "Could not initialize raw writing for socket");
+        logAssert(reading.initialize, "Could not initialize reading for socket");
+        logAssert(rawReading.initialize, "Could not initialize raw reading for socket");
+        logAssert(rawWriting.initialize, "Could not initialize raw writing for socket");
     }
 
     void rc(bool addRef) scope @trusted {

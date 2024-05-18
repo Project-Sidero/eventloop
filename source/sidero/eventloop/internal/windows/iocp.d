@@ -132,6 +132,8 @@ version(Windows) {
             if(result == 0) {
                 const errorCode = GetLastError();
                 if(errorCode == WAIT_TIMEOUT) {
+                } else if (errorCode == ERROR_OPERATION_ABORTED) {
+                    // ok, explicitly cancelled event
                 } else if(overlapped is null) {
                     logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " ", Thread.self);
                 } else {
@@ -180,6 +182,8 @@ version(Windows) {
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.readOverlapped, &transferredBytes, false, &flags);
 
         if(!result) {
+            socket.state.guard(() { socket.state.notifiedOfReadComplete(socket.state); });
+
             auto error = GetLastError();
             if(error == WSA_IO_INCOMPLETE) {
                 // no data?

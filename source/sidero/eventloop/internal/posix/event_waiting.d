@@ -212,6 +212,8 @@ void shutdownEventWaiterThreadsMechanism() @trusted {
             }
         }
 
+        eventWaiterMutex.unlock;
+
         foreach (threadState; eventWaiterThreads) {
             assert(threadState);
             auto got = threadState.thread.join();
@@ -220,7 +222,6 @@ void shutdownEventWaiterThreadsMechanism() @trusted {
         }
 
         eventWaiterThreads = typeof(eventWaiterThreads).init;
-        eventWaiterMutex.unlock;
         logger.notice("Shutdown all event waiter threads");
     } else
         assert(0);

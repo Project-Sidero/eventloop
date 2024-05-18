@@ -46,13 +46,14 @@ version(Windows) {
             }
         }
 
+        eventWaiterMutex.unlock;
+
         foreach(threadState; eventWaiterThreads) {
             assert(threadState);
             cast(void)threadState.thread.join();
         }
 
         eventWaiterThreads = typeof(eventWaiterThreads).init;
-        eventWaiterMutex.unlock;
     }
 
     void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {

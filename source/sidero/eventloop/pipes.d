@@ -399,6 +399,8 @@ struct State {
 
     enum attemptReadLater = true;
     enum amountToRead = 4096;
+    enum keepAReadAlwaysGoing = false;
+
     ReadingState!(State, "pipe", false) reading;
     RawReadingState!(State, "pipe") rawReading;
     RawWritingState!(State, "pipe") rawWriting;
@@ -694,5 +696,14 @@ struct State {
             return false;
         } else
             static assert(0);
+    }
+
+    void initiateAConstantlyRunningReadRequest(scope State* socketState) scope {
+        // Not supported anywhere
+        assert(0);
+    }
+
+    void notifiedOfReadComplete(scope State* socketState) scope {
+        // Not needed
     }
 }

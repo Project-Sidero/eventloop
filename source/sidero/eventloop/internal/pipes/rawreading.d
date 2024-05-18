@@ -2,6 +2,7 @@ module sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.threads.osthread;
 import sidero.base.containers.dynamicarray;
 import sidero.base.logger;
+import sidero.base.allocators;
 
 package(sidero.eventloop):
 
@@ -17,12 +18,16 @@ struct RawReadingState(StateObject, string TitleOfPipe) {
 package(sidero.eventloop):
 @safe nothrow @nogc:
 
-    bool initialize() {
+    bool initialize() scope @trusted {
         import sidero.base.text;
 
         logger = Logger.forName(String_UTF8(__MODULE__ ~ "$" ~ TitleOfPipe));
+
         if(!logger || logger.isNull)
             return false;
+
+
+        buffer = DynamicArray!ubyte(RCAllocator.init);
         return true;
     }
 
@@ -67,6 +72,10 @@ package(sidero.eventloop):
                 logger.debug_("Failed to setup up raw reading for " ~ TitleOfPipe ~ " with a buffer of ", toRead, " for a length of ",
                         buffer.length, " from ", oldLength, " for socket ", stateObject.readHandle, " on thread ", Thread.self);
                 triggered = false;
+
+                if(stateObject.keepAReadAlwaysGoing)
+                    stateObject.initiateAConstantlyRunningReadRequest(stateObject);
+
                 return false;
             }
         }
@@ -80,8 +89,8 @@ package(sidero.eventloop):
         auto slice = buffer.unsafeGetLiteral;
 
         if(stateObject.tryRead(slice[amountFilled .. $])) {
-            logger.debug_("Successfully performed raw reading for " ~ TitleOfPipe ~ " for a length of ",
-                    buffer.length, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
+            logger.debug_("Successfully performed raw reading for " ~ TitleOfPipe ~ " for a length of ", buffer.length,
+                    " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
             return true;
         } else
             return false;
@@ -114,10 +123,15 @@ package(sidero.eventloop):
         import sidero.base.internal.atomic;
 
         triggered = false;
+        stateObject.notifiedOfReadComplete(stateObject);
 
         if(completedAmount > amountPrepared) {
             logger.info("Received too much data ", completedAmount, " with a prepared buffered count of ",
                     amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
+
+            if(stateObject.keepAReadAlwaysGoing)
+                stateObject.initiateAConstantlyRunningReadRequest(stateObject);
+
             return;
         }
 
@@ -125,5 +139,8 @@ package(sidero.eventloop):
                 amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
 
         amountFilled += completedAmount;
+
+        if(stateObject.keepAReadAlwaysGoing)
+            stateObject.initiateAConstantlyRunningReadRequest(stateObject);
     }
 }

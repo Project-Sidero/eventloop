@@ -29,6 +29,8 @@ struct PlatformSocket {
     shared(bool) isClosed;
     bool isWaitingForRetrigger;
 
+    enum keepAReadAlwaysGoing = false;
+
 @safe nothrow @nogc:
 
     // NOTE: needs to be guarded
@@ -54,6 +56,14 @@ struct PlatformSocket {
 
             socketState.guard(&socketState.performReadWrite);
         }
+    }
+
+    void initiateAConstantlyRunningReadRequest(scope SocketState* socketState) scope {
+        // not used on POSIX
+        assert(0);
+    }
+
+    void notifiedOfReadComplete(scope SocketState* socketState) scope {
     }
 }
 

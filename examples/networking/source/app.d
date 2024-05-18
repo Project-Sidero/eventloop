@@ -8,11 +8,11 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.path.hostname;
 
 //version = UseTLS;
-//version = UseRemote;
-//version = UseClient;
+version = UseRemote;
+version = UseClient;
 
-version = UseServerTLS;
-version = UseServer;
+//version = UseServerTLS;
+//version = UseServer;
 
 version (Windows) {
     //version = UseServerSelfSign;
