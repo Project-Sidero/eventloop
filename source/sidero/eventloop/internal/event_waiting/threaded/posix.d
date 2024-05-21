@@ -1,17 +1,18 @@
-module sidero.eventloop.internal.posix.event_waiting;
+module sidero.eventloop.internal.event_waiting.threaded.posix;
+import sidero.eventloop.internal.event_waiting.threaded.api;
 import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.threads;
 import sidero.base.containers.dynamicarray;
 import sidero.base.logger;
 import sidero.base.text;
 
-@safe nothrow @nogc:
-
 version (Posix) {
     import core.sys.posix.unistd;
 }
 
-__gshared private {
+export @safe nothrow @nogc:
+
+private __gshared {
     LoggerReference logger;
 }
 
@@ -20,13 +21,8 @@ struct EventWaiterThread {
 
     shared(bool) isAlive;
 
-    DynamicArray!(void*) nextEventHandles;
-    DynamicArray!(UserEventHandler) nextEventProcs;
-
-    private {
-        DynamicArray!(void*) eventHandles;
-        DynamicArray!(UserEventHandler) eventProcs;
-    }
+    DynamicArray!(void*) nextEventHandles, eventHandles;
+    DynamicArray!(UserEventHandler) nextEventProcs, eventProcs;
 
     version (Posix) {
         import core.sys.posix.poll;
@@ -101,7 +97,7 @@ struct EventWaiterThread {
             while (atomicLoad(this.isAlive)) {
                 logger.debug_("Event waiter poll starting ", pollfds[0 .. eventHandles.length + 1]);
                 const err = poll(pollfds.ptr, eventHandles.length + 1, -1);
-                logger.debug_("Event waiter poll complete ", err);
+                logger.debug_("Event waiter poll complete ", err, " ", pollfds[0 .. eventHandles.length + 1]);
 
                 switch (err) {
                 default:
@@ -112,22 +108,26 @@ struct EventWaiterThread {
                         auto eventProc = this.eventProcs[i];
                         assert(eventProc);
 
-                        logger.debug_("Got event for event handle ", cast(void*)pfd.fd, " with procedure ",
-                                eventProc.user, " on ", thread);
+                        if (pfd.revents != 0) {
+                            logger.debug_("Got event for event handle ", cast(void*)pfd.fd, " with procedure ",
+                            eventProc.proc, " and user ", eventProc.user, " on ", thread);
 
-                        int revent = pfd.revents;
-                        eventProc.proc(cast(void*)pfd.fd, eventProc.user, &revent);
+                            int revent = pfd.revents;
+                            eventProc.proc(cast(void*)pfd.fd, eventProc.user, &revent);
 
-                        pfd.revents = 0;
+                            pfd.revents = 0;
+                        }
                     }
 
                     if (pollfds[0].revents != 0) {
                         // need to rehandle setting
 
-                        int dummy;
-                        read(candcPipes[0], &dummy, 4);
+                        if ((pollfds[0].revents & POLLIN) == POLLIN) {
+                            int dummy;
+                            auto result = read(candcPipes[0], &dummy, 4);
+                            handleReSet();
+                        }
 
-                        handleReSet();
                         pollfds[0].revents = 0;
                     }
                     break;
@@ -150,6 +150,7 @@ bool initializePlatformEventWaiting() @trusted {
         logger = Logger.forName(String_UTF8(__MODULE__));
         if (!logger)
             return false;
+
         return true;
     } else
         return false;
@@ -175,7 +176,7 @@ void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
             if (threadState.nextEventHandles.isNull || !atomicLoad(threadState.isAlive))
                 continue;
 
-            while(atomicLoad(threadState.isAlive) && threadState.candcPipes[1] == 0) {
+            while (atomicLoad(threadState.isAlive) && threadState.candcPipes[1] == 0) {
                 Thread.yield;
             }
 
@@ -183,8 +184,8 @@ void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
             if (write(threadState.candcPipes[1], &dummy, 4) < 4) {
                 logger.info("Failed to trigger update by writing to ", threadState.thread, " with error ", errno);
             } else {
-                logger.debug_("Triggered update handles for handles ", threadState.nextEventHandles.length, " procedures ",
-                threadState.nextEventProcs.length, " to ", threadState.thread);
+                logger.debug_("Triggered update handles for handles ", threadState.nextEventHandles.length,
+                        " procedures ", threadState.nextEventProcs.length, " to ", threadState.thread);
             }
         }
     } else
@@ -195,24 +196,21 @@ void shutdownEventWaiterThreadsMechanism() @trusted {
     version (Posix) {
         import sidero.base.internal.atomic;
 
-        auto lockError = eventWaiterMutex.lock;
-        assert(lockError);
+        guardEventWaiting(() {
+            foreach (threadState; eventWaiterThreads) {
+                assert(threadState);
+                atomicStore(threadState.isAlive, false);
 
-        foreach (threadState; eventWaiterThreads) {
-            assert(threadState);
-            atomicStore(threadState.isAlive, false);
-
-            // we don't care if the event loop cycles just at the right time
-            // to make this write fail.
-            // in that scenario it still did its job
-            if (threadState.candcPipes[1] != 0) {
-                int dummy = 1;
-                write(threadState.candcPipes[1], &dummy, 4);
-                logger.debug_("Triggered shutdown write for accept thread ", threadState.thread);
+                // we don't care if the event loop cycles just at the right time
+                // to make this write fail.
+                // in that scenario it still did its job
+                if (threadState.candcPipes[1] != 0) {
+                    int dummy = 1;
+                    write(threadState.candcPipes[1], &dummy, 4);
+                    logger.debug_("Triggered shutdown write for accept thread ", threadState.thread);
+                }
             }
-        }
-
-        eventWaiterMutex.unlock;
+        });
 
         foreach (threadState; eventWaiterThreads) {
             assert(threadState);

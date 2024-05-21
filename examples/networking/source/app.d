@@ -153,10 +153,14 @@ void acceptLoop() {
     import sidero.base.internal.atomic : atomicLoad;
 
     writeln("Hit enter to stop:");
+    bool wantClose;
 
     for (;;) {
-        auto got = readLine(10.seconds);
-        if (atomicLoad(allowedToShutdown) && got && got.length > 0)
+        auto got = readLine(2.seconds);
+        if (got && got.length > 0)
+            wantClose = true;
+
+        if (atomicLoad(allowedToShutdown) && wantClose)
             break;
     }
 }

@@ -26,7 +26,7 @@ struct PlatformSocket {
         int fd;
     }
 
-    shared(bool) isClosed;
+    shared(bool) isClosed, isDead;
     bool isWaitingForRetrigger;
 
     enum keepAReadAlwaysGoing = false;
@@ -36,8 +36,9 @@ struct PlatformSocket {
     // NOTE: needs to be guarded
     private bool needToBeRetriggered(scope SocketState* socketState) scope @trusted {
         import sidero.eventloop.internal.cleanup_timer;
+        import sidero.base.internal.atomic : atomicLoad;
 
-        if (isWaitingForRetrigger)
+        if (isWaitingForRetrigger || atomicLoad(isClosed))
             return false;
 
         Socket socket;
@@ -233,6 +234,9 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
 
             socketState.reading.cleanup();
             socketState.performReadWrite();
+
+            if (atomicLoad(socketState.isDead))
+                forceClose(socketState);
         }
     } else
         assert(0);
@@ -280,7 +284,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
         if (err == 0) {
             logger.info("Failed to read initiate closing for ", socketState.handle, " on ", Thread.self);
             socketState.rawReading.complete(socketState, 0);
-            socketState.unpin;
+            socketState.unpinGuarded;
             return false;
         } else if (err > 0) {
             logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
@@ -294,7 +298,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
                 return socketState.needToBeRetriggered(socketState);
             } else {
                 logger.info("Failed to read initiate closing ", errno, " for ", socketState.handle, " on ", Thread.self);
-                socketState.unpin;
+                socketState.unpinGuarded;
                 return false;
             }
         }
@@ -304,18 +308,22 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
 
 void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     version (Posix) {
+        import sidero.base.internal.atomic : atomicStore;
         import core.sys.posix.poll;
 
         SocketState* socketState = cast(SocketState*)user;
         const revent = *cast(int*)eventResponsePtr;
 
+        logger.debug_("Got revent ", revent, " for ", socketState.handle);
+
         if (revent != 0) {
-            if ((revent & POLLIN) == POLLIN || (revent & POLLOUT) == POLLOUT) {
+            if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
+                logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
+                atomicStore(socketState.isDead, true);
+                socketState.unpin();
+            } else if ((revent & POLLIN) == POLLIN || (revent & POLLOUT) == POLLOUT) {
                 // all ok nothing to do here
                 socketState.guard(&socketState.performReadWrite);
-            } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
-                logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
-                socketState.unpin();
             } else {
                 logger.debug_("Socket got network event and shouldn't have (may indicate a bug) ", revent, " with ",
                         socketState.handle, " on ", Thread.self);

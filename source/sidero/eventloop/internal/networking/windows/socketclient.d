@@ -34,8 +34,9 @@ struct PlatformSocket {
     // NOTE: needs to be guarded
     private void needToBeRetriggered(scope SocketState* socketState) scope @trusted {
         import sidero.eventloop.internal.cleanup_timer;
+        import sidero.base.internal.atomic : atomicLoad;
 
-        if (isWaitingForRetrigger)
+        if (isWaitingForRetrigger || atomicLoad(isClosed))
             return;
 
         Socket socket;
@@ -460,7 +461,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
                 // these are all failure modes for a socket
                 // we must make sure to tell the socket that we are no longer connected
                 logger.info("Failed to read initiate closing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
-                socketState.unpin;
+                socketState.unpinGuarded;
                 break;
 
             case WSAEWOULDBLOCK:
@@ -504,7 +505,7 @@ void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @
                 }
             } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
-                socketState.unpin();
+                socketState.unpin;
             } else {
                 logger.info("Unknown socket event ", wsaEvent, " for ", socketState.handle, " on ", Thread.self);
             }

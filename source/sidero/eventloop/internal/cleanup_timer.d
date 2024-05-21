@@ -17,7 +17,8 @@ __gshared {
         LoggerReference logger;
         TestTestSetLockInline mutex;
 
-        FiFoConcurrentQueue!Socket socketRetryQueue;
+        bool socketRetryQueuePick;
+        FiFoConcurrentQueue!Socket[2] socketRetryQueue;
         ConcurrentLinkedList!Process processList;
         ConcurrentLinkedList!ReadPipe toReadPipeList;
         ConcurrentLinkedList!WritePipe toWritePipeList;
@@ -119,6 +120,13 @@ bool startUpCleanupTimer() @trusted {
             return false;
         }
 
+        int err = pthread_mutex_init(&timerMutex, null);
+        if (err != 0) {
+            logger.error("Failed to initialize linux cleanup timer rearming mutex ", err);
+            shutdownCleanupTimer;
+            return false;
+        }
+
         addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
     } else version (Posix) {
         atomicStore(timerThreadInShutdown, false);
@@ -183,11 +191,7 @@ void addSocketToRetrigger(Socket socket) @trusted {
     import sidero.base.internal.logassert;
 
     logAssert(startUpCleanupTimer, "Could not initialize cleanup timer");
-
-    version (Windows) {
-        socketRetryQueue.push(socket);
-    } else
-        assert(0);
+    socketRetryQueue[socketRetryQueuePick].push(socket);
 }
 
 void addProcessToList(Process process) @trusted {
@@ -219,12 +223,14 @@ private:
 
 void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     logger.debug_("on timer ", handle, " ", user, " ", eventResponsePtr);
+    pthread_mutex_lock(&timerMutex);
 
-    version (Posix) {
+    version (linux) {
         ubyte[8] res;
         read(timerHandle, res.ptr, res.length);
     }
 
+    pthread_mutex_unlock(&timerMutex);
     whenReady();
 }
 
@@ -238,9 +244,9 @@ void timerThreadProc() @trusted {
             pthread_mutex_lock(&timerMutex);
             bool doneOne;
 
-            while (socketRetryQueue.empty && !atomicLoad(timerThreadInShutdown) && (processList.length == 0 ||
-                    (processList.length > 0 && !doneOne)) && (toReadPipeList.length == 0 || (toReadPipeList.length > 0 &&
-                    !doneOne)) && (toWritePipeList.length == 0 || (toWritePipeList.length > 0 && !doneOne))) {
+            while (socketRetryQueue[socketRetryQueuePick].empty && !atomicLoad(timerThreadInShutdown) &&
+                    (processList.length == 0 || (processList.length > 0 && !doneOne)) && (toReadPipeList.length == 0 ||
+                        (toReadPipeList.length > 0 && !doneOne)) && (toWritePipeList.length == 0 || (toWritePipeList.length > 0 && !doneOne))) {
 
                 doneOne = true;
 
@@ -277,8 +283,9 @@ void whenReady() @trusted {
 
     size_t handledSockets, handlesProcesses, handledReadPipe, handledWritePipe;
 
-    while (!socketRetryQueue.empty) {
-        auto got = socketRetryQueue.pop;
+    socketRetryQueuePick = !socketRetryQueuePick;
+    while (!socketRetryQueue[!socketRetryQueuePick].empty) {
+        auto got = socketRetryQueue[!socketRetryQueuePick].pop;
         if (got) {
             handledSockets++;
             got.state.haveBeenRetriggered(got.state);

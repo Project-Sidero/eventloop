@@ -91,12 +91,12 @@ struct SocketState {
     }
 
     void unpin() scope @trusted {
-        mutex.lock.assumeOkay;
         if(!atomicLoad(isAlive)) {
             mutex.unlock;
             return;
         }
 
+        mutex.lock.assumeOkay;
         atomicStore(isAlive, false);
         shutdown(&this);
         mutex.unlock;

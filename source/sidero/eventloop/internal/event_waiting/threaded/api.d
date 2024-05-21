@@ -1,24 +1,23 @@
-module sidero.eventloop.internal.event_waiting;
+module sidero.eventloop.internal.event_waiting.threaded.api;
+import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.threads;
-import sidero.base.synchronization.system.lock;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.map.hashmap;
 import sidero.base.containers.map.concurrenthashmap;
-import sidero.base.attributes;
 import sidero.base.logger;
+import sidero.base.internal.logassert;
+import sidero.base.attributes;
+import sidero.base.errors;
 import sidero.base.text;
-import sidero.base.internal.atomic;
 
-version(Windows) {
-    import sidero.eventloop.internal.windows.event_waiting;
-} else version(Posix) {
-    import sidero.eventloop.internal.posix.event_waiting;
+export @safe nothrow @nogc:
+
+version (Windows) {
+    import sidero.eventloop.internal.event_waiting.threaded.windows;
+} else version (Posix) {
+    import sidero.eventloop.internal.event_waiting.threaded.posix;
 } else
     static assert(0, "Unimplemented");
-
-    export @safe nothrow @nogc:
-
-    alias UserEventProc = void function(void* handle, void* user, scope void* eventResponsePtr) @safe nothrow @nogc;
 
 struct UserEventHandler {
     UserEventProc proc;
@@ -26,7 +25,7 @@ struct UserEventHandler {
 }
 
 // minimal demonstration of what is required
-version(none) {
+version (none) {
     struct EventWaiterThread {
         Thread thread;
 
@@ -61,10 +60,8 @@ version(none) {
 }
 
 __gshared {
-    package(sidero.eventloop.internal) {
+    package(sidero.eventloop.internal.event_waiting.threaded) {
         ConcurrentHashMap!(ulong, EventWaiterThread) eventWaiterThreads;
-        SystemLock eventWaiterMutex;
-
         HashMap!(void*, UserEventHandler) allEventHandles;
     }
 
@@ -73,57 +70,43 @@ __gshared {
     }
 }
 
-void addEventWaiterHandle(void* handleToWaitOn, UserEventProc proc, void* user) @trusted {
-    auto lockError = eventWaiterMutex.lock;
-    assert(lockError);
-
-    if(handleToWaitOn !in allEventHandles) {
-        allEventHandles[handleToWaitOn] = UserEventHandler(proc, user);
-    }
-
-    eventWaiterMutex.unlock;
-    updateEventWaiterThreads;
+void initializeThreadedEventWaiting() @trusted {
+    logger = Logger.forName(String_UTF8(__MODULE__));
+    logAssert(cast(bool)logger, "Could not initialize threaded event waiting logger", logger.getError());
+    logAssert(cast(bool)initializePlatformEventWaiting(), "Could not initialize threaded event waiting platform support");
 }
 
-void removeEventWaiterHandle(scope void* handleToNotWaitOn) @trusted {
-    auto lockError = eventWaiterMutex.lock;
-    assert(lockError);
+void addEventWaiterHandleStrategy(void* handleToWaitOn, UserEventProc proc, void* user) {
+    assert(handleToWaitOn !is null);
+    assert(proc !is null);
 
-    allEventHandles.remove(handleToNotWaitOn);
-
-    eventWaiterMutex.unlock;
-    updateEventWaiterThreads;
+    guardEventWaiting(() {
+        if(handleToWaitOn !in allEventHandles) {
+            logger.trace("Adding handle to wait on events for ", handleToWaitOn, " for proc ", proc, " with user ", user, " on thread ", Thread.self);
+            allEventHandles[handleToWaitOn] = UserEventHandler(proc, user);
+            updateEventWaiterThreads;
+        } else {
+            logger.debug_("Adding handle to wait on events already exists for ", handleToWaitOn, " on thread ", Thread.self);
+        }
+    });
 }
 
-void shutdownEventWaiterThreads() {
-    import sidero.eventloop.internal.cleanup_timer;
-
-    shutdownCleanupTimer();
-    shutdownEventWaiterThreadsMechanism();
+void removeEventWaiterHandleStrategy(scope void* handleToNotWaitOn) {
+    guardEventWaiting(() {
+        allEventHandles.remove(handleToNotWaitOn);
+        updateEventWaiterThreads;
+    });
 }
+
+alias shutdownEventWaiterThreadsStrategy = shutdownEventWaiterThreadsMechanism;
 
 private @hidden:
 
 void updateEventWaiterThreads() @trusted {
-    const maxEventHandles = maximumNumberOfHandlesPerEventWaiter();
-
-    auto lockError = eventWaiterMutex.lock;
-    assert(lockError);
-
-    if(!logger || logger.isNull) {
-        logger = Logger.forName(String_UTF8(__MODULE__));
-        if(!logger) {
-            eventWaiterMutex.unlock;
-            return;
-        }
-
-        if(!initializePlatformEventWaiting()) {
-            eventWaiterMutex.unlock;
-            return;
-        }
-    }
+    import sidero.base.internal.atomic;
 
     logger.debug_("Updating event waiter thread handles");
+    const maxEventHandles = maximumNumberOfHandlesPerEventWaiter();
 
     {
         // step one: cleanup old threads that are no longer alive
@@ -159,7 +142,7 @@ void updateEventWaiterThreads() @trusted {
             offset++;
         }
 
-        logger.trace("Have set", offset, " event handles to wait for");
+        logger.trace("Have set ", offset, " event handles to wait for");
     }
 
     {
@@ -233,27 +216,27 @@ void updateEventWaiterThreads() @trusted {
 
     triggerUpdatesOnThreads(eventWaiterThreads.length);
     logger.debug_("Updated event waiting threads and handles");
-    eventWaiterMutex.unlock;
 }
 
 void threadStartProc(DynamicArray!(void*) tempHandles, DynamicArray!UserEventHandler tempProcs) @trusted {
-    auto lockError = eventWaiterMutex.lock;
-    assert(lockError);
-
     Thread self = Thread.self;
-    const key = self.toHash();
+    ResultReference!EventWaiterThread threadState;
 
-    logger.debug_("Event waiting thread starting ", self);
+    guardEventWaiting(() {
+        const key = self.toHash();
 
-    eventWaiterThreads[key] = EventWaiterThread.init;
-    auto threadState = eventWaiterThreads[key];
-    assert(threadState);
+        logger.debug_("Event waiting thread starting ", self);
 
-    threadState.thread = self;
-    threadState.nextEventHandles = tempHandles;
-    threadState.nextEventProcs = tempProcs;
+        eventWaiterThreads[key] = EventWaiterThread.init;
+        threadState = eventWaiterThreads[key];
+        assert(threadState);
 
-    eventWaiterMutex.unlock;
+        threadState.thread = self;
+        threadState.nextEventHandles = tempHandles;
+        threadState.nextEventProcs = tempProcs;
+
+    });
+
     scope(exit) {
         logger.debug_("Event waiting thread finished ", self);
     }
