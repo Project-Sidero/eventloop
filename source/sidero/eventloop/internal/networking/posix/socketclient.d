@@ -26,7 +26,7 @@ struct PlatformSocket {
         int fd;
     }
 
-    shared(bool) isClosed, isDead;
+    shared(bool) isClosed;
     bool isWaitingForRetrigger;
 
     enum keepAReadAlwaysGoing = false;
@@ -234,9 +234,6 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
 
             socketState.reading.cleanup();
             socketState.performReadWrite();
-
-            if (atomicLoad(socketState.isDead))
-                forceClose(socketState);
         }
     } else
         assert(0);
@@ -257,6 +254,11 @@ void forceClose(scope SocketState* socketState) @trusted {
 
 bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version (Posix) {
+        import sidero.base.internal.atomic;
+
+        if (atomicLoad(socketState.isClosed))
+            return false;
+
         const err = send(socketState.fd, buffer.ptr, buffer.length, 0);
 
         if (err >= 0) {
@@ -279,6 +281,11 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
 
 bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version (Posix) {
+        import sidero.base.internal.atomic;
+
+        if (atomicLoad(socketState.isClosed))
+            return false;
+
         const err = recv(socketState.fd, buffer.ptr, buffer.length, 0);
 
         if (err == 0) {
@@ -308,7 +315,6 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
 
 void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     version (Posix) {
-        import sidero.base.internal.atomic : atomicStore;
         import core.sys.posix.poll;
 
         SocketState* socketState = cast(SocketState*)user;
@@ -319,7 +325,7 @@ void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @
         if (revent != 0) {
             if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
-                atomicStore(socketState.isDead, true);
+                socketState.forceClose();
                 socketState.unpin();
             } else if ((revent & POLLIN) == POLLIN || (revent & POLLOUT) == POLLOUT) {
                 // all ok nothing to do here
