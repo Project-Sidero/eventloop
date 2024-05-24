@@ -231,7 +231,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
         import core.sys.posix.sys.socket : shutdown;
 
         if (cas(socketState.isShutdown, false, true)) {
-            logger.notice("Shutting down socket ", socketState.handle, " on ", Thread.self);
+            logger.info("Shutting down socket ", socketState.handle, " on ", Thread.self);
             socketState.performReadWrite();
             shutdown(socketState.fd, SHUT_WR);
 
