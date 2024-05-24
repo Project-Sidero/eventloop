@@ -49,7 +49,6 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return sc
         actualState.base.nextFunctionTag = -1;
     };
 
-    pair.rc(true);
     return pair;
 }
 
@@ -64,11 +63,9 @@ struct CoroutinePair(ResultType) {
 export @safe nothrow @nogc:
     this(scope ref CoroutinePair other) scope {
         this.tupleof = other.tupleof;
-        rc(true);
     }
 
-    ~this() {
-        rc(false);
+    ~this() scope {
     }
 
     bool isNull() scope const {
@@ -76,16 +73,16 @@ export @safe nothrow @nogc:
     }
 
     void rc(bool add) scope {
-        if(state !is null)
+        if (state !is null)
             state.base.rc(add);
-        if(descriptor !is null)
+        if (descriptor !is null)
             descriptor.base.rc(add);
     }
 
     ErrorResult resume() scope {
-        if(state.base.nextFunctionTag < 0)
+        if (state.base.nextFunctionTag < 0)
             return ErrorResult(MalformedInputException("Coroutine instance has completed"));
-        if(state.base.nextFunctionTag >= descriptor.base.functions.length)
+        if (state.base.nextFunctionTag >= descriptor.base.functions.length)
             return ErrorResult(MalformedInputException("Coroutine instance is in invalid state"));
         descriptor.base.functions[state.base.nextFunctionTag](&descriptor.base, &state.base);
         return ErrorResult.init;
@@ -106,12 +103,11 @@ export @safe nothrow @nogc:
     CoroutineAPair asGeneric() scope @trusted {
         CoroutineAPair ret;
 
-        if(descriptor !is null)
+        if (descriptor !is null)
             ret.descriptor = &this.descriptor.base;
-        if(state !is null)
+        if (state !is null)
             ret.state = &this.state.base;
 
-        ret.rc(true);
         return ret;
     }
 }
@@ -141,11 +137,9 @@ struct CoroutineAPair {
 export @safe nothrow @nogc:
     this(return scope ref CoroutineAPair other) scope {
         this.tupleof = other.tupleof;
-        rc(true);
     }
 
     ~this() scope {
-        rc(false);
     }
 
     bool isNull() scope const {
@@ -153,16 +147,20 @@ export @safe nothrow @nogc:
     }
 
     void rc(bool add) scope @trusted {
-        if(state !is null)
-            state.rc(add);
-        if(descriptor !is null)
-            descriptor.rc(add);
+        if (state !is null) {
+            if (!state.rc(add))
+                state = null;
+        }
+        if (descriptor !is null) {
+            if (!descriptor.rc(add))
+                descriptor = null;
+        }
     }
 
     ErrorResult resume() scope {
-        if(state.nextFunctionTag < 0)
+        if (state.nextFunctionTag < 0)
             return ErrorResult(MalformedInputException("Coroutine instance has completed"));
-        if(state.nextFunctionTag >= descriptor.functions.length)
+        if (state.nextFunctionTag >= descriptor.functions.length)
             return ErrorResult(MalformedInputException("Coroutine instance is in invalid state"));
         descriptor.functions[state.nextFunctionTag](descriptor, state);
         return ErrorResult.init;
@@ -195,7 +193,7 @@ package(sidero.eventloop) struct CoroutineAllocatorMemoryDescriptor {
 export @safe nothrow @nogc:
 
      ~this() {
-        if(!parent.allocator.isNull) {
+        if (!parent.allocator.isNull) {
             parent.allocator.dispose(userFunctions);
             parent.allocator.dispose(functions);
         }
@@ -239,19 +237,24 @@ struct CoroutineAllocatorMemory {
 
 export @safe nothrow @nogc:
 
-    void rc(bool add) scope @trusted {
-        if(add) {
+    bool rc(bool add) scope @trusted {
+        if (add) {
             atomicIncrementAndLoad(refCount, 1);
-        } else if(atomicDecrementAndLoad(refCount, 1) == 0) {
+        } else if (atomicDecrementAndLoad(refCount, 1) == 0) {
             RCAllocator allocator = this.allocator;
+            if (allocator.isNull)
+                return false;
+
             void[] toDeallocate = toDeallocate;
 
             // run destructors ext.
-            if(this.deinit !is null)
+            if (this.deinit !is null)
                 this.deinit(toDeallocate);
 
-            if(!allocator.isNull)
-                allocator.dispose(toDeallocate);
+            allocator.dispose(toDeallocate);
+            return false;
         }
+
+        return true;
     }
 }

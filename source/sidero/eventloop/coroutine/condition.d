@@ -15,6 +15,14 @@ export @safe nothrow @nogc:
         this.tupleof = other.tupleof;
     }
 
+    ~this() scope {
+    }
+
+    void opAssign(return scope CoroutineCondition other) scope {
+        this.destroy;
+        this.__ctor(other);
+    }
+
     ///
     bool isNull() scope const {
         return coroutine.isNull;

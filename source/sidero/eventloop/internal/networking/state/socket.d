@@ -58,6 +58,9 @@ struct SocketState {
         logAssert(rawWriting.initialize, "Could not initialize raw writing for socket");
     }
 
+    ~this() scope {
+    }
+
     void rc(bool addRef) scope @trusted {
         if(addRef)
             atomicIncrementAndLoad(refCount, 1);

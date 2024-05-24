@@ -27,6 +27,9 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     bool initialize() {
         import sidero.base.text;
 
@@ -62,7 +65,10 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         if(inProgress)
             return false;
 
-        future = acquireInstantiableFuture!(Slice!ubyte).makeInstance(RCAllocator.init, &triggerForHandler).asFuture;
+        auto ifu = acquireInstantiableFuture!(Slice!ubyte);
+        auto ifui = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
+        future = ifui.asFuture;
+
         cast(void)waitOnTrigger(future, triggerForHandler);
         assert(triggerForHandler !is null);
 
@@ -78,7 +84,10 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         if(inProgress)
             return false;
 
-        future = acquireInstantiableFuture!(Slice!ubyte).makeInstance(RCAllocator.init, &triggerForHandler).asFuture;
+        auto ifu = acquireInstantiableFuture!(Slice!ubyte);
+        auto ifui = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
+        future = ifui.asFuture;
+
         cast(void)waitOnTrigger(future, triggerForHandler);
         assert(triggerForHandler !is null);
 

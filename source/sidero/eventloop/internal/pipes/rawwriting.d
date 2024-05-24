@@ -19,6 +19,9 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
 
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     bool initialize() scope {
         import sidero.base.text;
 

@@ -95,6 +95,9 @@ struct OpenSSLEncryptionStateImpl {
 
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     void acquireCredentials(scope SocketState* socketState) scope @trusted {
         const isInitialized = checkInit;
         if (!isInitialized) {

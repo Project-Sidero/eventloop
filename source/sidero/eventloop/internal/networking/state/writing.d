@@ -8,6 +8,9 @@ struct WritingState {
 
 @safe nothrow @nogc:
 
+    ~this() {
+    }
+
     // NOTE: this needs guarding
     void appendToQueue(scope SocketState* socketState, return scope Slice!ubyte slice) scope @trusted {
         if (socketState.encryption.enabled) {

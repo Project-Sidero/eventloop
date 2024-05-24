@@ -47,6 +47,9 @@ struct ListenSocketState {
         this.validateCertificates = validateCertificates;
     }
 
+    ~this() scope {
+    }
+
     void rc(bool addRef) scope @trusted {
         if(addRef)
             atomicIncrementAndLoad(refCount, 1);

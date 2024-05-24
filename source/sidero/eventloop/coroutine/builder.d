@@ -149,7 +149,8 @@ export @safe nothrow @nogc:
     } else {
         ///
         static CoroutineResultType complete(ResultType value) {
-            return CoroutineResultType(CoroutineResultType.Tag.Value, Stages.init, ErrorInfo.init, CoroutineCondition.init, value);
+            auto ret = CoroutineResultType(CoroutineResultType.Tag.Value, Stages.init, ErrorInfo.init, CoroutineCondition.init, value);
+            return ret;
         }
     }
 
@@ -188,6 +189,9 @@ export @safe nothrow @nogc:
 
     this(scope ref CoroutineResult other) scope @trusted {
         this.tupleof = other.tupleof;
+    }
+
+    ~this() scope {
     }
 
     ///

@@ -17,12 +17,21 @@ struct InstanceableCoroutine(ResultType, Args...) {
 export @safe nothrow @nogc:
 
     ///
-    this(scope ref InstanceableCoroutine other) scope {
+    this(return scope ref InstanceableCoroutine other) scope {
         this.tupleof = other.tupleof;
+        pair.rc(true);
+        constructionState.rc(true);
     }
 
     ///
     ~this() scope {
+        pair.rc(false);
+        constructionState.rc(false);
+    }
+
+    void opAssign(return scope InstanceableCoroutine other) scope {
+        this.destroy;
+        this.__ctor(other);
     }
 
     ///
@@ -37,10 +46,10 @@ export @safe nothrow @nogc:
 
     ///
     InstanceableCoroutine!ResultType makeInstance(return scope RCAllocator allocator, return scope Args args) scope @trusted {
-        if(!pair.canInstance)
+        if (!pair.canInstance)
             return typeof(return).init;
 
-        if(allocator.isNull)
+        if (allocator.isNull)
             allocator = globalAllocator();
 
         ArgsStorage!Args argsStorage;
@@ -49,7 +58,7 @@ export @safe nothrow @nogc:
         InstanceableCoroutine!ResultType ret;
         ret.pair.descriptor = this.pair.descriptor;
 
-        if(this.constructionState.isNull) {
+        if (this.constructionState.isNull) {
             ret.pair.state = cast(CoroutineState!ResultType*)this.pair.descriptor.base.createInstanceState(allocator,
                     cast(void*)&argsStorage);
         } else {
@@ -66,10 +75,10 @@ export @safe nothrow @nogc:
     /// Partial providing for arguments to coroutine
     InstanceableCoroutine!(ResultType, Args[PartialArgs.length .. $]) partial(PartialArgs...)(return scope RCAllocator allocator,
             return scope PartialArgs partialArgs) {
-        if(!pair.canInstance)
+        if (!pair.canInstance)
             return typeof(return).init;
 
-        if(allocator.isNull)
+        if (allocator.isNull)
             allocator = globalAllocator();
 
         InstanceableCoroutine!(ResultType, Args[PartialArgs.length .. $]) ret;
@@ -86,13 +95,15 @@ export @safe nothrow @nogc:
         cstate.createInstanceState = &cstate.createInstanceStateImpl!(Args[PartialArgs.length .. $]);
         cstate.next = this.constructionState;
 
-        static foreach(size_t ArgI; 0 .. PartialArgs.length) {
+        static foreach (size_t ArgI; 0 .. PartialArgs.length) {
             cstate.argsStorage.values[ArgI] = partialArgs[ArgI];
         }
 
         ret.constructionState.state = cast(ConstructionAState*)cstate;
         ret.pair.descriptor = this.pair.descriptor;
+
         ret.pair.rc(true);
+        cstate.rc(true);
         return ret;
     }
 
@@ -103,7 +114,7 @@ export @safe nothrow @nogc:
 
     ///
     CoroutineCondition condition() scope {
-        if(pair.isWaiting)
+        if (pair.isWaiting)
             return pair.state.base.conditionToContinue;
         else
             return typeof(return).init;
@@ -113,6 +124,7 @@ export @safe nothrow @nogc:
     Future!ResultType asFuture() return scope @trusted {
         Future!ResultType ret;
         ret.pair = this.pair;
+        ret.pair.rc(true);
         return ret;
     }
 
@@ -120,12 +132,13 @@ export @safe nothrow @nogc:
     GenericCoroutine asGeneric() return scope {
         GenericCoroutine ret;
         ret.pair = this.pair.asGeneric();
+        ret.pair.rc(true);
         return ret;
     }
 
     ///
     Result!ResultType result() {
-        if(isNull)
+        if (isNull)
             return typeof(return)(NullPointerException("Coroutine not instantiated"));
         return this.pair.state.result;
     }
@@ -160,9 +173,9 @@ export @safe nothrow @nogc:
     int opCmp(scope InstanceableCoroutine other) scope const @trusted {
         const a = this.toHash(), b = other.toHash();
 
-        if(a < b)
+        if (a < b)
             return -1;
-        else if(a > b)
+        else if (a > b)
             return 1;
         else
             return 0;
@@ -177,14 +190,23 @@ struct ConstructionAStateWrapper {
 export @safe nothrow @nogc:
 
     this(scope return ref ConstructionAStateWrapper other) scope {
-        this.state = other.state;
-
-        if(state !is null)
-            atomicIncrementAndLoad(state.refCount, 1);
+        this.tupleof = other.tupleof;
     }
 
-    ~this() scope @trusted {
-        if(state !is null && atomicDecrementAndLoad(state.refCount, 1) == 0) {
+    ~this() scope {
+    }
+
+    void opAssign(return scope ConstructionAStateWrapper other) scope {
+        this.destroy;
+        this.__ctor(other);
+    }
+
+    void rc(bool addRef) scope {
+        if (state is null)
+            return;
+        else if (addRef)
+            atomicIncrementAndLoad(state.refCount, 1);
+        else if (atomicDecrementAndLoad(state.refCount, 1) == 0) {
             state.deinit(state);
             auto allocator = state.allocator;
             allocator.dispose(state);
@@ -199,7 +221,7 @@ export @safe nothrow @nogc:
 alias PerformAllocDelegate = CoroutineAllocatorMemoryState* delegate(void* args) @safe nothrow @nogc;
 
 struct ConstructionAState {
-    shared(ptrdiff_t) refCount = 1;
+    shared(ptrdiff_t) refCount;
     RCAllocator allocator;
 
     ConstructionAStateWrapper next;
@@ -209,7 +231,7 @@ struct ConstructionAState {
 }
 
 struct ConstructionState(HidingNArgs...) {
-    shared(ptrdiff_t) refCount = 1;
+    shared(ptrdiff_t) refCount;
     RCAllocator allocator;
 
     ConstructionAStateWrapper next;
@@ -228,7 +250,7 @@ export @safe nothrow @nogc:
         tempStorage.values[0 .. HidingNArgs.length] = argsStorage.values;
         tempStorage.values[HidingNArgs.length .. $] = inputStorage.values;
 
-        if(next.isNull) {
+        if (next.isNull) {
             return del(cast(void*)&tempStorage);
         } else {
             return this.next.state.createInstanceState(del, cast(void*)&tempStorage);

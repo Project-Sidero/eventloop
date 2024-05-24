@@ -162,6 +162,8 @@ void acceptLoop() {
 
         if (atomicLoad(allowedToShutdown) && wantClose)
             break;
+
+        //cast(void)Thread.sleep(1.seconds);
     }
 }
 
@@ -302,16 +304,21 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
             assert(socketTLSError);
         }
 
-        cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n"));
+        auto tempSlice = Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n");
+        cast(void)state.socket.write(tempSlice);
 
         version (UseRemote) {
-            cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"Host: example.com\r\n"));
+            tempSlice = Slice!ubyte(cast(ubyte[])"Host: example.com\r\n");
+            cast(void)state.socket.write(tempSlice);
         }
 
-        cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"Accept-Encoding: identity\r\n"));
-        cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"\r\n"));
+        tempSlice = Slice!ubyte(cast(ubyte[])"Accept-Encoding: identity\r\n");
+        cast(void)state.socket.write(tempSlice);
+        tempSlice = Slice!ubyte(cast(ubyte[])"\r\n");
+        cast(void)state.socket.write(tempSlice);
 
-        state.nextLine = state.socket.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
+        tempSlice = Slice!ubyte(cast(ubyte[])"\n");
+        state.nextLine = state.socket.readUntil(tempSlice);
         assert(!state.nextLine.isNull);
 
         // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -343,7 +350,8 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
         }
 
         {
-            state.nextLine = state.socket.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
+            auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
+            state.nextLine = state.socket.readUntil(tempSlice);
             assert(!state.nextLine.isNull);
 
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835

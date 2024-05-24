@@ -16,10 +16,12 @@ export @safe nothrow @nogc:
     ///
     this(return scope ref GenericCoroutine other) scope {
         this.tupleof = other.tupleof;
+        pair.rc(true);
     }
 
     ///
     ~this() scope {
+        pair.rc(false);
     }
 
     ///

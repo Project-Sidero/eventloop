@@ -13,12 +13,14 @@ struct Future(ResultType) {
 export @safe nothrow @nogc:
 
     ///
-    this(scope ref Future other) scope {
+    this(return scope ref Future other) scope {
         this.tupleof = other.tupleof;
+        pair.rc(true);
     }
 
     ///
     ~this() scope {
+        pair.rc(false);
     }
 
     ///
@@ -49,6 +51,7 @@ export @safe nothrow @nogc:
     GenericCoroutine asGeneric() return scope {
         GenericCoroutine ret;
         ret.pair = this.pair.asGeneric();
+        ret.pair.rc(true);
         return ret;
     }
 
@@ -56,7 +59,9 @@ export @safe nothrow @nogc:
     Result!ResultType result() return scope {
         if(isNull)
             return typeof(return)(NullPointerException("Coroutine not instantiated"));
-        return typeof(return)(this.pair.state.result);
+        auto res = this.pair.state.result;
+        auto ret = typeof(return)(res);
+        return ret;
     }
 
     /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.

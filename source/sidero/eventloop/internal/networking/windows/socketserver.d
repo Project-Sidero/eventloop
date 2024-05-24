@@ -33,6 +33,9 @@ struct PlatformListenSocket {
     this(return scope ref PlatformListenSocket other) scope {
         this.tupleof = other.tupleof;
     }
+
+    ~this() scope {
+    }
 }
 
 void forceClose(scope PlatformListenSocket* socketState) scope @trusted {

@@ -42,6 +42,9 @@ struct PlatformListenSocket {
     this(return scope ref PlatformListenSocket other) scope @trusted {
         this.tupleof = other.tupleof;
     }
+
+    ~this() scope {
+    }
 }
 
 bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAlive) @trusted {

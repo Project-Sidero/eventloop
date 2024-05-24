@@ -18,9 +18,11 @@ InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireIns
 
     __gshared CoroutineDescriptor!ResultType descriptorStorage;
     __gshared CoroutineAllocatorMemoryDescriptor.FunctionPrototype[1] functionsStorage;
-    __gshared typeof(return) storage;
 
+    typeof(return) storage;
     storage.pair = ctfeConstructExternalTriggerState!ResultType(&descriptorStorage, functionsStorage);
+    storage.pair.rc(true);
+
     return storage;
 }
 
@@ -85,7 +87,9 @@ ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
     // We only need to lock at this level to prevent multiple threads trying to trigger the same coroutine simultaneously
     //  and hitting a mixed state.
 
-    mutex.pureLock;
+    auto err = mutex.lock;
+    logAssert(cast(bool)err, "Failed to lock", err.getError());
+
     GenericCoroutine coroutine;
 
     {
@@ -135,7 +139,8 @@ unittest {
 
 package(sidero.eventloop) {
     void debugFutureCompletions() @trusted {
-        mutex.pureLock;
+        auto err = mutex.lock;
+        logAssert(cast(bool)err, "Failed to lock", err.getError());
 
         import sidero.base.console;
 
@@ -153,10 +158,12 @@ package(sidero.eventloop) {
 
 private:
 import sidero.base.containers.map.concurrenthashmap;
-import sidero.base.synchronization.mutualexclusion;
+import sidero.base.synchronization.system.lock;
+import sidero.base.internal.logassert;
 
 void checkInit() @trusted {
-    mutex.pureLock;
+    auto err = mutex.lock;
+    logAssert(cast(bool)err, "Failed to lock", err.getError());
 
     if(triggerableCoroutines.isNull)
         triggerableCoroutines = ConcurrentHashMap!(FutureTrigger*, GenericCoroutine)();
@@ -165,6 +172,6 @@ void checkInit() @trusted {
 }
 
 __gshared {
-    TestTestSetLockInline mutex;
+    SystemLock mutex;
     ConcurrentHashMap!(FutureTrigger*, GenericCoroutine) triggerableCoroutines;
 }

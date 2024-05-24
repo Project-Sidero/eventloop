@@ -18,6 +18,9 @@ struct RawReadingState(StateObject, string TitleOfPipe) {
 package(sidero.eventloop):
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     bool initialize() scope @trusted {
         import sidero.base.text;
 

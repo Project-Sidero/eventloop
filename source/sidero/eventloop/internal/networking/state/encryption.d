@@ -63,6 +63,9 @@ struct EncryptionState {
 
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     size_t amountOfBytesToRead() scope {
         // openssl uses 16kb for TLS packet size, so we'll use that here
         return bufferSize > 0 ? bufferSize : (16 * 1024);

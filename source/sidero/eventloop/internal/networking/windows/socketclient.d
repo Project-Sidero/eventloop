@@ -31,6 +31,9 @@ struct PlatformSocket {
 
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     // NOTE: needs to be guarded
     private void needToBeRetriggered(scope SocketState* socketState) scope @trusted {
         import sidero.eventloop.internal.cleanup_timer;

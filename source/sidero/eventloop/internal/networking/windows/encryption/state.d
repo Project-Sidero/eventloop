@@ -62,6 +62,9 @@ struct EncryptionStateWinCrypt {
 
 @safe nothrow @nogc:
 
+    ~this() scope {
+    }
+
     void acquireCredentials(scope SocketState* socketState) scope @trusted {
         version(Windows) {
             if (credentialHandleSet) {
