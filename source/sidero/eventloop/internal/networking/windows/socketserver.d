@@ -20,7 +20,7 @@ import sidero.base.datetime.duration;
 alias PlatformListenSocketKey = void*;
 
 struct PlatformListenSocket {
-    version(Windows) {
+    version (Windows) {
         SOCKET handle;
         WSAEVENT eventHandle;
     }
@@ -39,36 +39,36 @@ struct PlatformListenSocket {
 }
 
 void forceClose(scope PlatformListenSocket* socketState) scope @trusted {
-    version(Windows) {
+    version (Windows) {
         closesocket(socketState.handle);
     } else
         assert(0);
 }
 
 void cleanup(scope PlatformListenSocket* socketState) scope @trusted {
-    version(Windows) {
+    version (Windows) {
         CloseHandle(socketState.eventHandle);
     } else
         assert(0);
 }
 
-bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAlive) @trusted {
-    if(listenSocketState.address.type == NetworkAddress.Type.Hostname) {
+bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAliveInterval) @trusted {
+    if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
         auto resolved = listenSocketState.address.resolve();
 
         uint gotOne;
 
-        foreach(address; resolved) {
-            if(listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAlive))
+        foreach (address; resolved) {
+            if (listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAliveInterval))
                 gotOne++;
         }
 
-        if(gotOne > 0) {
+        if (gotOne > 0) {
             listenSocketState.pin(gotOne);
             return true;
         }
-    } else if(listenSocketState.address.type != NetworkAddress.Type.Invalid) {
-        if(listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAlive)) {
+    } else if (listenSocketState.address.type != NetworkAddress.Type.Invalid) {
+        if (listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAliveInterval)) {
             listenSocketState.pin(1);
             return true;
         }
@@ -79,10 +79,12 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
 
 private:
 
-bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, Optional!Duration keepAlive) @trusted {
-    version(Windows) {
+bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr,
+        Optional!Duration keepAliveInterval) @trusted {
+    version (Windows) {
         import sidero.eventloop.internal.event_waiting;
         import sidero.base.internal.atomic;
+        import sidero.base.system : operatingSystem, OperatingSystem;
 
         enum SockAddress4Size = sockaddr_in.sizeof;
         enum SockAddress6Size = sockaddr_in6.sizeof;
@@ -138,7 +140,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             });
         }
 
-        final switch(listenSocketState.protocol) {
+        final switch (listenSocketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -152,7 +154,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         {
             platformListenSocket.handle = WSASocketW(addressFamily, socketType, socketProtocol, null, 0, WSA_FLAG_OVERLAPPED);
 
-            if(platformListenSocket.handle == INVALID_SOCKET) {
+            if (platformListenSocket.handle == INVALID_SOCKET) {
                 logger.notice("Error could not open socket ", address, " as ", addressFamily, " ", socketType, " ",
                         socketProtocol, " with error ", WSAGetLastError(), " on ", Thread.self);
                 return false;
@@ -161,27 +163,40 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             }
         }
 
-        if(reuseAddr && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
+        if (reuseAddr && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
             logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
                     WSAGetLastError(), " on ", Thread.self);
             closesocket(platformListenSocket.handle);
             return false;
         }
 
-        if(keepAlive) {
+        if (keepAliveInterval) {
             // keepAlive is in milliseconds
-            uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
+            uint keepAliveEnabledValue = 1, keepAliveIntervalValue = cast(uint)keepAliveInterval.get.totalSeconds;
 
-            if(setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
-                logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ",
-                        WSAGetLastError(), " on ", Thread.self);
-                closesocket(platformListenSocket.handle);
+            if (setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveEnabledValue, 4) != 0) {
+                logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
+                close(platformListenSocket.fd);
                 return false;
+            }
+
+            // added in Windows 10 1709
+            OperatingSystem os = operatingSystem();
+
+            if (os.major >= 10) {
+                // due to forced updates its safe to go anything less its disabled upon.
+
+                if (setsockopt(platformListenSocket.handle, SOL_SOCKET, TCP_KEEPIDLE, cast(uint*)&keepAliveIntervalValue, 4) != 0) {
+                    logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ",
+                            WSAGetLastError(), " on ", Thread.self);
+                    closesocket(platformListenSocket.handle);
+                    return false;
+                }
             }
         }
 
         {
-            if(bind(platformListenSocket.handle, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == SOCKET_ERROR) {
+            if (bind(platformListenSocket.handle, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == SOCKET_ERROR) {
                 logger.notice("Error could not bind on port ", platformListenSocket.handle, " with error ",
                         WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
@@ -192,7 +207,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         }
 
         {
-            if(listen(platformListenSocket.handle, SOMAXCONN) == SOCKET_ERROR) {
+            if (listen(platformListenSocket.handle, SOMAXCONN) == SOCKET_ERROR) {
                 logger.notice("Error could not listen on port ", platformListenSocket.handle, " with error ",
                         WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
@@ -205,7 +220,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         {
             platformListenSocket.eventHandle = WSACreateEvent();
 
-            if(platformListenSocket.eventHandle is WSA_INVALID_EVENT) {
+            if (platformListenSocket.eventHandle is WSA_INVALID_EVENT) {
                 logger.notice("Error occured while creating the accept/close event ", platformListenSocket.handle,
                         " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
@@ -214,7 +229,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
                 logger.debug_("WSA accept/close event created ", platformListenSocket.handle, " on ", Thread.self);
             }
 
-            if(WSAEventSelect(platformListenSocket.handle, platformListenSocket.eventHandle, FD_ACCEPT | FD_CLOSE) == SOCKET_ERROR) {
+            if (WSAEventSelect(platformListenSocket.handle, platformListenSocket.eventHandle, FD_ACCEPT | FD_CLOSE) == SOCKET_ERROR) {
                 logger.notice("Error could not associated on accept/close event with listen socket accept event ",
                         platformListenSocket.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
@@ -237,26 +252,26 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 }
 
 void handleListenSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
-    version(Windows) {
+    version (Windows) {
         ListenSocketState* listenSocketState = cast(ListenSocketState*)user;
         auto perSockState = listenSocketState.platformSockets[cast(PlatformListenSocketKey)handle];
         assert(perSockState);
 
         WSANETWORKEVENTS wsaEvent;
 
-        if(WSAEnumNetworkEvents(perSockState.handle, perSockState.eventHandle, &wsaEvent) != 0) {
+        if (WSAEnumNetworkEvents(perSockState.handle, perSockState.eventHandle, &wsaEvent) != 0) {
             auto error = GetLastError();
 
-            if(error == WSAENOTSOCK) {
+            if (error == WSAENOTSOCK) {
                 // ok just in case lets just unpin it
                 listenSocketState.unpin;
             } else {
                 logger.notice("Error could not enumerate WSA network listen socket events with code ",
                         perSockState.handle, " with error ", error, " on ", Thread.self);
             }
-        } else if((wsaEvent.lNetworkEvents & FD_ACCEPT) == FD_ACCEPT && wsaEvent.iErrorCode[FD_ACCEPT_BIT] == 0) {
+        } else if ((wsaEvent.lNetworkEvents & FD_ACCEPT) == FD_ACCEPT && wsaEvent.iErrorCode[FD_ACCEPT_BIT] == 0) {
             onAccept(listenSocketState, perSockState);
-        } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
+        } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
             logger.debug_("Socket closing cleanly ", perSockState.handle, " on ", Thread.self);
             closesocket(perSockState.handle);
             listenSocketState.unpin();
@@ -272,7 +287,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
     import sidero.eventloop.internal.event_waiting;
     import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
 
-    version(Windows) {
+    version (Windows) {
         assert(perSockState);
         short addressFamily, socketType, socketProtocol;
 
@@ -299,14 +314,14 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 notRecognized = true;
             });
 
-            if(notRecognized) {
+            if (notRecognized) {
                 logger.error("Did not recognize network address type for accept ", perSockState.address, " for ",
                         perSockState.handle, " on ", Thread.self);
                 return;
             }
         }
 
-        final switch(listenSocketState.protocol) {
+        final switch (listenSocketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -319,7 +334,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
 
         SOCKET acceptedSocket = WSASocketA(addressFamily, socketType, socketProtocol, null, 0, WSA_FLAG_OVERLAPPED);
 
-        if(acceptedSocket == INVALID_SOCKET) {
+        if (acceptedSocket == INVALID_SOCKET) {
             logger.error("Error could not create accepted socket with error ", perSockState.handle, " for ",
                     perSockState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
         } else {
@@ -334,7 +349,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
             auto result = AcceptEx(perSockState.handle, acceptedSocket, buffer.ptr, 0, SockAddressMaxSize + 16,
                     SockAddressMaxSize + 16, &received, &overlapped);
 
-            if(result != 0 && result != ERROR_IO_PENDING) {
+            if (result != 0 && result != ERROR_IO_PENDING) {
                 logger.notice("Error could not accept socket with error ", perSockState.handle, " for ",
                         perSockState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(acceptedSocket);
@@ -347,18 +362,18 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 NetworkAddress localAddress, remoteAddress;
 
                 {
-                    if(localAddressPtr.sin_family == AF_INET) {
+                    if (localAddressPtr.sin_family == AF_INET) {
                         sockaddr_in* localAddress4 = localAddressPtr;
                         localAddress = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
-                    } else if(localAddressPtr.sin_family == AF_INET6) {
+                    } else if (localAddressPtr.sin_family == AF_INET6) {
                         sockaddr_in6* localAddress6 = cast(sockaddr_in6*)localAddressPtr;
                         localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.Word, true, true);
                     }
 
-                    if(remoteAddressPtr.sin_family == AF_INET) {
+                    if (remoteAddressPtr.sin_family == AF_INET) {
                         sockaddr_in* remoteAddress4 = remoteAddressPtr;
                         remoteAddress = NetworkAddress.fromIPv4(remoteAddress4.sin_port, remoteAddress4.sin_addr.s_addr, true, true);
-                    } else if(remoteAddressPtr.sin_family == AF_INET6) {
+                    } else if (remoteAddressPtr.sin_family == AF_INET6) {
                         sockaddr_in6* remoteAddress6 = cast(sockaddr_in6*)remoteAddressPtr;
                         remoteAddress = NetworkAddress.fromIPv6(remoteAddress6.sin6_port, remoteAddress6.sin6_addr.Word, true, true);
                     }
@@ -401,7 +416,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                         notRecognized = true;
                     });
 
-                    if(notRecognized) {
+                    if (notRecognized) {
                         logger.notice("Did not recognize an IP address for accepted socket ", acceptedSocket, " local ",
                                 localAddress, " remote ", remoteAddress, " for ", perSockState.handle, " on ", Thread.self);
                         closesocket(acceptedSocket);
@@ -417,7 +432,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
                 acquiredSocket.state.cameFromServer = true;
 
-                if(acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {
+                if (acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {
                     logger.notice("Error occured while creating the on close event with code ", acceptedSocket,
                             " for ", perSockState.handle, " with error ", GetLastError(), " on ", Thread.self);
                     return;
@@ -425,7 +440,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                     logger.debug_("WSA on close event created ", acceptedSocket, " on ", Thread.self);
                 }
 
-                if(WSAEventSelect(acceptedSocket, acquiredSocket.state.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
+                if (WSAEventSelect(acceptedSocket, acquiredSocket.state.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
                     logger.notice("Could not associated on close event with accepted socket ", acceptedSocket, " for ",
                             perSockState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
                     closesocket(acceptedSocket);
@@ -434,15 +449,15 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                     logger.debug_("Associated on close event on accepted socket ", acceptedSocket, " on ", Thread.self);
                 }
 
-                if(!associateWithIOCP(acquiredSocket)) {
+                if (!associateWithIOCP(acquiredSocket)) {
                     closesocket(acceptedSocket);
                     return;
                 } else {
                     logger.debug_("Associated connection with IOCP ", acceptedSocket, " on ", Thread.self);
                 }
 
-                if(!listenSocketState.fallbackCertificate.isNull) {
-                    if(!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
+                if (!listenSocketState.fallbackCertificate.isNull) {
+                    if (!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
                             listenSocketState.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
                             listenSocketState.encryption, listenSocketState.validateCertificates)) {
                         logger.notice("Could not initialize encryption on socket ", acceptedSocket, " for ",

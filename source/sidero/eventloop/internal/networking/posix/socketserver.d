@@ -47,14 +47,14 @@ struct PlatformListenSocket {
     }
 }
 
-bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAlive) @trusted {
+bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAliveInterval) @trusted {
     if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
         auto resolved = listenSocketState.address.resolve();
 
         uint gotOne;
 
         foreach (address; resolved) {
-            if (listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAlive))
+            if (listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAliveInterval))
                 gotOne++;
         }
 
@@ -63,7 +63,7 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
             return true;
         }
     } else if (listenSocketState.address.type != NetworkAddress.Type.Invalid) {
-        if (listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAlive)) {
+        if (listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAliveInterval)) {
             listenSocketState.pin(1);
             return true;
         }
@@ -87,7 +87,8 @@ void cleanup(scope PlatformListenSocket* listenSocketState) scope {
 
 private:
 
-bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr, Optional!Duration keepAlive) @trusted {
+bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr,
+        Optional!Duration keepAliveInterval) @trusted {
     version (Posix) {
         import sidero.eventloop.internal.event_waiting;
         import sidero.base.internal.atomic;
@@ -178,20 +179,29 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
             if (setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(uint*)&reuseAddrValue, 4) != 0) {
                 logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
-                errno, " on ", Thread.self);
+                        errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
             }
         }
 
-        if (keepAlive) {
-            // keepAlive is in milliseconds
-            uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
+        if (keepAliveInterval) {
+            uint keepAliveEnabledValue = 1, keepAliveIntervalValue = cast(uint)keepAliveInterval.get.totalSeconds;
 
-            if(setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
+            if (setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveEnabledValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
+            }
+
+            version (linux) {
+                import core.sys.linux.netinet.tcp : TCP_KEEPIDLE;
+
+                if (setsockopt(platformListenSocket.fd, IPPROTO_TCP, TCP_KEEPIDLE, cast(uint*)&keepAliveIntervalValue, 4) != 0) {
+                    logger.notice("Could not set TCP_KEEPIDLE ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
+                    close(platformListenSocket.fd);
+                    return false;
+                }
             }
         }
 

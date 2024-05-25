@@ -207,6 +207,8 @@ version(Windows) {
         AF_INET6 = 23,
         IPPROTO_TCP = 6,
         IPPROTO_UDP = 41,
+        TCP_KEEPALIVE = 3,
+        TCP_KEEPIDLE = TCP_KEEPALIVE,
         SOCKET_ERROR = -1,
         INVALID_SOCKET = ~0,
         SOCK_STREAM = 1,

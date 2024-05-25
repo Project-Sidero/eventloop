@@ -184,11 +184,11 @@ struct SocketState {
         while(didSomeWork);
     }
 
-    ErrorResult startUp(NetworkAddress address, Optional!Duration keepAlive) scope @trusted {
+    ErrorResult startUp(NetworkAddress address) scope @trusted {
         Socket socket;
         socket.state = &this;
         this.rc(true);
-        return connectToSpecificAddress(socket, address, keepAlive);
+        return connectToSpecificAddress(socket, address);
     }
 
     package(sidero.eventloop) {

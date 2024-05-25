@@ -63,10 +63,25 @@ export @safe nothrow @nogc:
         return !isNull && atomicLoad(state.isAlive) > 0;
     }
 
-    /// Listen on port
+    /**
+        Listen on a set of network addresses with optional encryption using a coroutine handler per socket.
+
+        Params:
+            onAccept             = The coroutine that will be instanced with a socket.
+            address              = The address to listen on, hostnames must map directly to a network address of this machine (such as localhost).
+            protocol             = The socket protocol (TCP, UDP, ext.) to listen via, only set this if you don't need to do per-socket certificates.
+            encryption           = The encryption protocol to apply to any connections established.
+            fallbackCertificate  = If no certificate can be found, fallback to this one.
+            reuseAddr            = Set the listen socket as being reusable on address.
+            keepAliveInterval    = Start keep alive with a provided interval. Not all platforms support setting the interval so use a non-zero value.
+            validateCertificates = Any certificates that are seen for encryption, do they need to validate? (Turn off for unsigned).
+            allocator            = The memory allocator to use.
+
+        Returns: The listen socket or the error.
+    */
     static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address, Socket.Protocol protocol,
             Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
-            bool reuseAddr = true, Optional!Duration keepAlive = Optional!Duration.init,
+            bool reuseAddr = true, Optional!Duration keepAliveInterval = Optional!Duration.init,
             bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) @trusted {
 
         if (!onAccept.canInstance)
@@ -82,7 +97,7 @@ export @safe nothrow @nogc:
         ret.state = allocator.make!ListenSocketState(allocator, onAccept, address, protocol, encryption,
                 fallbackCertificate, validateCertificates);
 
-        if (!ret.state.startUp(reuseAddr, keepAlive))
+        if (!ret.state.startUp(reuseAddr, keepAliveInterval))
             return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
 
         return typeof(return)(ret);
@@ -268,10 +283,19 @@ export @safe nothrow @nogc:
         Best_TLS,
     }
 
-    ///
+    /**
+        Connect a socket to a network address using a coroutine handler.
+
+        Params:
+            onConnect = The coroutine handler.
+            address   = The network address to connect to, must not be a host name.
+            protocol  = The socket protocol to connect via (TCP, UDP, ext.).
+            allocator = The memory allocator use allocate with.
+
+        Returns: The connected socket or the error.
+    */
     static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
-            Socket.Protocol protocol, Optional!Duration keepAlive = Optional!Duration.init,
-            scope return RCAllocator allocator = RCAllocator.init) @trusted {
+            Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
         if (!onConnect.canInstance)
@@ -286,7 +310,7 @@ export @safe nothrow @nogc:
         Socket ret;
         ret.state = allocator.make!SocketState(allocator, protocol, false);
 
-        auto errorResult = ret.state.startUp(address, keepAlive);
+        auto errorResult = ret.state.startUp(address);
         if (!errorResult)
             return typeof(return)(errorResult.getError());
 

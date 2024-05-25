@@ -47,7 +47,7 @@ version(Windows) {
         }
     }
 
-    ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!uint keepAlive) {
+    ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) {
         assert(0);
     }
 

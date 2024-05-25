@@ -126,7 +126,7 @@ struct PlatformSocket {
     }
 }
 
-ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Optional!Duration keepAlive) @trusted {
+ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @trusted {
     version (Windows) {
         SocketState* socketState = socket.state;
 
@@ -192,17 +192,6 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address, Opti
                 return ErrorResult(UnknownPlatformBehaviorException("Could not create socket"));
             } else {
                 logger.debug_("Socket created successfully ", socketState.handle, " at ", address, " on ", Thread.self);
-            }
-        }
-
-        if (keepAlive) {
-            // keepAlive is in milliseconds
-            uint keepAliveValue = cast(uint)keepAlive.get.totalSeconds;
-
-            if (setsockopt(socketState.handle, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveValue, 4) != 0) {
-                logger.notice("Could not set SO_KEEPALIVE ", socketState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
-                closesocket(socketState.handle);
-                return ErrorResult(UnknownPlatformBehaviorException("Could not set keep alive status to socket"));
             }
         }
 
