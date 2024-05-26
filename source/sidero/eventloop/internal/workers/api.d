@@ -1,7 +1,9 @@
-module sidero.eventloop.internal.workers;
+module sidero.eventloop.internal.workers.api;
 import sidero.eventloop.threads;
 import sidero.eventloop.coroutine.generic;
 import sidero.eventloop.coroutine.condition;
+import kernelwait = sidero.eventloop.internal.workers.kernelwait.api;
+import userland = sidero.eventloop.internal.workers.userland.api;
 import sidero.base.system : cpuCount;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.map.duplicatehashmap;
@@ -12,17 +14,9 @@ import sidero.base.allocators;
 import sidero.base.errors;
 import sidero.base.synchronization.mutualexclusion;
 
-version(Windows) {
-    import sidero.eventloop.internal.windows.iocp;
-} else version(Posix) {
-    import sidero.eventloop.internal.posix.workers;
-} else {
-    static assert(0, "unimplemented");
-}
-
 export @safe nothrow @nogc:
 
-version(none) {
+version (none) {
     void shutdownWorkerMechanism() {
     }
 
@@ -42,6 +36,8 @@ __gshared {
         TestTestSetLockInline mutex;
         bool isInitialized;
 
+        bool useKernelWait, useUserLand;
+
         DynamicArray!Thread threadPool;
         LoggerReference logger;
 
@@ -53,9 +49,13 @@ __gshared {
     }
 }
 
+bool usesKernelWait() @trusted {
+    return useKernelWait;
+}
+
 bool startWorkers(size_t workerMultiplier) @trusted {
     mutex.pureLock;
-    scope(exit)
+    scope (exit)
         mutex.unlock;
 
     if (workerMultiplier == 0) {
@@ -65,22 +65,22 @@ bool startWorkers(size_t workerMultiplier) @trusted {
     }
 
     logger = Logger.forName(String_UTF8(__MODULE__));
-    if(!logger)
+    if (!logger)
         return false;
     logger.setLevel = LogLevel.Warning;
 
-    if(coroutinesForWorkers.isNull) {
+    if (coroutinesForWorkers.isNull) {
         coroutinesForWorkers = FiFoConcurrentQueue!GenericCoroutine(RCAllocator.init);
     }
 
     const oldCount = threadPool.length;
     const newCount = workerMultiplier * cpuCount();
 
-    if(oldCount > 0) {
-        if(newCount > oldCount) {
+    if (oldCount > 0) {
+        if (newCount > oldCount) {
             logger.notice("Starting additional workers, using multiplier ", workerMultiplier, " for an additional ",
                     newCount - oldCount, " to form ", newCount, " workers");
-        } else if(newCount == oldCount) {
+        } else if (newCount == oldCount) {
             logger.debug_("Not starting additional workers as the old count is the same as the new one with a multipler ",
                     workerMultiplier, " for a total of ", newCount, " workers");
             return true;
@@ -93,13 +93,23 @@ bool startWorkers(size_t workerMultiplier) @trusted {
         logger.notice("Starting workers, using multiplier ", workerMultiplier, " for a total of ", newCount, " workers");
 
     threadPool.reserve(newCount - oldCount);
-    if(!initializeWorkerMechanism(newCount))
+    void function() @safe nothrow @nogc workerProc;
+
+    if (kernelwait.initializeWorkerMechanism(newCount)) {
+        logger.info("Workers using kernel mechanism");
+        useKernelWait = true;
+        workerProc = &kernelwait.workerProc;
+    } else if (userland.initializeWorkerMechanism(newCount)) {
+        logger.info("Workers using userland mechanism");
+        useUserLand = true;
+        workerProc = &userland.workerProc;
+    } else
         return false;
 
-    foreach(i; oldCount .. newCount) {
-        auto thread = Thread.create(&workerProc);
+    foreach (i; oldCount .. newCount) {
+        auto thread = Thread.create(workerProc);
 
-        if(thread)
+        if (thread)
             threadPool ~= thread.get;
         else {
             logger.error("Could not create worker thread ", thread.getError());
@@ -113,20 +123,25 @@ bool startWorkers(size_t workerMultiplier) @trusted {
 
 void shutdownWorkers() @trusted {
     mutex.pureLock;
-    scope(exit)
+    scope (exit)
         mutex.unlock;
 
-    if(!isInitialized)
+    if (!isInitialized)
         return;
 
     logger.notice("Shutting down of workers");
 
-    shutdownWorkerMechanism;
+    if (useKernelWait)
+        kernelwait.shutdownWorkerMechanism;
+    else if (useUserLand)
+        userland.shutdownWorkerMechanism;
+    else
+        assert(0);
 
-    foreach(thread; threadPool) {
-        for(;;) {
+    foreach (thread; threadPool) {
+        for (;;) {
             auto got = thread.join();
-            if(got)
+            if (got)
                 break;
         }
 
@@ -142,11 +157,11 @@ void shutdownWorkers() @trusted {
 
 bool isWorkerThread(Thread other) @trusted {
     mutex.pureLock;
-    scope(exit)
+    scope (exit)
         mutex.unlock;
 
-    foreach(thread; threadPool) {
-        if(thread == other)
+    foreach (thread; threadPool) {
+        if (thread == other)
             return true;
     }
 
@@ -154,28 +169,33 @@ bool isWorkerThread(Thread other) @trusted {
 }
 
 void triggerACoroutineExecution(size_t estimate = 0) @trusted {
-    if(coroutinesForWorkers.empty)
+    if (coroutinesForWorkers.empty)
         return;
 
     mutex.pureLock;
-    scope(exit)
+    scope (exit)
         mutex.unlock;
 
-    if(estimate == 0)
-        triggerACoroutineMechanism(coroutinesForWorkers.count);
+    if (estimate == 0)
+        estimate = coroutinesForWorkers.count;
+
+    if (useKernelWait)
+        kernelwait.triggerACoroutineMechanism(estimate);
+    else if (useUserLand)
+        userland.triggerACoroutineMechanism(estimate);
     else
-        triggerACoroutineMechanism(estimate);
+        assert(0);
 }
 
 void addCoroutineTask(GenericCoroutine coroutine) @trusted {
-    if(coroutine.isNull)
+    if (coroutine.isNull)
         return;
 
-    final switch(coroutine.condition.waitingOn) {
+    final switch (coroutine.condition.waitingOn) {
     case CoroutineCondition.WaitingOn.Nothing:
         // nothing to wait on, yahoo!
 
-        if(!coroutine.isComplete) {
+        if (!coroutine.isComplete) {
             logger.debug_("Adding coroutine task on ", Thread.self, " and is ready");
 
             // is not complete, so we gotta put it in queue once again
@@ -195,12 +215,12 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
 
         auto conditionToContinue = coroutine.condition.coroutine;
 
-        if(conditionToContinue.isComplete) {
+        if (conditionToContinue.isComplete) {
             logger.debug_("Adding coroutine task on ", Thread.self, " and condition is complete");
             // condition is complete (could be null)
             coroutine.unsafeUnblock;
             coroutinesForWorkers.push(coroutine);
-            triggerACoroutineMechanism(1);
+            triggerACoroutine(1);
         } else {
             logger.debug_("Adding coroutine task on ", Thread.self, " and condition is not complete");
             coroutinesWaitingOnOthers[conditionToContinue] ~= coroutine;
@@ -215,30 +235,30 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
     startWorkers(0);
     mutex.pureLock;
 
-    if(errorResult) {
+    if (errorResult) {
         // ok no error
         logger.debug_("Coroutine worker success on ", Thread.self);
 
-        foreach(co; coroutinesWaitingOnOthers[coroutine]) {
+        foreach (co; coroutinesWaitingOnOthers[coroutine]) {
             logger.debug_("Got dependent on coroutine");
             co.unsafeUnblock;
             coroutinesForWorkers.push(co);
         }
         coroutinesWaitingOnOthers.remove(coroutine);
-        triggerACoroutineMechanism(coroutinesForWorkers.count);
+        triggerACoroutine(coroutinesForWorkers.count);
 
         mutex.unlock;
         addCoroutineTask(coroutine);
     } else {
         logger.debug_("Coroutine worker failed: ", errorResult, " on ", Thread.self);
 
-        foreach(co; coroutinesWaitingOnOthers[coroutine]) {
+        foreach (co; coroutinesWaitingOnOthers[coroutine]) {
             co.unsafeSetErrorResult(errorResult.getError());
             coroutinesForWorkers.push(co);
         }
         coroutinesWaitingOnOthers.remove(coroutine);
 
-        triggerACoroutineMechanism(coroutinesForWorkers.count);
+        triggerACoroutine(coroutinesForWorkers.count);
         mutex.unlock;
     }
 }
@@ -247,9 +267,10 @@ void debugWorkers() @trusted {
     mutex.pureLock;
 
     import sidero.base.console;
+
     writeln("\\/---- workers ---- \\/");
 
-    foreach(from; coroutinesWaitingOnOthers) {
+    foreach (from; coroutinesWaitingOnOthers) {
         from.debugMe("from");
 
         foreach (on; coroutinesWaitingOnOthers[from]) {
@@ -259,4 +280,15 @@ void debugWorkers() @trusted {
 
     writeln("/\\---- workers ---- /\\");
     mutex.unlock;
+}
+
+private {
+    void triggerACoroutine(size_t count) @trusted {
+        if (useKernelWait) {
+            kernelwait.triggerACoroutineMechanism(count);
+        } else if (useUserLand) {
+            userland.triggerACoroutineMechanism(count);
+        } else
+            assert(0);
+    }
 }

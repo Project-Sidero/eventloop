@@ -1,4 +1,4 @@
-module sidero.eventloop.internal.posix.workers;
+module sidero.eventloop.internal.workers.userland.posix;
 import sidero.eventloop.internal.workers;
 import sidero.eventloop.threads;
 import sidero.base.internal.atomic;
@@ -26,27 +26,7 @@ private {
     }
 }
 
-void shutdownWorkerMechanism() @trusted {
-    version (Posix) {
-        if (atomicLoad(countAliveThreads) == 0) {
-            logger.debug_("Shutdown Posix workers immediately");
-        }
-
-        atomicStore(workersInShutdown, true);
-        pthread_cond_broadcast(&workerCondition);
-
-        while(atomicLoad(countAliveThreads) > 0) {
-            Thread.yield;
-        }
-
-        pthread_cond_destroy(&workerCondition);
-        pthread_mutex_destroy(&workersWorkMutex);
-
-        logger.notice("Shutdown Posix workers");
-    }
-}
-
-bool initializeWorkerMechanism(size_t count) @trusted {
+bool initializeWorkerPlatformMechanism(size_t count) @trusted {
     version (Posix) {
         atomicStore(workersInShutdown, false);
 
@@ -71,6 +51,26 @@ bool initializeWorkerMechanism(size_t count) @trusted {
         return true;
     } else
         return false;
+}
+
+void shutdownWorkerPlatformMechanism() @trusted {
+    version (Posix) {
+        if (atomicLoad(countAliveThreads) == 0) {
+            logger.debug_("Shutdown Posix workers immediately");
+        }
+
+        atomicStore(workersInShutdown, true);
+        pthread_cond_broadcast(&workerCondition);
+
+        while (atomicLoad(countAliveThreads) > 0) {
+            Thread.yield;
+        }
+
+        pthread_cond_destroy(&workerCondition);
+        pthread_mutex_destroy(&workersWorkMutex);
+
+        logger.notice("Shutdown Posix workers");
+    }
 }
 
 void triggerACoroutineMechanism(size_t count) @trusted {

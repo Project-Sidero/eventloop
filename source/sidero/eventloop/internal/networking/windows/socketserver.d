@@ -283,7 +283,7 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
 void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
     import sidero.eventloop.internal.networking.windows.socketclient;
     import sidero.eventloop.tasks.workers : registerAsTask;
-    import sidero.eventloop.internal.windows.iocp;
+    import sidero.eventloop.internal.workers.kernelwait.windows;
     import sidero.eventloop.internal.event_waiting;
     import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
 

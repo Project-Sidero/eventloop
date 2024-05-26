@@ -2,7 +2,7 @@ module sidero.eventloop.internal.networking.windows.socketclient;
 import sidero.eventloop.internal.networking.windows.mechanism;
 import sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.internal.event_waiting;
-import sidero.eventloop.internal.windows.iocp;
+import sidero.eventloop.internal.workers.kernelwait.windows;
 import sidero.eventloop.internal.windows.bindings;
 import sidero.eventloop.sockets;
 import sidero.eventloop.threads;

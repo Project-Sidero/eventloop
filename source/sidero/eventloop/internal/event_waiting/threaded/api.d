@@ -19,11 +19,6 @@ version (Windows) {
 } else
     static assert(0, "Unimplemented");
 
-struct UserEventHandler {
-    UserEventProc proc;
-    void* user;
-}
-
 // minimal demonstration of what is required
 version (none) {
     struct EventWaiterThread {
@@ -62,7 +57,6 @@ version (none) {
 __gshared {
     package(sidero.eventloop.internal.event_waiting.threaded) {
         ConcurrentHashMap!(ulong, EventWaiterThread) eventWaiterThreads;
-        HashMap!(void*, UserEventHandler) allEventHandles;
     }
 
     private {
@@ -70,10 +64,11 @@ __gshared {
     }
 }
 
-void initializeThreadedEventWaiting() @trusted {
+bool initializeThreadedEventWaiting() @trusted {
     logger = Logger.forName(String_UTF8(__MODULE__));
     logAssert(cast(bool)logger, "Could not initialize threaded event waiting logger", logger.getError());
     logAssert(cast(bool)initializePlatformEventWaiting(), "Could not initialize threaded event waiting platform support");
+    return true;
 }
 
 void addEventWaiterHandleStrategy(void* handleToWaitOn, UserEventProc proc, void* user) {
@@ -82,8 +77,6 @@ void addEventWaiterHandleStrategy(void* handleToWaitOn, UserEventProc proc, void
 
     guardEventWaiting(() {
         if(handleToWaitOn !in allEventHandles) {
-            logger.trace("Adding handle to wait on events for ", handleToWaitOn, " for proc ", proc, " with user ", user, " on thread ", Thread.self);
-            allEventHandles[handleToWaitOn] = UserEventHandler(proc, user);
             updateEventWaiterThreads;
         } else {
             logger.debug_("Adding handle to wait on events already exists for ", handleToWaitOn, " on thread ", Thread.self);
@@ -93,7 +86,6 @@ void addEventWaiterHandleStrategy(void* handleToWaitOn, UserEventProc proc, void
 
 void removeEventWaiterHandleStrategy(scope void* handleToNotWaitOn) {
     guardEventWaiting(() {
-        allEventHandles.remove(handleToNotWaitOn);
         updateEventWaiterThreads;
     });
 }
@@ -234,7 +226,6 @@ void threadStartProc(DynamicArray!(void*) tempHandles, DynamicArray!UserEventHan
         threadState.thread = self;
         threadState.nextEventHandles = tempHandles;
         threadState.nextEventProcs = tempProcs;
-
     });
 
     scope(exit) {

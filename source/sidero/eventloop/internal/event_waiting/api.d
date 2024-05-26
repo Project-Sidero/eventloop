@@ -1,18 +1,27 @@
 module sidero.eventloop.internal.event_waiting.api;
+import sidero.eventloop.threads;
 import sidero.base.synchronization.system.lock;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.internal.logassert;
+import sidero.base.containers.map.hashmap;
 
 export @safe nothrow @nogc:
 
-private {
-    __gshared {
+__gshared {
+    HashMap!(void*, UserEventHandler) allEventHandles;
+
+    private {
         LoggerReference logger;
         SystemLock eventWaiterMutex;
 
         bool useThreaded, useLinux;
     }
+}
+
+struct UserEventHandler {
+    UserEventProc proc;
+    void* user;
 }
 
 alias UserEventProc = void function(void* handle, void* user, scope void* eventResponsePtr) @safe nothrow @nogc;
@@ -21,7 +30,22 @@ void addEventWaiterHandle(void* handleToWaitOn, UserEventProc proc, void* user) 
     assert(handleToWaitOn !is null);
     assert(proc !is null);
 
-    if (guardEventWaiting(null)) {
+    bool needToAdd;
+
+    if (guardEventWaiting(() {
+            if (handleToWaitOn !in allEventHandles) {
+                logger.trace("Adding handle to wait on events for ", handleToWaitOn, " for proc ", proc, " with user ",
+                user, " on thread ", Thread.self);
+                allEventHandles[handleToWaitOn] = UserEventHandler(proc, user);
+                needToAdd = true;
+            } else {
+                logger.debug_("Adding handle to wait on events already exists for ", handleToWaitOn, " on thread ", Thread.self);
+            }
+        })) {
+
+        if (!needToAdd)
+            return;
+
         version (linux) {
             if (useLinux) {
                 import sidero.eventloop.internal.event_waiting.linux;
@@ -40,7 +64,10 @@ void addEventWaiterHandle(void* handleToWaitOn, UserEventProc proc, void* user) 
 }
 
 void removeEventWaiterHandle(scope void* handleToNotWaitOn) @trusted {
-    if (guardEventWaiting(null)) {
+    if (guardEventWaiting(() {
+            logger.trace("Removing handle to wait on events for ", handleToNotWaitOn, " on thread ", Thread.self);
+            allEventHandles.remove(handleToNotWaitOn);
+        })) {
         version (linux) {
             if (useLinux) {
                 import sidero.eventloop.internal.event_waiting.linux;
@@ -81,8 +108,12 @@ void shutdownEventWaiterThreads() @trusted {
     }
 }
 
-package(sidero.eventloop.internal.event_waiting) {
+package(sidero.eventloop.internal) {
     bool guardEventWaiting(Del)(scope Del del) @trusted {
+        import linuxeventwait = sidero.eventloop.internal.event_waiting.linux;
+        import threadedeventwait = sidero.eventloop.internal.event_waiting.threaded.api;
+
+        import sidero.eventloop.internal.workers.api : startWorkers, usesKernelWait;
         import sidero.base.system : operatingSystem, OperatingSystem;
 
         auto lockError = eventWaiterMutex.lock;
@@ -96,33 +127,12 @@ package(sidero.eventloop.internal.event_waiting) {
             if (!logger)
                 return false;
 
-            useThreaded = true;
-            useLinux = false;
-
-            {
-                version (linux) {
-                    OperatingSystem os = operatingSystem();
-
-                    // EPOLLEXCLUSIVE was added in 4.5
-                    // epoll_create1 was added in 2.6.27 (we'll splify that to 2.7 as there are other bugs)
-
-                    // TODO: not implemented currently
-                    /+if (os.major > 4 || (os.major == 4 && os.minor >= 5))
-                        useLinux = true;+/
-                }
-            }
-
-            logAssert(useThreaded || useLinux, "Could not setup event waiting mechanism for unknown platform");
-
-            if (useLinux) {
-                import sidero.eventloop.internal.event_waiting.linux;
-
-                initializeLinuxEventWaiting();
-            } else if (useThreaded) {
-                import sidero.eventloop.internal.event_waiting.threaded.api;
-
-                initializeThreadedEventWaiting();
-            }
+            if (linuxeventwait.initializeLinuxEventWaiting())
+                useLinux = true;
+            else if (threadedeventwait.initializeThreadedEventWaiting())
+                useThreaded = true;
+            else
+                logAssert(false, "Could not setup event waiting mechanism for an unknown platform");
         }
 
         static if (!is(Del == typeof(null))) {
