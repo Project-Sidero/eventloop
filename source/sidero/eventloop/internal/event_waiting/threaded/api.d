@@ -76,11 +76,7 @@ void addEventWaiterHandleStrategy(void* handleToWaitOn, UserEventProc proc, void
     assert(proc !is null);
 
     guardEventWaiting(() {
-        if(handleToWaitOn !in allEventHandles) {
-            updateEventWaiterThreads;
-        } else {
-            logger.debug_("Adding handle to wait on events already exists for ", handleToWaitOn, " on thread ", Thread.self);
-        }
+        updateEventWaiterThreads;
     });
 }
 
