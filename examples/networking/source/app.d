@@ -8,8 +8,8 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.path.hostname;
 
 //version = UseTLS;
-version = UseRemote;
-version = UseClient;
+//version = UseRemote;
+//version = UseClient;
 
 //version = UseServerTLS;
 //version = UseServer;
@@ -74,7 +74,8 @@ int main(string[] args) {
         Certificate certificateToUseForServerTLS;
 
         version (UseServerSelfSign) {
-            auto gotCertificate = createSelfSigned(2048, 1.day, String_UTF8("Self signed localhost certificate"), Hostname.fromEncoded(String_ASCII("localhost")));
+            auto gotCertificate = createSelfSigned(2048, 1.day, String_UTF8("Self signed localhost certificate"),
+                    Hostname.fromEncoded(String_ASCII("localhost")));
             assert(gotCertificate);
             certificateToUseForServerTLS = gotCertificate;
             assert(!certificateToUseForServerTLS.isNull);
@@ -145,7 +146,7 @@ int main(string[] args) {
     return 0;
 }
 
-shared(bool) allowedToShutdown;
+shared(bool) allowedToShutdown, haveACo;
 
 void acceptLoop() {
     import sidero.base.datetime;
@@ -160,7 +161,7 @@ void acceptLoop() {
         if (got && got.length > 0)
             wantClose = true;
 
-        if (atomicLoad(allowedToShutdown) && wantClose)
+        if ((atomicLoad(allowedToShutdown) || !atomicLoad(haveACo)) && wantClose)
             break;
 
         //cast(void)Thread.sleep(1.seconds);
@@ -170,6 +171,8 @@ void acceptLoop() {
 @safe nothrow @nogc:
 
 InstanceableCoroutine!(void, Socket) createServerCo() {
+    import sidero.base.internal.atomic : atomicStore;
+
     static struct State {
         Socket socket;
         Future!(Slice!ubyte) nextLine;
@@ -178,10 +181,10 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
 
         this(Socket socket) {
             this.socket = socket;
+            atomicStore(haveACo, true);
         }
 
         ~this() {
-            import sidero.base.internal.atomic : atomicStore;
 
             if (socket.isNull)
                 return;
@@ -264,6 +267,7 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
 
         this(Socket socket) {
             this.socket = socket;
+            atomicStore(haveACo, true);
         }
 
         ~this() {

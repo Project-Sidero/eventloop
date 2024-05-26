@@ -12,7 +12,8 @@ import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.allocators;
 import sidero.base.errors;
-import sidero.base.synchronization.mutualexclusion;
+import sidero.base.synchronization.system.lock;
+import sidero.base.internal.atomic;
 
 export @safe nothrow @nogc:
 
@@ -33,8 +34,8 @@ version (none) {
 
 __gshared {
     private {
-        TestTestSetLockInline mutex;
-        bool isInitialized;
+        SystemLock mutex;
+        shared(bool) isInitialized;
 
         bool useKernelWait, useUserLand;
 
@@ -54,15 +55,15 @@ bool usesKernelWait() @trusted {
 }
 
 bool startWorkers(size_t workerMultiplier) @trusted {
-    mutex.pureLock;
+    if (atomicLoad(isInitialized))
+        return true;
+
+    mutex.lock.assumeOkay;
     scope (exit)
         mutex.unlock;
 
-    if (workerMultiplier == 0) {
-        if (isInitialized)
-            return true;
+    if (workerMultiplier == 0)
         workerMultiplier = 2;
-    }
 
     logger = Logger.forName(String_UTF8(__MODULE__));
     if (!logger)
@@ -117,12 +118,12 @@ bool startWorkers(size_t workerMultiplier) @trusted {
         }
     }
 
-    isInitialized = true;
+    atomicStore(isInitialized, true);
     return threadPool.length > oldCount;
 }
 
 void shutdownWorkers() @trusted {
-    mutex.pureLock;
+    mutex.lock.assumeOkay;
     scope (exit)
         mutex.unlock;
 
@@ -156,7 +157,7 @@ void shutdownWorkers() @trusted {
 }
 
 bool isWorkerThread(Thread other) @trusted {
-    mutex.pureLock;
+    mutex.lock.assumeOkay;
     scope (exit)
         mutex.unlock;
 
@@ -172,7 +173,7 @@ void triggerACoroutineExecution(size_t estimate = 0) @trusted {
     if (coroutinesForWorkers.empty)
         return;
 
-    mutex.pureLock;
+    mutex.lock.assumeOkay;
     scope (exit)
         mutex.unlock;
 
@@ -211,7 +212,7 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
         assert(0);
 
     case CoroutineCondition.WaitingOn.Coroutine:
-        mutex.pureLock;
+        mutex.lock.assumeOkay;
 
         auto conditionToContinue = coroutine.condition.coroutine;
 
@@ -233,7 +234,7 @@ void addCoroutineTask(GenericCoroutine coroutine) @trusted {
 
 void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult) @trusted {
     startWorkers(0);
-    mutex.pureLock;
+    mutex.lock.assumeOkay;
 
     if (errorResult) {
         // ok no error
@@ -264,7 +265,7 @@ void coroutineCompletedTask(GenericCoroutine coroutine, ErrorResult errorResult)
 }
 
 void debugWorkers() @trusted {
-    mutex.pureLock;
+    mutex.lock.assumeOkay;
 
     import sidero.base.console;
 

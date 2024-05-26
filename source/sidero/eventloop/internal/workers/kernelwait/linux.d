@@ -76,7 +76,7 @@ bool initializeWorkerPlatformMechanism(size_t numberOfWorkers) @trusted {
         }
 
         {
-            workFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+            workFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE);
 
             if (workFd < 0) {
                 const error = errno;
@@ -121,10 +121,17 @@ void shutdownWorkerPlatformMechanism() @trusted {
         }
 
         {
+            int result = eventfd_write(workFd, 1);
+
+            if (result != 0)
+                logger.warning("EPOLL worker shutdown message posting failed");
+        }
+
+        /+{
             // This should result in the waits failing, and threads death.
             close(workFd);
             close(epollContext);
-        }
+        }+/
 
         logger.notice("Shutdown EPOLL context for workers successfully");
     } else
@@ -207,6 +214,16 @@ void workerProc() @trusted {
                                 result = eventfd_read(handle, &cAndCCommand);
                                 if (result < 0)
                                     logger.debug_("Failed to read from C&C work FD EPOLL on thread ", Thread.self);
+
+
+                                if (atomicLoad(isInProcessOfDieing)) {
+                                    result = eventfd_write(workFd, 1);
+
+                                    if (result != 0)
+                                        logger.warning("EPOLL worker shutdown message posting failed");
+
+                                    break Loop;
+                                }
 
                                 auto workToDo = coroutinesForWorkers.pop;
 
