@@ -47,6 +47,11 @@ size_t onAttachOfThread(Thread thread) {
 
 // MUST be guarded and be on the thread to attach
 size_t onDetachOfThread(Thread thread) {
+    scope(exit) {
+        if (threadSystemRegistration.length == 0)
+            threadSystemRegistration = typeof(threadSystemRegistration).init;
+    }
+
     if (thread.isNull)
         return 0;
 
@@ -61,6 +66,7 @@ size_t onDetachOfThread(Thread thread) {
 
         if (ts.detachThisFunc !is null && thread.state.currentlyRegisteredOnRuntimes.update(k.get, false)) {
             ts.detachThisFunc();
+            threadSystemRegistration.remove(k);
             done++;
         }
     }
@@ -72,9 +78,10 @@ size_t onDetachOfThread(Thread thread) {
 void deregisterOwnedThreads() {
     accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
         import sidero.base.internal.atomic : atomicLoad, atomicDecrementAndLoad;
+
         mutex.lock.assumeOkay;
 
-        foreach(_, threadState; allThreads) {
+        foreach (_, threadState; allThreads) {
             assert(threadState);
 
             if (atomicLoad(threadState.attachCount) == 0)
@@ -92,6 +99,7 @@ void deregisterOwnedThreads() {
 
                 if (ts.detachFunc !is null && threadState.currentlyRegisteredOnRuntimes.get(k, false)) {
                     ts.detachFunc(thread);
+                    threadSystemRegistration.remove(k);
                     done++;
                 }
             }
@@ -101,6 +109,9 @@ void deregisterOwnedThreads() {
                 atomicDecrementAndLoad(threadState.refCount, 1);
             }
         }
+
+        if (threadSystemRegistration.length == 0)
+            threadSystemRegistration = typeof(threadSystemRegistration).init;
 
         mutex.unlock;
     });

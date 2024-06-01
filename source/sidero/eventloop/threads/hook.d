@@ -2,7 +2,7 @@ module sidero.eventloop.threads.hook;
 import sidero.eventloop.threads.registration;
 import sidero.eventloop.threads.osthread;
 
-version(D_BetterC) {
+version (D_BetterC) {
 } else {
     import core.thread.osthread : thread_attachThis;
     import core.thread.threadbase : thread_detachThis;
@@ -31,7 +31,7 @@ version(D_BetterC) {
             import core.thread.threadbase : thread_detachByAddr;
             import core.thread.types : ThreadID;
 
-            if(self.isNull)
+            if (self.isNull)
                 return;
 
             auto handle = self.unsafeGetHandle();
@@ -50,10 +50,11 @@ version(D_BetterC) {
         // If we don't disable and /then/ deregister it will be possible that the GC will collect something that
         //  one of our threads knows about.
         // If we don't deregister all threads we own on Posix you will get segfaults
-        GC.collect;
         GC.disable;
-        deregisterOwnedThreads();
+        scope (exit)
+            GC.enable;
 
+        deregisterOwnedThreads();
         deregisterThreadRegistration(&thread_attachThis);
     }
 

@@ -105,6 +105,8 @@ void shutdownEventWaiterThreads() @trusted {
 
             shutdownEventWaiterThreadsStrategy();
         }
+
+        allEventHandles = typeof(allEventHandles).init;
     }
 }
 

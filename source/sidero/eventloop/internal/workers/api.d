@@ -150,9 +150,18 @@ void shutdownWorkers() @trusted {
         assert(!thread.isRunning);
     }
 
+    foreach (from; coroutinesWaitingOnOthers) {
+        foreach (on; coroutinesWaitingOnOthers[from]) {
+            on.unsafeSetErrorResult(ErrorInfo(ShuttingStateDownException));
+        }
+
+        from.unsafeSetErrorResult(ErrorInfo(ShuttingStateDownException));
+    }
+
     logger.notice("All worker threads have been joined");
 
     threadPool = typeof(threadPool).init;
+    coroutinesWaitingOnOthers = typeof(coroutinesWaitingOnOthers).init;
     isInitialized = false;
 }
 
