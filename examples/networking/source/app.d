@@ -8,8 +8,8 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.path.hostname;
 
 //version = UseTLS;
-version = UseRemote;
-version = UseClient;
+//version = UseRemote;
+//version = UseClient;
 
 //version = UseServerTLS;
 //version = UseServer;
@@ -25,8 +25,6 @@ int main(string[] args) {
     import sidero.base.text.format;
     import sidero.base.path.networking;
     import sidero.base.datetime;
-    import core.memory;
-    GC.disable;
 
     /+if(args.length < 2) {
         writeln("Usage: port");

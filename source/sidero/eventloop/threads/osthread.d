@@ -53,7 +53,7 @@ export @safe nothrow @nogc:
                 }
             }
 
-            threadAllocator.deallocate((cast(void*)state)[0 .. State.sizeof]);
+            threadAllocator.dispose(state);
             mutex.unlock;
         }
     }
@@ -102,12 +102,9 @@ export @safe nothrow @nogc:
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
             mutex.lock.assumeOkay;
 
-            void[] memory = threadAllocator.allocate(Thread.State.sizeof);
-            assert(memory.length == Thread.State.sizeof);
-
-            Thread.State* state = cast(Thread.State*)(memory.ptr);
-            *state = Thread.State.init;
+            Thread.State* state = threadAllocator.make!State;
             state.entry = cast(void*)entryFunction;
+            state.currentlyRegisteredOnRuntimes = typeof(state.currentlyRegisteredOnRuntimes)(globalAllocator());
 
             Thread retThread;
             retThread.state = state;
@@ -131,7 +128,10 @@ export @safe nothrow @nogc:
 
                 retThread.state = null;
 
-                threadAllocator.deallocate(memory);
+                EntryFunctionArgs!Args* tempEfa = cast(EntryFunctionArgs!Args*)efaMemory.ptr;
+                tempEfa.destroy;
+
+                threadAllocator.dispose(state);
                 threadAllocator.deallocate(efaMemory);
             }
 
@@ -277,11 +277,8 @@ export @safe nothrow @nogc:
         {
             mutex.lock.assumeOkay;
 
-            void[] memory = threadAllocator.allocate(Thread.State.sizeof);
-            assert(memory.length == Thread.State.sizeof);
-
-            Thread.State* state = cast(Thread.State*)(memory.ptr);
-            *state = Thread.State.init;
+            Thread.State* state = threadAllocator.make!State;
+            state.currentlyRegisteredOnRuntimes = typeof(state.currentlyRegisteredOnRuntimes)(globalAllocator());
 
             state.handle = SystemHandle(cast(void*)handle, ThreadHandleIdentifier);
             state.lookupHandle = cast(void*)lookupId;
@@ -480,18 +477,22 @@ version (Windows) {
 
     extern (Windows) DWORD start_routine(EFA : EntryFunctionArgs!FunctionArgs, FunctionArgs...)(void* state) {
         Thread self;
-        EFA efa;
+        EFA* efa;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
             self.state = cast(Thread.State*)state;
             self.__ctor(self);
 
-            efa = *cast(EFA*)self.state.args;
+            efa = cast(EFA*)self.state.args;
 
             onAttachOfThread(self);
         });
 
         scope (exit) {
+            auto efaTemp = efa;
+            efaTemp.destroy;
+            threadAllocator.deallocate(cast(void[])efa[0 .. 1]);
+
             onDetachOfThread(self);
         }
 
@@ -558,7 +559,7 @@ version (Windows) {
         import core.sys.posix.pthread;
 
         Thread self;
-        EFA efa;
+        EFA* efa;
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) nothrow @nogc {
             assert(state_ !is null);
@@ -570,7 +571,8 @@ version (Windows) {
             self.state = state;
             self.__ctor(self);
 
-            efa = *cast(EFA*)state.args;
+            efa = cast(EFA*)state.args;
+            state.args = null;
             mutex.unlock;
 
             // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
@@ -585,6 +587,10 @@ version (Windows) {
         //  however unwind tables both work and are soooo much simpler to use.
         // FIXME: also support using pthread_cleanup_push but also remember to call pthread_cleanup_pop with 0 same as druntime
         scope (exit) {
+            auto efaTemp = efa;
+            efaTemp.destroy;
+            threadAllocator.deallocate(cast(void[])efa[0 .. 1]);
+
             cleanupPosixRunning(state_);
         }
 

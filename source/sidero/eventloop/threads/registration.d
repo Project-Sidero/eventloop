@@ -21,6 +21,9 @@ void registerThreadRegistration(void* key, OnAttachThisFunction onAttach, OnDeta
 ///
 void deregisterThreadRegistration(void* key) {
     threadSystemRegistration.remove(key);
+
+    if (threadSystemRegistration.length == 0)
+        threadSystemRegistration = typeof(threadSystemRegistration).init;
 }
 
 package(sidero.eventloop.threads):
@@ -66,7 +69,6 @@ size_t onDetachOfThread(Thread thread) {
 
         if (ts.detachThisFunc !is null && thread.state.currentlyRegisteredOnRuntimes.update(k.get, false)) {
             ts.detachThisFunc();
-            threadSystemRegistration.remove(k);
             done++;
         }
     }
@@ -99,7 +101,6 @@ void deregisterOwnedThreads() {
 
                 if (ts.detachFunc !is null && threadState.currentlyRegisteredOnRuntimes.get(k, false)) {
                     ts.detachFunc(thread);
-                    threadSystemRegistration.remove(k);
                     done++;
                 }
             }
@@ -109,9 +110,6 @@ void deregisterOwnedThreads() {
                 atomicDecrementAndLoad(threadState.refCount, 1);
             }
         }
-
-        if (threadSystemRegistration.length == 0)
-            threadSystemRegistration = typeof(threadSystemRegistration).init;
 
         mutex.unlock;
     });
