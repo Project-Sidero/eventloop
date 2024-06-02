@@ -35,6 +35,11 @@ version (none) {
             this.tupleof = other.tupleof;
         }
 
+        void opAssign(return scope EventWaiterThread other) scope {
+            this.destroy;
+            this.__ctor(other);
+        }
+
         void ourProc() nothrow {
         }
     }

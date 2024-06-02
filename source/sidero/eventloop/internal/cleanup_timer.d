@@ -23,17 +23,17 @@ __gshared {
         ConcurrentLinkedList!ReadPipe toReadPipeList;
         ConcurrentLinkedList!WritePipe toWritePipeList;
 
-        version (Windows) {
+        version(Windows) {
             import sidero.eventloop.internal.windows.bindings;
 
             HANDLE timerHandle;
-        } else version (Posix) {
+        } else version(Posix) {
             import sidero.base.internal.atomic;
             import core.sys.posix.pthread : pthread_cond_t, pthread_cond_broadcast, pthread_cond_signal,
                 pthread_cond_destroy, pthread_cond_timedwait,
                 pthread_cond_init, pthread_mutex_init, pthread_mutex_t, pthread_mutex_destroy, pthread_mutex_lock, pthread_mutex_unlock;
 
-            version (linux) {
+            version(linux) {
                 import core.sys.linux.timerfd;
                 import core.sys.posix.unistd : close, read;
                 import core.sys.posix.sys.time : timeval, gettimeofday;
@@ -56,23 +56,23 @@ bool startUpCleanupTimer() @trusted {
     import core.stdc.errno;
 
     mutex.pureLock;
-    scope (exit)
+    scope(exit)
         mutex.unlock;
 
-    if (logger && !logger.isNull)
+    if(logger && !logger.isNull)
         return true;
 
     logger = Logger.forName(String_UTF8(__MODULE__));
-    if (!logger)
+    if(!logger)
         return false;
     logger.setLevel = LogLevel.Warning;
 
-    version (Windows) {
+    version(Windows) {
         // unfortunately there can be a case where sockets need to be re-triggered at a later date
         // so lets use a waitable timer object to retrigger it
 
         timerHandle = CreateWaitableTimerW(null, false, null);
-        if (timerHandle is null) {
+        if(timerHandle is null) {
             logger.warning("Error occured while attempting to create a waitable timer for retrying read/write ", WSAGetLastError());
             shutdownCleanupTimer;
             return false;
@@ -83,25 +83,25 @@ bool startUpCleanupTimer() @trusted {
         LARGE_INTEGER dueTime;
         dueTime.QuadPart = -10000000 * NumberOfSecondsBetweenCleanup;
 
-        if (SetWaitableTimer(timerHandle, &dueTime, 1_000 * NumberOfSecondsBetweenCleanup, null, null, false) == 0) {
+        if(SetWaitableTimer(timerHandle, &dueTime, 1_000 * NumberOfSecondsBetweenCleanup, null, null, false) == 0) {
             logger.warning("Error occured while attempting to set time timer for retrying read/write ", WSAGetLastError());
             shutdownCleanupTimer;
             return false;
         }
 
         addEventWaiterHandle(timerHandle, &onTimerFunction, null);
-    } else version (linux) {
+    } else version(linux) {
         import core.sys.posix.time : clock_gettime, CLOCK_REALTIME;
 
         timerHandle = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
-        if (timerHandle < 0) {
+        if(timerHandle < 0) {
             logger.error("Could not create Linux cleanup timer ", errno);
             shutdownCleanupTimer;
             return false;
         }
 
         timespec ts;
-        if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        if(clock_gettime(CLOCK_REALTIME, &ts) != 0) {
             logger.error("Could not create Linux cleanup timer getting of time ", errno);
             shutdownCleanupTimer;
             return false;
@@ -114,39 +114,39 @@ bool startUpCleanupTimer() @trusted {
         spec.it_value.tv_nsec = ts.tv_nsec;
         spec.it_interval.tv_sec = NumberOfSecondsBetweenCleanup;
 
-        if (timerfd_settime(timerHandle, TFD_TIMER_ABSTIME, &spec, null) != 0) {
+        if(timerfd_settime(timerHandle, TFD_TIMER_ABSTIME, &spec, null) != 0) {
             logger.error("Could not set Linux cleanup timer getting of time ", errno);
             shutdownCleanupTimer;
             return false;
         }
 
         int err = pthread_mutex_init(&timerMutex, null);
-        if (err != 0) {
+        if(err != 0) {
             logger.error("Failed to initialize linux cleanup timer rearming mutex ", err);
             shutdownCleanupTimer;
             return false;
         }
 
         addEventWaiterHandle(cast(void*)timerHandle, &onTimerFunction, null);
-    } else version (Posix) {
+    } else version(Posix) {
         atomicStore(timerThreadInShutdown, false);
 
         int err = pthread_cond_init(&timerCondition, null);
-        if (err != 0) {
+        if(err != 0) {
             logger.error("Failed to initialize Posix cleanup timer rearming condition ", err);
             shutdownCleanupTimer;
             return false;
         }
 
         err = pthread_mutex_init(&timerMutex, null);
-        if (err != 0) {
+        if(err != 0) {
             logger.error("Failed to initialize Posix cleanup timer rearming mutex ", err);
             shutdownCleanupTimer;
             return false;
         }
 
         auto gotThread = Thread.create(&timerThreadProc);
-        if (!gotThread) {
+        if(!gotThread) {
             logger.error(gotThread);
             shutdownCleanupTimer;
             return false;
@@ -162,23 +162,24 @@ bool startUpCleanupTimer() @trusted {
 extern (C) void shutdownCleanupTimer() @trusted {
     import sidero.eventloop.internal.event_waiting;
 
-    if (!logger || logger.isNull)
+    if(!logger || logger.isNull)
         return;
 
-    socketRetryQueue = typeof(socketRetryQueue).init;
+    socketRetryQueue[0] = typeof(socketRetryQueue[0]).init;
+    socketRetryQueue[1] = typeof(socketRetryQueue[1]).init;
 
-    version (Windows) {
-        if (timerHandle !is null) {
+    version(Windows) {
+        if(timerHandle !is null) {
             import sidero.eventloop.internal.event_waiting;
 
             removeEventWaiterHandle(timerHandle);
             CloseHandle(timerHandle);
         }
-    } else version (linux) {
+    } else version(linux) {
         removeEventWaiterHandle(cast(void*)timerHandle);
         close(timerHandle);
         timerHandle = 0;
-    } else version (Posix) {
+    } else version(Posix) {
         atomicStore(timerThreadInShutdown, true);
         pthread_cond_broadcast(&timerCondition);
     } else
@@ -199,7 +200,7 @@ void addProcessToList(Process process) @trusted {
 
     logAssert(startUpCleanupTimer, "Could not initialize cleanup timer");
 
-    version (Posix) {
+    version(Posix) {
         processList ~= process;
     } else
         assert(0);
@@ -223,28 +224,33 @@ private:
 
 void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @trusted {
     logger.debug_("on timer ", handle, " ", user, " ", eventResponsePtr);
-    pthread_mutex_lock(&timerMutex);
 
-    version (linux) {
-        ubyte[8] res;
-        read(timerHandle, res.ptr, res.length);
-    }
+    version(Posix) {
+        pthread_mutex_lock(&timerMutex);
 
-    pthread_mutex_unlock(&timerMutex);
+        version(linux) {
+            ubyte[8] res;
+            read(timerHandle, res.ptr, res.length);
+        }
+
+        pthread_mutex_unlock(&timerMutex);
+    } else
+        assert(0);
+
     whenReady();
 }
 
 void timerThreadProc() @trusted {
-    version (Posix) {
+    version(Posix) {
         import sidero.base.internal.atomic;
 
         logger.debug_("Posix cleanup rearm thread start");
 
-        while (!atomicLoad(timerThreadInShutdown)) {
+        while(!atomicLoad(timerThreadInShutdown)) {
             pthread_mutex_lock(&timerMutex);
             bool doneOne;
 
-            while (socketRetryQueue[socketRetryQueuePick].empty && !atomicLoad(timerThreadInShutdown) &&
+            while(socketRetryQueue[socketRetryQueuePick].empty && !atomicLoad(timerThreadInShutdown) &&
                     (processList.length == 0 || (processList.length > 0 && !doneOne)) && (toReadPipeList.length == 0 ||
                         (toReadPipeList.length > 0 && !doneOne)) && (toWritePipeList.length == 0 || (toWritePipeList.length > 0 && !doneOne))) {
 
@@ -261,7 +267,7 @@ void timerThreadProc() @trusted {
 
             logger.debug_("Posix cleanup rearm triggered");
 
-            if (atomicLoad(timerThreadInShutdown)) {
+            if(atomicLoad(timerThreadInShutdown)) {
                 pthread_mutex_unlock(&timerMutex);
                 pthread_cond_broadcast(&timerCondition);
                 timerThread = Thread.init;
@@ -284,60 +290,60 @@ void whenReady() @trusted {
     size_t handledSockets, handlesProcesses, handledReadPipe, handledWritePipe;
 
     socketRetryQueuePick = !socketRetryQueuePick;
-    while (!socketRetryQueue[!socketRetryQueuePick].empty) {
+    while(!socketRetryQueue[!socketRetryQueuePick].empty) {
         auto got = socketRetryQueue[!socketRetryQueuePick].pop;
-        if (got) {
+        if(got) {
             handledSockets++;
             got.state.haveBeenRetriggered(got.state);
         }
     }
 
-    foreach (readPipe; toReadPipeList) {
+    foreach(readPipe; toReadPipeList) {
         assert(readPipe);
         auto handle = readPipe.unsafeGetHandle();
 
-        if (handle.isNull) {
+        if(handle.isNull) {
             toReadPipeList.remove(readPipe);
             continue;
         }
 
         readPipe.state.guard(() @trusted {
-            if (readPipe.state.performARead) {
+            if(readPipe.state.performARead) {
                 handledReadPipe++;
                 toReadPipeList.remove(readPipe);
             }
         });
     }
 
-    foreach (writePipe; toWritePipeList) {
+    foreach(writePipe; toWritePipeList) {
         assert(writePipe);
         auto handle = writePipe.unsafeGetHandle();
 
-        if (handle.isNull) {
+        if(handle.isNull) {
             toWritePipeList.remove(writePipe);
             continue;
         }
 
         writePipe.state.guard(() @trusted {
-            if (writePipe.state.performAWrite) {
+            if(writePipe.state.performAWrite) {
                 handledWritePipe++;
                 toWritePipeList.remove(writePipe);
             }
         });
     }
 
-    version (Posix) {
+    version(Posix) {
         import sidero.eventloop.tasks.future_completion;
         import sidero.eventloop.internal.posix.bindings : WIFEXITED, WEXITSTATUS, WIFSIGNALED, WTERMSIG;
         import core.sys.posix.sys.wait : waitpid, WNOHANG;
         import core.stdc.errno : errno;
 
-        foreach (process; processList) {
+        foreach(process; processList) {
             assert(process);
 
             auto id = process.id;
 
-            if (id == ProcessID.init) {
+            if(id == ProcessID.init) {
                 processList.remove(process);
                 handlesProcesses++;
             } else {
@@ -346,21 +352,21 @@ void whenReady() @trusted {
 
                 logger.trace("Got child ", child, " for ", process, " with status ", status);
 
-                if (child == id) {
+                if(child == id) {
                     int exitCode;
 
-                    if (WIFEXITED(status)) {
+                    if(WIFEXITED(status)) {
                         exitCode = WEXITSTATUS(status);
-                    } else if (WIFSIGNALED(status)) {
+                    } else if(WIFSIGNALED(status)) {
                         exitCode = -WTERMSIG(status);
                     }
 
                     logger.trace("Got child exit code ", exitCode, " for process ", process);
 
-                    if (process.state.resultStorage !is null) {
+                    if(process.state.resultStorage !is null) {
                         auto error = trigger(process.state.resultStorage, exitCode);
 
-                        if (!error)
+                        if(!error)
                             logger.info("Could not trigger result for process ", process, " with error ", error);
 
                         process.state.resultStorage = null;
@@ -368,13 +374,13 @@ void whenReady() @trusted {
 
                     processList.remove(process);
                     handlesProcesses++;
-                } else if (child < 0) {
+                } else if(child < 0) {
                     // error
                     logger.info("Could not wait for result for process ", process, " with error ", errno);
 
                     auto error = trigger(process.state.resultStorage, UnknownPlatformBehaviorException("Failed to wait on process"));
 
-                    if (!error)
+                    if(!error)
                         logger.info("Could not trigger result for process ", process, " with error ", error);
 
                     process.state.resultStorage = null;

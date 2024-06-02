@@ -15,6 +15,7 @@ private __gshared {
 
 struct EventWaiterThread {
     Thread thread;
+    void* threadHandle;
 
     shared(bool) isAlive;
 
@@ -27,12 +28,17 @@ struct EventWaiterThread {
         this.tupleof = other.tupleof;
     }
 
+    void opAssign(return scope EventWaiterThread other) scope {
+        this.destroy;
+        this.__ctor(other);
+    }
+
     void ourProc() @trusted {
         version (Windows) {
             import core.sys.windows.windows : SleepEx, INFINITE, DuplicateHandle, GetCurrentProcess, GetCurrentThread,
                 DUPLICATE_SAME_ACCESS,
                 WaitForMultipleObjectsEx, WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_IO_COMPLETION, WAIT_FAILED, GetLastError,
-                ERROR_INVALID_HANDLE, HANDLE, MAXIMUM_WAIT_OBJECTS;
+                ERROR_INVALID_HANDLE, HANDLE, MAXIMUM_WAIT_OBJECTS, CloseHandle;
 
             logger.info("Starting event waiter thread ", thread);
 
@@ -48,6 +54,9 @@ struct EventWaiterThread {
             } else {
                 logger.debug_("Acquired thread handle for an event waiting thread ", thread);
             }
+
+            scope(exit)
+                CloseHandle(this.threadHandle);
 
             while (atomicLoad(this.isAlive)) {
                 if (this.eventHandles.length == 0) {

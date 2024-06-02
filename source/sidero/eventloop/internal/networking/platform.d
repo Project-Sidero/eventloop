@@ -85,6 +85,11 @@ version(Windows) {
         this(return scope ref PlatformListenSocket other) scope {
             this.tupleof = other.tupleof;
         }
+
+        void opAssign(return scope PlatformListenSocket other) scope {
+            this.destroy;
+            this.__ctor(other);
+        }
     }
 
     bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!uint keepAlive) {

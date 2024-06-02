@@ -433,7 +433,7 @@ private:
                         import core.sys.windows.winbase : CloseHandle;
                         import core.sys.windows.basetsd : HANDLE;
 
-                        auto success = CloseHandle(cast(HANDLE)state.handle.handle);
+                        auto success = CloseHandle(cast(HANDLE)this.handle.handle);
                     }
                 }
 

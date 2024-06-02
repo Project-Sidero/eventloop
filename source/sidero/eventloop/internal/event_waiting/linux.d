@@ -1,7 +1,7 @@
 module sidero.eventloop.internal.event_waiting.linux;
 import sidero.eventloop.internal.event_waiting;
 
-version (linux) {
+version(linux) {
     import sidero.eventloop.internal.workers.kernelwait.linux;
 }
 
@@ -13,10 +13,10 @@ bool initializeLinuxEventWaiting() {
 
     OperatingSystem os = operatingSystem();
 
-    version (linux) {
+    version(linux) {
         // EPOLLEXCLUSIVE was added in 4.5
 
-        if ((os.major > 4 || (os.major == 4 && os.minor >= 5)) && startWorkers(0) && usesKernelWait())
+        if((os.major > 4 || (os.major == 4 && os.minor >= 5)) && startWorkers(0) && usesKernelWait())
             return true;
     }
 
@@ -24,12 +24,21 @@ bool initializeLinuxEventWaiting() {
 }
 
 void addEventWaiterHandleStrategy(void* handleToWaitOn, UserEventProc proc, void* user) {
-    addEpollHandleToWaitOn(cast(int)handleToWaitOn);
+    version(linux) {
+        addEpollHandleToWaitOn(cast(int)handleToWaitOn);
+    } else
+        assert(0);
 }
 
 void removeEventWaiterHandleStrategy(scope void* handleToNotWaitOn) {
-    removeEpollHandleToWaitOn(cast(int)handleToNotWaitOn);
+    version(linux) {
+        removeEpollHandleToWaitOn(cast(int)handleToNotWaitOn);
+    } else
+        assert(0);
 }
 
 void shutdownEventWaiterThreadsStrategy() {
+    version(linux) {
+    } else
+        assert(0);
 }

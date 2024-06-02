@@ -11,15 +11,6 @@ version (Windows) {
 
     void shutdownWorkerPlatformMechanism() @safe nothrow @nogc {
     }
-}
-
-version (none) {
-    bool initializeWorkerPlatformMechanism(size_t count) @safe nothrow @nogc {
-        return false;
-    }
-
-    void shutdownWorkerPlatformMechanism() @safe nothrow @nogc {
-    }
 
     void triggerACoroutineMechanism(size_t count) @safe nothrow @nogc {
     }

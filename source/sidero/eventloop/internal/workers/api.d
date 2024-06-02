@@ -17,21 +17,6 @@ import sidero.base.internal.atomic;
 
 export @safe nothrow @nogc:
 
-version (none) {
-    void shutdownWorkerMechanism() {
-    }
-
-    bool initializeWorkerMechanism(size_t count) {
-        return false;
-    }
-
-    void triggerACoroutineMechanism(size_t count) {
-    }
-
-    void workerProc() {
-    }
-}
-
 __gshared {
     private {
         SystemLock mutex;

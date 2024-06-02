@@ -135,7 +135,7 @@ export @safe nothrow @nogc:
     SystemHandle unsafeGetHandle() @system {
         if (isNull)
             return SystemHandle.init;
-        return SystemHandle(this.state.handle, SocketHandleIdentifier);
+        return SystemHandle(cast(void*)this.state.handle, SocketHandleIdentifier);
     }
 
     ///

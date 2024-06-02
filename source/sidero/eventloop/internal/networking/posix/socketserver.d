@@ -45,6 +45,11 @@ struct PlatformListenSocket {
 
     ~this() scope {
     }
+
+    void opAssign(return scope PlatformListenSocket other) scope {
+        this.destroy;
+        this.__ctor(other);
+    }
 }
 
 bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAliveInterval) @trusted {

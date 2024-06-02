@@ -127,11 +127,11 @@ void shutdownWorkerPlatformMechanism() @trusted {
                 logger.warning("EPOLL worker shutdown message posting failed");
         }
 
-        /+{
+        {
             // This should result in the waits failing, and threads death.
             close(workFd);
             close(epollContext);
-        }+/
+        }
 
         logger.notice("Shutdown EPOLL context for workers successfully");
     } else
@@ -215,7 +215,6 @@ void workerProc() @trusted {
                                 if (result < 0)
                                     logger.debug_("Failed to read from C&C work FD EPOLL on thread ", Thread.self);
 
-
                                 if (atomicLoad(isInProcessOfDieing)) {
                                     result = eventfd_write(workFd, 1);
 
@@ -250,9 +249,10 @@ void workerProc() @trusted {
 }
 
 bool addEpollHandleToWaitOn(int handle) @trusted {
-    logger.trace("Attempting to add FD handle ", handle, " for EPOLL ", epollContext, " on thread ", Thread.self);
 
     version (linux) {
+        logger.trace("Attempting to add FD handle ", handle, " for EPOLL ", epollContext, " on thread ", Thread.self);
+
         // EPOLLEXCLUSIVE was added in 4.5
 
         if (atomicLoad(isInProcessOfDieing))
@@ -302,9 +302,10 @@ bool addEpollHandleToWaitOn(int handle) @trusted {
 }
 
 void removeEpollHandleToWaitOn(int handle) @trusted {
-    logger.trace("Attempting to remove FD handle ", handle, " for EPOLL ", epollContext, " on thread ", Thread.self);
 
     version (linux) {
+        logger.trace("Attempting to remove FD handle ", handle, " for EPOLL ", epollContext, " on thread ", Thread.self);
+
         if (atomicLoad(isInProcessOfDieing))
             return;
 

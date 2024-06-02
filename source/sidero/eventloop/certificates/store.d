@@ -55,7 +55,7 @@ struct CertificateStore {
 export:
 
     ///
-    mixin OpApplyCombos!("Certificate", "", ["@safe", "nothrow", "@nogc"]);
+    mixin OpApplyCombos!(Certificate, void, "opApply", true, true, true, false, false);
 
 @safe nothrow @nogc:
 

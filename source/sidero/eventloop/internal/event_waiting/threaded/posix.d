@@ -37,6 +37,11 @@ struct EventWaiterThread {
         this.tupleof = other.tupleof;
     }
 
+    void opAssign(return scope EventWaiterThread other) scope {
+        this.destroy;
+        this.__ctor(other);
+    }
+
     void handleReSet() scope {
         version (Posix) {
             assert(this.nextEventHandles.length == this.nextEventProcs.length);
