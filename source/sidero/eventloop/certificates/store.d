@@ -133,12 +133,12 @@ export:
     }
 
     ///
-    DynamicArray!Certificate byFriendlyName(String_UTF16 friendlyName, return RCAllocator allocator = RCAllocator.init) scope {
+    DynamicArray!Certificate byFriendlyName(String_UTF16 friendlyName, return RCAllocator allocator = RCAllocator.init) scope @trusted {
         return byIssuedTo(friendlyName.byUTF8, allocator);
     }
 
     ///
-    DynamicArray!Certificate byFriendlyName(String_UTF32 friendlyName, return RCAllocator allocator = RCAllocator.init) scope {
+    DynamicArray!Certificate byFriendlyName(String_UTF32 friendlyName, return RCAllocator allocator = RCAllocator.init) scope @trusted {
         return byIssuedTo(friendlyName.byUTF8, allocator);
     }
 
@@ -183,12 +183,12 @@ export:
     }
 
     ///
-    DynamicArray!Certificate byIssuer(String_UTF16 issuer, return RCAllocator allocator = RCAllocator.init) scope {
+    DynamicArray!Certificate byIssuer(String_UTF16 issuer, return RCAllocator allocator = RCAllocator.init) scope @trusted {
         return byIssuedTo(issuer.byUTF8, allocator);
     }
 
     ///
-    DynamicArray!Certificate byIssuer(String_UTF32 issuer, return RCAllocator allocator = RCAllocator.init) scope {
+    DynamicArray!Certificate byIssuer(String_UTF32 issuer, return RCAllocator allocator = RCAllocator.init) scope @trusted {
         return byIssuedTo(issuer.byUTF8, allocator);
     }
 
@@ -233,12 +233,12 @@ export:
     }
 
     ///
-    DynamicArray!Certificate byIssuedTo(String_UTF16 issuedTo, return RCAllocator allocator = RCAllocator.init) scope {
+    DynamicArray!Certificate byIssuedTo(String_UTF16 issuedTo, return RCAllocator allocator = RCAllocator.init) scope @trusted {
         return byIssuedTo(issuedTo.byUTF8, allocator);
     }
 
     ///
-    DynamicArray!Certificate byIssuedTo(String_UTF32 issuedTo, return RCAllocator allocator = RCAllocator.init) scope {
+    DynamicArray!Certificate byIssuedTo(String_UTF32 issuedTo, return RCAllocator allocator = RCAllocator.init) scope @trusted {
         return byIssuedTo(issuedTo.byUTF8, allocator);
     }
 
