@@ -304,7 +304,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
 void shutdown(scope SocketState* socketState, bool haveReferences = true) @trusted {
     version (Windows) {
         import sidero.base.internal.atomic;
-        import core.sys.windows.windows : shutdown;
+        import core.sys.windows.winsock2 : shutdown;
 
         if (cas(socketState.isShutdown, false, true)) {
             logger.info("Shutting down socket ", socketState.handle, " on ", Thread.self);
@@ -332,7 +332,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
 void forceClose(scope SocketState* socketState) @trusted {
     version (Windows) {
         import sidero.base.internal.atomic;
-        import core.sys.windows.windows : closesocket;
+        import core.sys.windows.winsock2 : closesocket;
 
         if (cas(socketState.isClosed, false, true)) {
             logger.debug_("Forcing closed socket ", socketState.handle);

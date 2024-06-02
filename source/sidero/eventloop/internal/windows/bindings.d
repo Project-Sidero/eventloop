@@ -1,9 +1,6 @@
 module sidero.eventloop.internal.windows.bindings;
 
 version(Windows) {
-    public import core.sys.windows.windows : SOCKET, WORD, DWORD, GUID, CHAR, WCHAR, HANDLE, INFINITE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT, ULONG, LONG, LONGLONG, ERROR_IO_INCOMPLETE, FileTimeToSystemTime, SYSTEMTIME, LPSTR, LPCSTR,
-        LPWSTR, BOOL, LPCWSTR, ULONG_PTR, PLUID, WSAENOTSOCK, GetLastError, MAKEWORD, LPCWSTR, LocalAlloc, LocalFree;
     public import core.sys.windows.ntdef : PUNICODE_STRING, UNICODE_STRING;
     public import core.sys.windows.wincrypt : PCCERT_CONTEXT, X509_ASN_ENCODING, PKCS_7_ASN_ENCODING, CERT_SIMPLE_NAME_STR, HCERTSTORE,
         PCCERT_CONTEXT, CERT_RDN_VALUE_BLOB, CERT_FIND_SUBJECT_STR_W, CERT_FIND_ISSUER_STR_W, CERT_NAME_BLOB, HCRYPTPROV, ALG_ID;
@@ -12,6 +9,15 @@ version(Windows) {
         SECBUFFER_DATA, PCtxtHandle, SECBUFFER_STREAM_TRAILER, SECBUFFER_VERSION, SECBUFFER_EMPTY, SECBUFFER_EXTRA, SECBUFFER_TOKEN;
     public import core.sys.windows.security : SECURITY_STATUS, SEC_E_OK, SEC_I_RENEGOTIATE, SEC_I_CONTINUE_NEEDED,
         SEC_E_WRONG_PRINCIPAL, SEC_E_INCOMPLETE_MESSAGE, SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED;
+    public import core.sys.windows.winsock2 : SOCKET, WSAENOTSOCK;
+    public import core.sys.windows.windef : WORD, DWORD, ULONG, LONG, BOOL, MAKEWORD;
+    public import core.sys.windows.winbase : INFINITE, WAIT_OBJECT_0, FileTimeToSystemTime, SYSTEMTIME, GetLastError,
+        LocalAlloc, LocalFree;
+    public import core.sys.windows.winnt : CHAR, WCHAR, LONGLONG, LPSTR, LPCSTR, LPWSTR, LPCWSTR, PLUID, LPCWSTR;
+    public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT;
+    public import core.sys.windows.basetsd : HANDLE, ULONG_PTR;
+    public import core.sys.windows.basetyps : GUID;
+
     import core.stdc.config : c_long;
 
     alias WSAEVENT = HANDLE;
@@ -85,7 +91,8 @@ version(Windows) {
         int getsockname(SOCKET s, sockaddr* name, int* namelen);
 
         bool GetExitCodeProcess(HANDLE, DWORD*);
-        bool CreateProcessW(wchar*, wchar*, SECURITY_ATTRIBUTES*, SECURITY_ATTRIBUTES*, bool, DWORD, void*, wchar*, STARTUPINFOW*, PROCESS_INFORMATION*);
+        bool CreateProcessW(wchar*, wchar*, SECURITY_ATTRIBUTES*, SECURITY_ATTRIBUTES*, bool, DWORD, void*,
+                wchar*, STARTUPINFOW*, PROCESS_INFORMATION*);
         bool CreatePipe(HANDLE*, HANDLE*, SECURITY_ATTRIBUTES*, DWORD);
         bool SetHandleInformation(HANDLE, DWORD, DWORD);
         bool PeekNamedPipe(HANDLE, void*, DWORD, DWORD*, DWORD*, DWORD*);

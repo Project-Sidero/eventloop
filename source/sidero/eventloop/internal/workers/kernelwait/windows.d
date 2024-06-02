@@ -9,7 +9,7 @@ import sidero.base.internal.atomic;
 
 version (Windows) {
     import sidero.eventloop.internal.windows.bindings;
-    import core.sys.windows.windows : HANDLE;
+    import core.sys.windows.basetsd : HANDLE;
 
     private __gshared {
         LoggerReference logger;
@@ -183,7 +183,8 @@ void workerProc() @trusted {
 
 void handleSocketRead(Socket socket) @trusted {
     version (Windows) {
-        import core.sys.windows.windows : DWORD, GetLastError;
+        import core.sys.windows.windef : DWORD;
+        import core.sys.windows.winbase : GetLastError;
 
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.readOverlapped, &transferredBytes, false, &flags);
@@ -217,7 +218,8 @@ void handleSocketRead(Socket socket) @trusted {
 
 void handleSocketWrite(Socket socket) @trusted {
     version (Windows) {
-        import core.sys.windows.windows : DWORD, GetLastError;
+        import core.sys.windows.windef : DWORD;
+        import core.sys.windows.winbase : GetLastError;
 
         DWORD transferredBytes, flags;
         auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.writeOverlapped, &transferredBytes, false, &flags);

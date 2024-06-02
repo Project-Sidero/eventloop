@@ -34,20 +34,19 @@ struct EventWaiterThread {
     }
 
     void ourProc() @trusted {
-        version (Windows) {
-            import core.sys.windows.windows : SleepEx, INFINITE, DuplicateHandle, GetCurrentProcess, GetCurrentThread,
-                DUPLICATE_SAME_ACCESS,
-                WaitForMultipleObjectsEx, WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_IO_COMPLETION, WAIT_FAILED, GetLastError,
-                ERROR_INVALID_HANDLE, HANDLE, MAXIMUM_WAIT_OBJECTS, CloseHandle;
+        version(Windows) {
+            import core.sys.windows.winbase : SleepEx, INFINITE, DuplicateHandle, GetCurrentProcess, GetCurrentThread,
+                WaitForMultipleObjectsEx, WAIT_OBJECT_0, WAIT_IO_COMPLETION, WAIT_FAILED, GetLastError, MAXIMUM_WAIT_OBJECTS, CloseHandle;
+            import core.sys.windows.winnt : DUPLICATE_SAME_ACCESS, WAIT_TIMEOUT, ERROR_INVALID_HANDLE, HANDLE;
 
             logger.info("Starting event waiter thread ", thread);
 
-            scope (exit) {
+            scope(exit) {
                 atomicStore(isAlive, false);
                 logger.info("Ending event waiter thread ", thread);
             }
 
-            if (DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &this.threadHandle, 0,
+            if(DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &this.threadHandle, 0,
                     false, DUPLICATE_SAME_ACCESS) == 0) {
                 logger.warning("Failed to arquire a thread handle for an event waiting thread with code ", GetLastError());
                 return;
@@ -58,13 +57,13 @@ struct EventWaiterThread {
             scope(exit)
                 CloseHandle(this.threadHandle);
 
-            while (atomicLoad(this.isAlive)) {
-                if (this.eventHandles.length == 0) {
+            while(atomicLoad(this.isAlive)) {
+                if(this.eventHandles.length == 0) {
                     auto result = SleepEx(INFINITE, true);
 
                     logger.debug_("Got event waiting thread event from sleep with code", result, " on ", thread);
 
-                    switch (result) {
+                    switch(result) {
                     case WAIT_IO_COMPLETION:
                         break;
                     default:
@@ -74,7 +73,7 @@ struct EventWaiterThread {
                     auto result = WaitForMultipleObjectsEx(cast(uint)this.eventHandles.length,
                             cast(HANDLE*)this.eventHandles.ptr, false, INFINITE, true);
 
-                    switch (result) {
+                    switch(result) {
                     case WAIT_TIMEOUT:
                         logger.debug_("Event waiter timeout ", thread);
                         break;
@@ -84,7 +83,7 @@ struct EventWaiterThread {
                     case WAIT_FAILED:
                         const errorCode = GetLastError();
 
-                        switch (errorCode) {
+                        switch(errorCode) {
                         case ERROR_INVALID_HANDLE:
                             // its probably ok, we'll handle this later, make sure APC's run via sleeping
                             SleepEx(0, true);
@@ -100,12 +99,12 @@ struct EventWaiterThread {
                         auto gotHandle = eventHandles[handleIndex];
                         auto gotUserProc = eventProcs[handleIndex];
 
-                        if (!gotHandle) {
+                        if(!gotHandle) {
                             logger.warning("Failed to get event handle data ", handleIndex, " on ", thread);
                             return;
                         }
 
-                        if (!gotUserProc) {
+                        if(!gotUserProc) {
                             logger.warning("Failed to get event user proc data ", handleIndex, " on ", thread);
                             return;
                         }
@@ -125,7 +124,7 @@ struct EventWaiterThread {
 }
 
 bool initializePlatformEventWaiting() @trusted {
-    version (Windows) {
+    version(Windows) {
         logger = Logger.forName(String_UTF8(__MODULE__));
         return cast(bool)logger;
     } else
@@ -133,8 +132,8 @@ bool initializePlatformEventWaiting() @trusted {
 }
 
 size_t maximumNumberOfHandlesPerEventWaiter() {
-    version (Windows) {
-        import core.sys.windows.windows : MAXIMUM_WAIT_OBJECTS;
+    version(Windows) {
+        import core.sys.windows.winbase : MAXIMUM_WAIT_OBJECTS;
 
         return MAXIMUM_WAIT_OBJECTS;
     } else
@@ -142,8 +141,9 @@ size_t maximumNumberOfHandlesPerEventWaiter() {
 }
 
 void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
-    version (Windows) {
-        import core.sys.windows.windows : ULONG_PTR, QueueUserAPC, GetLastError;
+    version(Windows) {
+        import core.sys.windows.winbase : QueueUserAPC, GetLastError;
+        import core.sys.windows.basetsd : ULONG_PTR;
 
         extern (Windows) static void updateHandlesProc(ULONG_PTR state) {
             guardEventWaiting(() {
@@ -160,12 +160,12 @@ void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
         }
 
         // step five: wake up threads and set the handles to the new ones
-        foreach (threadState; eventWaiterThreads) {
+        foreach(threadState; eventWaiterThreads) {
             assert(threadState);
-            if (threadState.nextEventHandles.isNull)
+            if(threadState.nextEventHandles.isNull)
                 continue;
 
-            if (QueueUserAPC(&updateHandlesProc, threadState.threadHandle, cast(size_t)&threadState.get()) == 0) {
+            if(QueueUserAPC(&updateHandlesProc, threadState.threadHandle, cast(size_t)&threadState.get()) == 0) {
                 logger.warning("Failed to send stop waiting APC with code ", GetLastError(), " to ", threadState.thread);
             } else {
                 logger.debug_("Triggered update handles APC handles ", threadState.nextEventHandles.length,
@@ -177,19 +177,20 @@ void triggerUpdatesOnThreads(size_t oldThreadCount) @trusted {
 }
 
 void shutdownEventWaiterThreadsMechanism() @trusted {
-    version (Windows) {
+    version(Windows) {
         import sidero.base.datetime.duration;
-        import core.sys.windows.windows : QueueUserAPC, GetLastError, MAXIMUM_WAIT_OBJECTS, ULONG_PTR;
+        import core.sys.windows.basetsd : ULONG_PTR;
+        import core.sys.windows.winbase : QueueUserAPC, GetLastError, MAXIMUM_WAIT_OBJECTS;
 
         extern (Windows) static void stopAcceptingProc(ULONG_PTR) {
         }
 
         guardEventWaiting(() {
-            foreach (threadState; eventWaiterThreads) {
+            foreach(threadState; eventWaiterThreads) {
                 assert(threadState);
                 atomicStore(threadState.isAlive, false);
 
-                if (QueueUserAPC(&stopAcceptingProc, threadState.threadHandle, 0) == 0) {
+                if(QueueUserAPC(&stopAcceptingProc, threadState.threadHandle, 0) == 0) {
                     logger.warning("Failed to send shutdown APC with code ", GetLastError(), " to ", threadState.thread);
                 } else {
                     logger.debug_("Triggered shutdown APC for accept thread ", threadState.thread);
@@ -197,7 +198,7 @@ void shutdownEventWaiterThreadsMechanism() @trusted {
             }
         });
 
-        foreach (threadState; eventWaiterThreads) {
+        foreach(threadState; eventWaiterThreads) {
             assert(threadState);
             cast(void)threadState.thread.join();
         }
