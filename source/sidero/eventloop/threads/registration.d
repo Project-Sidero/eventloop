@@ -13,17 +13,78 @@ alias IsThreadRegisteredFunction = extern (C) bool function();
 alias DetachOfThreadFunction = extern (C) void function(Thread);
 
 ///
-void registerThreadRegistration(void* key, OnAttachThisFunction onAttach, OnDetachThisFunction onDetach,
+void registerThreadRegistration(void* key, OnAttachThisFunction attachThis, OnDetachThisFunction detachThis,
         IsThreadRegisteredFunction isRegistered, DetachOfThreadFunction detach) {
-    threadSystemRegistration[key] = ThreadSystemRegistrationInfo(onAttach, onDetach, isRegistered, detach);
+    import sidero.base.synchronization.system.lock;
+    import sidero.base.containers.map.hashmap;
+    import sidero.base.allocators.predefined;
+
+    accessGlobals((ref SystemLock mutex, ref HashMap!(void*, Thread.State*) allThreads, ref HouseKeepingAllocator!() threadAllocator) {
+        mutex.lock.assumeOkay;
+        scope (exit)
+        mutex.unlock;
+
+        if (key !in threadSystemRegistration) {
+            auto ts = ThreadSystemRegistrationInfo(attachThis, detachThis, isRegistered, detach);
+            threadSystemRegistration[key] =ts;
+
+            foreach (_, threadState; allThreads) {
+                assert(threadState);
+
+                if (ts.detachFunc !is null && threadState.currentlyRegisteredOnRuntimes.update(key, false)) {
+                    Thread thread;
+                    thread.state = threadState;
+                    threadState.rc(true);
+
+                    ts.detachFunc(thread);
+                }
+
+                threadState.onDetach(1);
+            }
+
+        }
+
+        if (threadSystemRegistration.length == 0)
+            threadSystemRegistration = typeof(threadSystemRegistration).init;
+    });
+
 }
 
 ///
 void deregisterThreadRegistration(void* key) {
-    threadSystemRegistration.remove(key);
+    import sidero.base.synchronization.system.lock;
+    import sidero.base.containers.map.hashmap;
+    import sidero.base.allocators.predefined;
 
-    if (threadSystemRegistration.length == 0)
-        threadSystemRegistration = typeof(threadSystemRegistration).init;
+    accessGlobals((ref SystemLock mutex, ref HashMap!(void*, Thread.State*) allThreads, ref HouseKeepingAllocator!() threadAllocator) {
+        mutex.lock.assumeOkay;
+        scope (exit)
+            mutex.unlock;
+
+        if (key in threadSystemRegistration) {
+            auto ts = threadSystemRegistration[key];
+            assert(ts);
+
+            foreach (_, threadState; allThreads) {
+                assert(threadState);
+
+                if (ts.detachFunc !is null && threadState.currentlyRegisteredOnRuntimes.update(key, false)) {
+                    Thread thread;
+                    thread.state = threadState;
+                    threadState.rc(true);
+
+                    ts.detachFunc(thread);
+                }
+
+                threadState.onDetach(1);
+            }
+
+            threadSystemRegistration.remove(key);
+        }
+
+        if (threadSystemRegistration.length == 0)
+            threadSystemRegistration = typeof(threadSystemRegistration).init;
+    });
 }
 
 package(sidero.eventloop.threads):
@@ -39,8 +100,8 @@ size_t onAttachOfThread(Thread thread) {
         assert(k);
         assert(ts);
 
-        if (ts.attachFunc !is null && thread.state.currentlyRegisteredOnRuntimes.update(k.get, true)) {
-            ts.attachFunc();
+        if (ts.attachThisFunc !is null && thread.state.currentlyRegisteredOnRuntimes.update(k.get, true)) {
+            ts.attachThisFunc();
             done++;
         }
     }
@@ -50,7 +111,7 @@ size_t onAttachOfThread(Thread thread) {
 
 // MUST be guarded and be on the thread to attach
 size_t onDetachOfThread(Thread thread) {
-    scope(exit) {
+    scope (exit) {
         if (threadSystemRegistration.length == 0)
             threadSystemRegistration = typeof(threadSystemRegistration).init;
     }
@@ -91,7 +152,7 @@ void deregisterOwnedThreads() {
 
             Thread thread;
             thread.state = threadState;
-            thread.__ctor(thread);
+            threadState.rc(true);
 
             size_t done;
 
@@ -105,10 +166,7 @@ void deregisterOwnedThreads() {
                 }
             }
 
-            if (atomicDecrementAndLoad(threadState.attachCount, done) == 0) {
-                // extra unpin for this thread instance
-                atomicDecrementAndLoad(threadState.refCount, 1);
-            }
+            threadState.onDetach(done);
         }
 
         mutex.unlock;
@@ -124,7 +182,7 @@ __gshared {
 }
 
 struct ThreadSystemRegistrationInfo {
-    OnAttachThisFunction attachFunc;
+    OnAttachThisFunction attachThisFunc;
     OnDetachThisFunction detachThisFunc;
     IsThreadRegisteredFunction isThisRegisteredFunc;
     DetachOfThreadFunction detachFunc;

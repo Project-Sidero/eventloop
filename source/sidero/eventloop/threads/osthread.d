@@ -32,30 +32,14 @@ export @safe nothrow @nogc:
     this(scope ref Thread other) scope @trusted {
         this.tupleof = other.tupleof;
 
-        if (this.state !is null)
-            atomicIncrementAndLoad(state.refCount, 1);
+        if (!isNull)
+            state.rc(true);
     }
 
     ///
     ~this() scope @trusted {
-        if (this.state !is null && atomicDecrementAndLoad(state.refCount, 1) == 0 && !this.isRunning) {
-            mutex.lock.assumeOkay;
-            allThreads.remove(state.lookupHandle);
-
-            if (state.owns) {
-                // destroy handle (not needed with pthreads)
-
-                version (Windows) {
-                    import core.sys.windows.winbase : CloseHandle;
-                    import core.sys.windows.basetsd : HANDLE;
-
-                    auto success = CloseHandle(cast(HANDLE)state.handle.handle);
-                }
-            }
-
-            threadAllocator.dispose(state);
-            mutex.unlock;
-        }
+        if (!isNull)
+            state.rc(false);
     }
 
     ///
@@ -105,10 +89,10 @@ export @safe nothrow @nogc:
             Thread.State* state = threadAllocator.make!State;
             state.entry = cast(void*)entryFunction;
             state.currentlyRegisteredOnRuntimes = typeof(state.currentlyRegisteredOnRuntimes)(globalAllocator());
+            state.rc(true);
 
             Thread retThread;
             retThread.state = state;
-            retThread.__ctor(retThread);
 
             EntryFunctionArgs!Args* efa;
             void[] efaMemory;
@@ -267,7 +251,7 @@ export @safe nothrow @nogc:
 
                 Thread ret;
                 ret.state = ifExists.get;
-                ret.__ctor(ret);
+                ret.state.rc(true);
 
                 assert(!ret.isNull);
                 return ret;
@@ -285,7 +269,7 @@ export @safe nothrow @nogc:
 
             Thread ret;
             ret.state = state;
-            ret.__ctor(ret);
+            ret.state.rc(true);
 
             allThreads[cast(void*)lookupId] = state;
 
@@ -362,12 +346,7 @@ export @safe nothrow @nogc:
 
         // tell all external thread registration mechanisms
         const done = onAttachOfThread(us);
-
-        // extra pin for this thread instance
-        if (atomicIncrementAndLoad(us.state.attachCount, done) == done) {
-            // unload it once we hit 0
-            atomicIncrementAndLoad(us.state.refCount, 1);
-        }
+        us.state.onAttach(done);
     }
 
     /// Ditto
@@ -377,11 +356,7 @@ export @safe nothrow @nogc:
 
         // tell all external thread registration mechanisms
         const done = onDetachOfThread(us);
-
-        if (atomicDecrementAndLoad(us.state.attachCount, done) == 0) {
-            // extra unpin for this thread instance
-            atomicDecrementAndLoad(us.state.refCount, 1);
-        }
+        us.state.onDetach(done);
     }
 
     ///
@@ -429,7 +404,7 @@ export @safe nothrow @nogc:
     }
 
 private:
-    static struct State {
+    package(sidero.eventloop.threads) static struct State {
         shared(ptrdiff_t) refCount, attachCount;
 
         SystemHandle handle;
@@ -441,6 +416,47 @@ private:
         void* entry, args;
 
         ConcurrentHashMap!(void*, bool) currentlyRegisteredOnRuntimes;
+
+    @safe nothrow @nogc:
+
+        void rc(bool addRef) scope @trusted {
+            if (addRef) {
+                atomicIncrementAndLoad(this.refCount, 1);
+            } else if (atomicDecrementAndLoad(this.refCount, 1) == 0 && !this.isRunning) {
+                mutex.lock.assumeOkay;
+                allThreads.remove(this.lookupHandle);
+
+                if (this.owns) {
+                    // destroy handle (not needed with pthreads)
+
+                    version (Windows) {
+                        import core.sys.windows.winbase : CloseHandle;
+                        import core.sys.windows.basetsd : HANDLE;
+
+                        auto success = CloseHandle(cast(HANDLE)state.handle.handle);
+                    }
+                }
+
+                threadAllocator.dispose(&this);
+                mutex.unlock;
+            }
+        }
+
+        void onAttach(size_t registeredOnAbstractionsCount) scope @trusted {
+            // extra pin for this thread instance
+            if (registeredOnAbstractionsCount > 0 && atomicIncrementAndLoad(this.attachCount,
+                    registeredOnAbstractionsCount) == registeredOnAbstractionsCount) {
+                // unload it once we hit 0
+                this.rc(true);
+            }
+        }
+
+        void onDetach(size_t unregisteredOnAbstractionsCount) scope @trusted {
+            if (unregisteredOnAbstractionsCount > 0 && atomicDecrementAndLoad(this.attachCount, unregisteredOnAbstractionsCount) == 0) {
+                // extra unpin for this thread instance
+                this.rc(false);
+            }
+        }
     }
 }
 
@@ -481,7 +497,7 @@ version (Windows) {
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
             self.state = cast(Thread.State*)state;
-            self.__ctor(self);
+            self.state.rc(true);
 
             efa = cast(EFA*)self.state.args;
 
@@ -511,7 +527,7 @@ version (Windows) {
             auto got = allThreads[cast(void*)GetThreadId(handle)];
             if (got && got !is null) {
                 self.state = got;
-                self.__ctor(self);
+                self.state.rc(true);
             }
             mutex.unlock;
         });
@@ -548,7 +564,7 @@ version (Windows) {
     static extern (C) void cleanupPosixRunning(void* state) nothrow {
         Thread self;
         self.state = cast(Thread.State*)state;
-        self.__ctor(self);
+        self.state.rc(true);
 
         atomicStore(self.state.isRunning, false);
 
@@ -569,7 +585,7 @@ version (Windows) {
 
             Thread.State* state = cast(Thread.State*)state_;
             self.state = state;
-            self.__ctor(self);
+            self.state.rc(true);
 
             efa = cast(EFA*)state.args;
             state.args = null;
