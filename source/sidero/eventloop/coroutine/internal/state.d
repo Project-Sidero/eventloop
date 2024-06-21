@@ -115,14 +115,16 @@ export @safe nothrow @nogc:
     }
 
     void blockUntilComplete(Duration timeout) scope @trusted {
-        if (state is null)
+        if(state is null)
             return;
 
         auto err = state.base.completionSynchronization.lock;
         logAssert(cast(bool)err, "Failed to lock", err.getError);
 
-        // we don't actually care what the return is
-        cast(void)state.base.completionSynchronization.waitForCondition(timeout);
+        if(!atomicLoad(state.isComplete)) {
+            // we don't actually care what the return is
+            cast(void)state.base.completionSynchronization.waitForCondition(timeout);
+        }
 
         state.base.completionSynchronization.unlock;
     }
@@ -195,14 +197,16 @@ export @safe nothrow @nogc:
     }
 
     void blockUntilComplete(Duration timeout) scope @trusted {
-        if (state is null)
+        if(state is null)
             return;
 
         auto err = state.completionSynchronization.lock;
         logAssert(cast(bool)err, "Failed to lock", err.getError);
 
-        // we don't actually care what the return is
-        cast(void)state.completionSynchronization.waitForCondition(timeout);
+        if(!atomicLoad(state.isComplete)) {
+            // we don't actually care what the return is
+            cast(void)state.completionSynchronization.waitForCondition(timeout);
+        }
 
         state.completionSynchronization.unlock;
     }
