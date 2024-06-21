@@ -2,6 +2,7 @@ module sidero.eventloop.coroutine.future;
 import sidero.eventloop.coroutine.internal.state;
 import sidero.eventloop.coroutine.condition;
 import sidero.eventloop.coroutine.generic;
+import sidero.base.datetime.duration;
 import sidero.base.errors;
 
 ///
@@ -67,6 +68,19 @@ export @safe nothrow @nogc:
     /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
     ErrorResult unsafeResume() scope @system {
         return pair.resume;
+    }
+
+    /**
+        Blocks until coroutine is complete or timeout elapses.
+
+        Warning: you must not be a worker/event waiting thread.
+
+        May return early, check for if it actually is complete.
+    */
+    void blockUntilComplete(Duration timeout = Duration.max) scope @system {
+        if (isNull)
+            return;
+        pair.blockUntilComplete(timeout);
     }
 
     @disable auto opCast(T)();

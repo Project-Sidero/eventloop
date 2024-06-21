@@ -4,6 +4,7 @@ import sidero.eventloop.coroutine.internal.state;
 import sidero.base.errors;
 import sidero.base.internal.atomic;
 import sidero.base.allocators;
+import sidero.base.datetime.duration;
 
 ///
 struct GenericCoroutine {
@@ -67,6 +68,19 @@ export @safe nothrow @nogc:
             return;
 
         pair.descriptor.setErrorResult(pair.state, errorInfo);
+    }
+
+    /**
+        Blocks until coroutine is complete or timeout elapses.
+
+        Warning: you must not be a worker/event waiting thread.
+
+        May return early, check for if it actually is complete.
+    */
+    void blockUntilComplete(Duration timeout = Duration.max) scope @system {
+        if (isNull)
+            return;
+        pair.blockUntilComplete(timeout);
     }
 
     @disable auto opCast(T)();

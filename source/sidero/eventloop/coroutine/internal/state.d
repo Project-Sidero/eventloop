@@ -2,7 +2,10 @@ module sidero.eventloop.coroutine.internal.state;
 import sidero.eventloop.coroutine.condition;
 import sidero.base.errors;
 import sidero.base.allocators;
+import sidero.base.synchronization.system.point;
+import sidero.base.datetime.duration;
 import sidero.base.internal.atomic;
+import sidero.base.internal.logassert;
 
 package(sidero.eventloop):
 
@@ -35,8 +38,8 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return sc
         actualState.base.conditionToContinue = CoroutineCondition.init;
         actualState.result = Result!ResultType(errorInfo.info, errorInfo.moduleName, errorInfo.line);
 
-        atomicStore(actualState.base.isComplete, true);
         actualState.base.nextFunctionTag = -2;
+        actualState.base.setAsComplete();
     };
 
     pair.descriptor.base.functions = functionsStorage[];
@@ -45,8 +48,8 @@ CoroutinePair!ResultType ctfeConstructExternalTriggerState(ResultType)(return sc
         CoroutineState2* actualState = cast(CoroutineState2*)state;
         actualState.base.conditionToContinue = CoroutineCondition.init;
 
-        atomicStore(actualState.base.isComplete, true);
         actualState.base.nextFunctionTag = -1;
+        actualState.base.setAsComplete();
     };
 
     return pair;
@@ -73,16 +76,16 @@ export @safe nothrow @nogc:
     }
 
     void rc(bool add) scope {
-        if (state !is null)
+        if(state !is null)
             state.base.rc(add);
-        if (descriptor !is null)
+        if(descriptor !is null)
             descriptor.base.rc(add);
     }
 
     ErrorResult resume() scope {
-        if (state.base.nextFunctionTag < 0)
+        if(state.base.nextFunctionTag < 0)
             return ErrorResult(MalformedInputException("Coroutine instance has completed"));
-        if (state.base.nextFunctionTag >= descriptor.base.functions.length)
+        if(state.base.nextFunctionTag >= descriptor.base.functions.length)
             return ErrorResult(MalformedInputException("Coroutine instance is in invalid state"));
         descriptor.base.functions[state.base.nextFunctionTag](&descriptor.base, &state.base);
         return ErrorResult.init;
@@ -103,12 +106,25 @@ export @safe nothrow @nogc:
     CoroutineAPair asGeneric() scope @trusted {
         CoroutineAPair ret;
 
-        if (descriptor !is null)
+        if(descriptor !is null)
             ret.descriptor = &this.descriptor.base;
-        if (state !is null)
+        if(state !is null)
             ret.state = &this.state.base;
 
         return ret;
+    }
+
+    void blockUntilComplete(Duration timeout) scope @trusted {
+        if (state is null)
+            return;
+
+        auto err = state.base.completionSynchronization.lock;
+        logAssert(cast(bool)err, "Failed to lock", err.getError);
+
+        // we don't actually care what the return is
+        cast(void)state.base.completionSynchronization.waitForCondition(timeout);
+
+        state.base.completionSynchronization.unlock;
     }
 }
 
@@ -147,20 +163,20 @@ export @safe nothrow @nogc:
     }
 
     void rc(bool add) scope @trusted {
-        if (state !is null) {
-            if (!state.rc(add))
+        if(state !is null) {
+            if(!state.rc(add))
                 state = null;
         }
-        if (descriptor !is null) {
-            if (!descriptor.rc(add))
+        if(descriptor !is null) {
+            if(!descriptor.rc(add))
                 descriptor = null;
         }
     }
 
     ErrorResult resume() scope {
-        if (state.nextFunctionTag < 0)
+        if(state.nextFunctionTag < 0)
             return ErrorResult(MalformedInputException("Coroutine instance has completed"));
-        if (state.nextFunctionTag >= descriptor.functions.length)
+        if(state.nextFunctionTag >= descriptor.functions.length)
             return ErrorResult(MalformedInputException("Coroutine instance is in invalid state"));
         descriptor.functions[state.nextFunctionTag](descriptor, state);
         return ErrorResult.init;
@@ -176,6 +192,19 @@ export @safe nothrow @nogc:
 
     bool isWaiting() scope {
         return state !is null && state.conditionToContinue.waitingOn != CoroutineCondition.WaitingOn.Nothing;
+    }
+
+    void blockUntilComplete(Duration timeout) scope @trusted {
+        if (state is null)
+            return;
+
+        auto err = state.completionSynchronization.lock;
+        logAssert(cast(bool)err, "Failed to lock", err.getError);
+
+        // we don't actually care what the return is
+        cast(void)state.completionSynchronization.waitForCondition(timeout);
+
+        state.completionSynchronization.unlock;
     }
 }
 
@@ -193,7 +222,7 @@ package(sidero.eventloop) struct CoroutineAllocatorMemoryDescriptor {
 export @safe nothrow @nogc:
 
      ~this() {
-        if (!parent.allocator.isNull) {
+        if(!parent.allocator.isNull) {
             parent.allocator.dispose(userFunctions);
             parent.allocator.dispose(functions);
         }
@@ -215,9 +244,21 @@ struct CoroutineAllocatorMemoryState {
     ptrdiff_t nextFunctionTag;
     CoroutineCondition conditionToContinue;
 
+    SynchronizationPoint completionSynchronization;
+
     shared(bool) isComplete;
 
 export @safe nothrow @nogc:
+
+    void setAsComplete() scope @trusted {
+        auto err = completionSynchronization.lock;
+        logAssert(cast(bool)err, "Failed to lock", err.getError);
+
+        atomicStore(isComplete, true);
+        completionSynchronization.unlock;
+
+        completionSynchronization.triggerCondition;
+    }
 
     ulong toHash() const {
         return 0;
@@ -238,17 +279,17 @@ struct CoroutineAllocatorMemory {
 export @safe nothrow @nogc:
 
     bool rc(bool add) scope @trusted {
-        if (add) {
+        if(add) {
             atomicIncrementAndLoad(refCount, 1);
-        } else if (atomicDecrementAndLoad(refCount, 1) == 0) {
+        } else if(atomicDecrementAndLoad(refCount, 1) == 0) {
             RCAllocator allocator = this.allocator;
-            if (allocator.isNull)
+            if(allocator.isNull)
                 return false;
 
             void[] toDeallocate = toDeallocate;
 
             // run destructors ext.
-            if (this.deinit !is null)
+            if(this.deinit !is null)
                 this.deinit(toDeallocate);
 
             allocator.dispose(toDeallocate);

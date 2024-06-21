@@ -96,8 +96,8 @@ export @safe nothrow @nogc:
             actualState.base.conditionToContinue = CoroutineCondition.init;
             actualState.result = Result!ResultType(errorInfo.info, errorInfo.moduleName, errorInfo.line);
 
-            atomicStore(actualState.base.isComplete, true);
             actualState.base.nextFunctionTag = -2;
+            actualState.base.setAsComplete();
         };
 
         static foreach(offset, Stage; __traits(allMembers, Stages)) {
@@ -118,13 +118,13 @@ export @safe nothrow @nogc:
                         actualState.result = Result!ResultType(result.resultValue);
                     }
 
-                    atomicStore(actualState.base.isComplete, true);
                     actualState.base.nextFunctionTag = -1;
+                    actualState.base.setAsComplete();
                     break;
                 case CoroutineResultType.Tag.Error:
                     actualState.result = Result!ResultType(result.error);
-                    atomicStore(actualState.base.isComplete, true);
                     actualState.base.nextFunctionTag = -2;
+                    actualState.base.setAsComplete();
                     break;
                 case CoroutineResultType.Tag.Stage:
                     actualState.base.conditionToContinue = result.condition;
