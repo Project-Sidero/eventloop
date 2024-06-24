@@ -9,15 +9,22 @@ import sidero.base.path.hostname;
 
 //version = UseTLS;
 //version = UseRemote;
-//version = UseClient;
+//version = UseClientASync;
+//version = UseClientSync;
 
 //version = UseServerTLS;
 //version = UseServer;
 
-version (Windows) {
+version(Windows) {
     //version = UseServerSelfSign;
 } else {
     version = UseServerSelfSign;
+}
+
+version(UseClientASync) {
+    version = UseClient;
+} else version(UseClientSync) {
+    version = UseClient;
 }
 
 int main(string[] args) {
@@ -33,17 +40,17 @@ int main(string[] args) {
 
     ushort portToListenOn;
 
-    if (args.length > 1) {
+    if(args.length > 1) {
         String_UTF8 arg = String_UTF8(args[1]);
         auto got = formattedRead(arg, "{:d}", portToListenOn);
-        if (!got) {
+        if(!got) {
             writeln("Could not parse port as a positive integer between 0 and 65535");
             return 2;
         }
     } else
         portToListenOn = 22965;
 
-    version (all) {
+    version(all) {
         import sidero.base.bindings.openssl.libcrypto;
         import sidero.base.bindings.openssl.libssl;
         import sidero.base.path.file;
@@ -57,10 +64,10 @@ int main(string[] args) {
         loadLibSSL(lsFP).debugWriteln;
     }
 
-    version (all) {
-        if (!startUpNetworking)
+    version(all) {
+        if(!startUpNetworking)
             return 3;
-        if (!startWorkers(1))
+        if(!startWorkers(1))
             return 4;
     }
 
@@ -70,10 +77,10 @@ int main(string[] args) {
         assert(addresses.length > 0);
     }
 
-    version (UseServer) {
+    version(UseServer) {
         Certificate certificateToUseForServerTLS;
 
-        version (UseServerSelfSign) {
+        version(UseServerSelfSign) {
             auto gotCertificate = createSelfSigned(2048, 1.day, String_UTF8("Self signed localhost certificate"),
                     Hostname.fromEncoded(String_ASCII("localhost")));
             assert(gotCertificate);
@@ -100,7 +107,7 @@ int main(string[] args) {
             certificateToUseForServerTLS = certificates[0].assumeOkay;
         }
 
-        version (UseServerTLS) {
+        version(UseServerTLS) {
             auto listenSocket = ListenSocket.from(createServerCo(), NetworkAddress.fromAnyIPv4(portToListenOn),
                     Socket.Protocol.TCP, Socket.EncryptionProtocol.Best_TLS, certificateToUseForServerTLS);
         } else {
@@ -108,13 +115,13 @@ int main(string[] args) {
                     Socket.Protocol.TCP, Socket.EncryptionProtocol.None);
         }
 
-        if (!listenSocket)
+        if(!listenSocket)
             return 5;
     }
 
-    version (UseClient) {
-        version (UseRemote) {
-            version (UseTLS) {
+    version(UseClient) {
+        version(UseRemote) {
+            version(UseTLS) {
                 auto domainAddress = NetworkAddress.from(Hostname.from("example.com"), 443);
             } else {
                 auto domainAddress = NetworkAddress.from(Hostname.from("example.com"), 80);
@@ -122,21 +129,28 @@ int main(string[] args) {
             auto addresses = domainAddress.resolve();
             assert(addresses.length > 0);
 
-            foreach (address; addresses)
+            foreach(address; addresses)
                 writeln(address);
 
             auto address = addresses[1];
             assert(address);
         } else {
-            version (UseTLS) {
+            version(UseTLS) {
                 auto address = NetworkAddress.fromIPv4(443, 127, 0, 0, 1);
             } else {
                 auto address = NetworkAddress.fromIPv4(80, 127, 0, 0, 1);
             }
         }
 
-        auto socket = Socket.connectTo(createClientCo(), address, Socket.Protocol.TCP);
-        assert(socket);
+        version(UseClientASync) {
+            auto socket = Socket.connectTo(createClientCo(), address, Socket.Protocol.TCP);
+            assert(socket);
+        } else version(UseClientSync) {
+            auto socket = Socket.connectTo(address, Socket.Protocol.TCP);
+            assert(socket);
+
+            handleSyncClient(socket);
+        }
     }
 
     acceptLoop;
@@ -153,15 +167,18 @@ void acceptLoop() {
     import sidero.eventloop.threads;
     import sidero.base.internal.atomic : atomicLoad;
 
+    if(!atomicLoad(haveACo))
+        return;
+
     writeln("Hit enter to stop:");
     bool wantClose;
 
-    for (;;) {
+    for(;;) {
         auto got = readLine(2.seconds);
-        if (got && got.length > 0)
+        if(got && got.length > 0)
             wantClose = true;
 
-        if ((atomicLoad(allowedToShutdown) || !atomicLoad(haveACo)) && wantClose)
+        if((atomicLoad(allowedToShutdown) || !atomicLoad(haveACo)) && wantClose)
             break;
 
         //cast(void)Thread.sleep(1.seconds);
@@ -186,10 +203,10 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
 
         ~this() {
 
-            if (socket.isNull)
+            if(socket.isNull)
                 return;
 
-            if (socket.isAlive)
+            if(socket.isAlive)
                 writeln("Connection can be shutdown ", socket);
             else {
                 writeln("Connection has been shutdown ", socket);
@@ -220,8 +237,8 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
     builder[Stages.OnLine] = (scope ref state) @trusted {
         auto result = state.nextLine.result;
 
-        if (!result) {
-            if (state.socket.isAlive()) {
+        if(!result) {
+            if(state.socket.isAlive()) {
                 writeln("Failed to complete read");
                 return Builder.complete(result.getError());
             } else {
@@ -236,7 +253,7 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
             cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"> "));
             cast(void)state.socket.write(result);
 
-            if (result.get == cast(ubyte[])"DONE\n") {
+            if(result.get == cast(ubyte[])"DONE\n") {
                 state.socket.close;
                 return Builder.complete();
             }
@@ -271,10 +288,10 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
         }
 
         ~this() {
-            if (socket.isNull)
+            if(socket.isNull)
                 return;
 
-            if (socket.isAlive)
+            if(socket.isAlive)
                 writeln("Connection can be shutdown ", socket);
             else
                 writeln("Connection has been shutdown ", socket);
@@ -294,24 +311,22 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
     builder[Stages.OnConnect] = (scope ref state) @trusted {
         writeln("Connection has been made");
 
-        version (UseTLS) {
-            version (UseRemote) {
+        version(UseTLS) {
+            version(UseRemote) {
                 auto socketTLSError = state.socket.addEncryption(Hostname.from("example.com"),
                         Socket.EncryptionProtocol.Best_TLS, Certificate.init, true);
             } else {
                 auto socketTLSError = state.socket.addEncryption(Hostname.init, Socket.EncryptionProtocol.Best_TLS,
                         Certificate.init, false);
             }
-            import sidero.base.console;
 
-            debugWriteln(socketTLSError);
             assert(socketTLSError);
         }
 
         auto tempSlice = Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n");
         cast(void)state.socket.write(tempSlice);
 
-        version (UseRemote) {
+        version(UseRemote) {
             tempSlice = Slice!ubyte(cast(ubyte[])"Host: example.com\r\n");
             cast(void)state.socket.write(tempSlice);
         }
@@ -333,8 +348,8 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
     builder[Stages.OnLine] = (scope ref state) @trusted {
         auto result = state.nextLine.result;
 
-        if (!result) {
-            if (state.socket.isAlive()) {
+        if(!result) {
+            if(state.socket.isAlive()) {
                 writeln("Failed to complete read");
                 return Builder.complete(result.getError());
             } else {
@@ -345,14 +360,14 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
 
         {
             String_UTF8 text = String_UTF8(cast(string)result.unsafeGetLiteral());
-            if (text.endsWith("\r\n"))
+            if(text.endsWith("\r\n"))
                 text = text[0 .. $ - 2];
-            else if (text.endsWith("\n"))
+            else if(text.endsWith("\n"))
                 text = text[0 .. $ - 1];
 
             writeln("RECEIVED: ", text);
 
-            if (text == "</html>") {
+            if(text == "</html>") {
                 writeln("Saw end of expected input");
                 return Builder.complete();
             }
@@ -372,4 +387,85 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
     auto got = builder.build();
     assert(got);
     return got.get;
+}
+
+void handleSyncClient(Socket socket) @trusted {
+    import sidero.base.internal.atomic : atomicStore;
+
+    writeln("Connection has been made");
+
+    scope(exit) {
+        atomicStore(allowedToShutdown, true);
+    }
+
+    {
+        version(UseTLS) {
+            version(UseRemote) {
+                auto socketTLSError = state.socket.addEncryption(Hostname.from("example.com"),
+                        Socket.EncryptionProtocol.Best_TLS, Certificate.init, true);
+            } else {
+                auto socketTLSError = state.socket.addEncryption(Hostname.init, Socket.EncryptionProtocol.Best_TLS,
+                        Certificate.init, false);
+            }
+
+            assert(socketTLSError);
+        }
+    }
+
+    Future!(Slice!ubyte) nextLine;
+
+    {
+        auto tempSlice = Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n");
+        cast(void)socket.write(tempSlice);
+
+        version(UseRemote) {
+            tempSlice = Slice!ubyte(cast(ubyte[])"Host: example.com\r\n");
+            cast(void)socket.write(tempSlice);
+        }
+
+        tempSlice = Slice!ubyte(cast(ubyte[])"Accept-Encoding: identity\r\n");
+        cast(void)socket.write(tempSlice);
+        tempSlice = Slice!ubyte(cast(ubyte[])"\r\n");
+        cast(void)socket.write(tempSlice);
+
+        tempSlice = Slice!ubyte(cast(ubyte[])"\n");
+        nextLine = socket.readUntil(tempSlice);
+        assert(!nextLine.isNull);
+    }
+
+    for(;;) {
+        nextLine.blockUntilCompleteOrHaveValue;
+        auto result = nextLine.result;
+
+        if(!result) {
+            if(socket.isAlive()) {
+                writeln("Failed to complete read ", result);
+            } else {
+                writeln("Not alive and did not get a result");
+            }
+
+            return;
+        }
+
+        {
+            String_UTF8 text = String_UTF8(cast(string)result.unsafeGetLiteral());
+            if(text.endsWith("\r\n"))
+                text = text[0 .. $ - 2];
+            else if(text.endsWith("\n"))
+                text = text[0 .. $ - 1];
+
+            writeln("RECEIVED: ", text);
+
+            if(text == "</html>") {
+                writeln("Saw end of expected input");
+                return;
+            }
+        }
+
+        {
+            auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
+            nextLine = socket.readUntil(tempSlice);
+            assert(!nextLine.isNull);
+        }
+    }
 }
