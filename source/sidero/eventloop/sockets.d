@@ -72,7 +72,7 @@ export @safe nothrow @nogc:
             protocol             = The socket protocol (TCP, UDP, ext.) to listen via, only set this if you don't need to do per-socket certificates.
             encryption           = The encryption protocol to apply to any connections established.
             fallbackCertificate  = If no certificate can be found, fallback to this one.
-            reuseAddr            = Set the listen socket as being reusable on address.
+            reuseAddr            = Set the listen socket as having a reusable address, ideally with load balancing between processes.
             keepAliveInterval    = Start keep alive with a provided interval. Not all platforms support setting the interval so use a non-zero value.
             validateCertificates = Any certificates that are seen for encryption, do they need to validate? (Turn off for unsigned).
             allocator            = The memory allocator to use.

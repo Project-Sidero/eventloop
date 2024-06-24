@@ -14,7 +14,7 @@ import sidero.base.text;
 import sidero.base.typecons : Optional;
 import sidero.base.datetime.duration;
 
-version (Posix) {
+version(Posix) {
     import core.sys.posix.netinet.in_;
     import core.sys.posix.sys.socket;
     import core.sys.posix.unistd;
@@ -22,12 +22,16 @@ version (Posix) {
     import core.stdc.errno;
 }
 
+version(FreeBSD) {
+    import core.sys.freebsd.sys.socket;
+}
+
 @safe nothrow @nogc:
 
 alias PlatformListenSocketKey = void*;
 
 struct PlatformListenSocket {
-    version (Posix) {
+    version(Posix) {
         union {
             void* handle;
             int fd;
@@ -53,22 +57,22 @@ struct PlatformListenSocket {
 }
 
 bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAliveInterval) @trusted {
-    if (listenSocketState.address.type == NetworkAddress.Type.Hostname) {
+    if(listenSocketState.address.type == NetworkAddress.Type.Hostname) {
         auto resolved = listenSocketState.address.resolve();
 
         uint gotOne;
 
-        foreach (address; resolved) {
-            if (listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAliveInterval))
+        foreach(address; resolved) {
+            if(listenOnSpecificAddress(listenSocketState, address, reuseAddr, keepAliveInterval))
                 gotOne++;
         }
 
-        if (gotOne > 0) {
+        if(gotOne > 0) {
             listenSocketState.pin(gotOne);
             return true;
         }
-    } else if (listenSocketState.address.type != NetworkAddress.Type.Invalid) {
-        if (listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAliveInterval)) {
+    } else if(listenSocketState.address.type != NetworkAddress.Type.Invalid) {
+        if(listenOnSpecificAddress(listenSocketState, listenSocketState.address, reuseAddr, keepAliveInterval)) {
             listenSocketState.pin(1);
             return true;
         }
@@ -78,14 +82,14 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
 }
 
 void forceClose(scope PlatformListenSocket* listenSocketState) scope {
-    version (Posix) {
+    version(Posix) {
         close(listenSocketState.fd);
     } else
         assert(0);
 }
 
 void cleanup(scope PlatformListenSocket* listenSocketState) scope {
-    version (Posix) {
+    version(Posix) {
     } else
         assert(0);
 }
@@ -94,7 +98,7 @@ private:
 
 bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddress address, bool reuseAddr,
         Optional!Duration keepAliveInterval) @trusted {
-    version (Posix) {
+    version(Posix) {
         import sidero.eventloop.internal.event_waiting;
         import sidero.base.internal.atomic;
 
@@ -156,7 +160,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             });
         }
 
-        final switch (listenSocketState.protocol) {
+        final switch(listenSocketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -170,7 +174,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         {
             platformListenSocket.fd = socket(addressFamily, socketType, socketProtocol);
 
-            if (platformListenSocket.fd == -1) {
+            if(platformListenSocket.fd == -1) {
                 logger.notice("Error could not open socket ", address, " as ", addressFamily, " ", socketType, " ",
                         socketProtocol, " with error ", errno, " on ", Thread.self);
                 return false;
@@ -179,30 +183,47 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             }
         }
 
-        if (reuseAddr) {
+        if(reuseAddr) {
             uint reuseAddrValue = reuseAddr;
 
-            if (setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(uint*)&reuseAddrValue, 4) != 0) {
+            if(setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEADDR, cast(uint*)&reuseAddrValue, 4) != 0) {
                 logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
                         errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
             }
+
+            // If set these will make the port sharable between processes & hopefully load balanced https://stackoverflow.com/a/14388707
+            static if(__traits(compiles, SO_REUSEPORT_LB)) {
+                if(setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEPORT_LB, cast(uint*)&reuseAddrValue, 4) != 0) {
+                    logger.notice("Error could not set SO_REUSEPORT_LB ", platformListenSocket.handle, " with error ",
+                            errno, " on ", Thread.self);
+                    close(platformListenSocket.fd);
+                    return false;
+                }
+            } else static if(__traits(compiles, SO_REUSEPORT)) {
+                if(setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_REUSEPORT, cast(uint*)&reuseAddrValue, 4) != 0) {
+                    logger.notice("Error could not set SO_REUSEPORT ", platformListenSocket.handle, " with error ",
+                            errno, " on ", Thread.self);
+                    close(platformListenSocket.fd);
+                    return false;
+                }
+            }
         }
 
-        if (keepAliveInterval) {
+        if(keepAliveInterval) {
             uint keepAliveEnabledValue = 1, keepAliveIntervalValue = cast(uint)keepAliveInterval.get.totalSeconds;
 
-            if (setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveEnabledValue, 4) != 0) {
+            if(setsockopt(platformListenSocket.fd, SOL_SOCKET, SO_KEEPALIVE, cast(uint*)&keepAliveEnabledValue, 4) != 0) {
                 logger.notice("Could not set SO_KEEPALIVE ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
             }
 
-            version (linux) {
+            version(linux) {
                 import core.sys.linux.netinet.tcp : TCP_KEEPIDLE;
 
-                if (setsockopt(platformListenSocket.fd, IPPROTO_TCP, TCP_KEEPIDLE, cast(uint*)&keepAliveIntervalValue, 4) != 0) {
+                if(setsockopt(platformListenSocket.fd, IPPROTO_TCP, TCP_KEEPIDLE, cast(uint*)&keepAliveIntervalValue, 4) != 0) {
                     logger.notice("Could not set TCP_KEEPIDLE ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
                     close(platformListenSocket.fd);
                     return false;
@@ -211,7 +232,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         }
 
         {
-            if (bind(platformListenSocket.fd, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == -1) {
+            if(bind(platformListenSocket.fd, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == -1) {
                 logger.notice("Error could not bind on port ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
@@ -221,7 +242,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         }
 
         {
-            if (listen(platformListenSocket.fd, SOMAXCONN) == -1) {
+            if(listen(platformListenSocket.fd, SOMAXCONN) == -1) {
                 logger.notice("Error could not listen on port ", platformListenSocket.handle, " with error ", errno, " on ", Thread.self);
                 close(platformListenSocket.fd);
                 return false;
@@ -241,7 +262,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 }
 
 void handleListenSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
-    version (Posix) {
+    version(Posix) {
         import core.sys.posix.poll;
 
         ListenSocketState* listenSocketState = cast(ListenSocketState*)user;
@@ -250,10 +271,10 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
 
         const revent = *cast(int*)eventResponsePtr;
 
-        if (revent != 0) {
-            if ((revent & POLLIN) == POLLIN) {
+        if(revent != 0) {
+            if((revent & POLLIN) == POLLIN) {
                 onAccept(listenSocketState, perSockState);
-            } else if ((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
+            } else if((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
                 logger.debug_("Listen socket closed ", perSockState.handle, " on ", Thread.self);
                 listenSocketState.unpin();
             } else {
@@ -266,7 +287,7 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
 }
 
 void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
-    version (Posix) {
+    version(Posix) {
         import sidero.eventloop.tasks.workers : registerAsTask;
         import sidero.eventloop.internal.event_waiting;
 
@@ -296,14 +317,14 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 notRecognized = true;
             });
 
-            if (notRecognized) {
+            if(notRecognized) {
                 logger.error("Did not recognize network address type for accept ", perSockState.address, " for ",
                         perSockState.handle, " on ", Thread.self);
                 return;
             }
         }
 
-        final switch (listenSocketState.protocol) {
+        final switch(listenSocketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -321,7 +342,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
         int acceptedSocket = accept(perSockState.fd, null, null);
         NetworkAddress localAddress, remoteAddress;
 
-        if (acceptedSocket == -1) {
+        if(acceptedSocket == -1) {
             logger.error("Error could not accept socket with error ", perSockState.handle, " for ",
                     perSockState.handle, " with error ", errno, " on ", Thread.self);
             return;
@@ -333,30 +354,30 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
 
             sockaddr_in* localAddressPtr = cast(sockaddr_in*)localBuffer.ptr, remoteAddressPtr = cast(sockaddr_in*)remoteBuffer.ptr;
 
-            if (getsockname(acceptedSocket, cast(sockaddr*)localBuffer.ptr, &localAddressSize) == -1) {
+            if(getsockname(acceptedSocket, cast(sockaddr*)localBuffer.ptr, &localAddressSize) == -1) {
                 logger.notice("Did not recognize a local IP address for accepted socket ", acceptedSocket, " error ",
                         errno, " for ", perSockState.handle, " on ", Thread.self);
                 close(acceptedSocket);
                 return;
-            } else if (getpeername(acceptedSocket, cast(sockaddr*)remoteBuffer.ptr, &remoteAddressSize) == -1) {
+            } else if(getpeername(acceptedSocket, cast(sockaddr*)remoteBuffer.ptr, &remoteAddressSize) == -1) {
                 logger.notice("Did not recognize a remote IP address for accepted socket ", acceptedSocket, " error ",
                         errno, " for ", perSockState.handle, " on ", Thread.self);
                 close(acceptedSocket);
                 return;
             }
 
-            if (localAddressPtr.sin_family == AF_INET) {
+            if(localAddressPtr.sin_family == AF_INET) {
                 sockaddr_in* localAddress4 = localAddressPtr;
                 localAddress = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
-            } else if (localAddressPtr.sin_family == AF_INET6) {
+            } else if(localAddressPtr.sin_family == AF_INET6) {
                 sockaddr_in6* localAddress6 = cast(sockaddr_in6*)localAddressPtr;
                 localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.s6_addr16, true, true);
             }
 
-            if (remoteAddressPtr.sin_family == AF_INET) {
+            if(remoteAddressPtr.sin_family == AF_INET) {
                 sockaddr_in* remoteAddress4 = remoteAddressPtr;
                 remoteAddress = NetworkAddress.fromIPv4(remoteAddress4.sin_port, remoteAddress4.sin_addr.s_addr, true, true);
-            } else if (remoteAddressPtr.sin_family == AF_INET6) {
+            } else if(remoteAddressPtr.sin_family == AF_INET6) {
                 sockaddr_in6* remoteAddress6 = cast(sockaddr_in6*)remoteAddressPtr;
                 remoteAddress = NetworkAddress.fromIPv6(remoteAddress6.sin6_port, remoteAddress6.sin6_addr.s6_addr16, true, true);
             }
@@ -399,7 +420,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 notRecognized = true;
             });
 
-            if (notRecognized) {
+            if(notRecognized) {
                 logger.notice("Did not recognize an IP address for accepted socket ", acceptedSocket, " local ",
                         localAddress, " remote ", remoteAddress, " for ", perSockState.handle, " on ", Thread.self);
                 close(acceptedSocket);
@@ -414,8 +435,8 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
         acquiredSocket.state.fd = acceptedSocket;
         acquiredSocket.state.cameFromServer = true;
 
-        if (!listenSocketState.fallbackCertificate.isNull) {
-            if (!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
+        if(!listenSocketState.fallbackCertificate.isNull) {
+            if(!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
                     listenSocketState.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
                     listenSocketState.encryption, listenSocketState.validateCertificates)) {
                 logger.notice("Could not initialize encryption on socket ", acceptedSocket, " for ",

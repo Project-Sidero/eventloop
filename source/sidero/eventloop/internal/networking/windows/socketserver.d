@@ -168,6 +168,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             }
         }
 
+        // This allows port to be sharable between processes & load balanced https://stackoverflow.com/a/14388707
         if(reuseAddr && setsockopt(platformListenSocket.handle, SOL_SOCKET, SO_REUSEADDR, cast(char*)&reuseAddr, 1) != 0) {
             logger.notice("Error could not set SO_REUSEADDR ", platformListenSocket.handle, " with error ",
                     WSAGetLastError(), " on ", Thread.self);
