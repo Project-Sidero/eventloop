@@ -284,6 +284,36 @@ export @safe nothrow @nogc:
     }
 
     /**
+        Connect a socket to a network address.
+
+        Params:
+            address   = The network address to connect to, must not be a host name.
+            protocol  = The socket protocol to connect via (TCP, UDP, ext.).
+            allocator = The memory allocator use allocate with.
+
+        Returns: The connected socket or the error.
+    */
+    static Result!Socket connectTo(NetworkAddress address,
+        Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
+        import sidero.eventloop.tasks.workers : registerAsTask;
+
+        if (allocator.isNull)
+            allocator = globalAllocator();
+
+        if (!ensureItIsSetup)
+            return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
+
+        Socket ret;
+        ret.state = allocator.make!SocketState(allocator, protocol, false);
+
+        auto errorResult = ret.state.startUp(address);
+        if (!errorResult)
+            return typeof(return)(errorResult.getError());
+
+        return typeof(return)(ret);
+    }
+
+    /**
         Connect a socket to a network address using a coroutine handler.
 
         Params:
