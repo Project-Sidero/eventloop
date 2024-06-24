@@ -150,16 +150,16 @@ export @safe nothrow @nogc:
     }
 
     /**
-        Blocks until coroutine is complete or timeout elapses.
+        Blocks until coroutine is complete, have value or timeout elapses.
 
         Warning: you must not be a worker/event waiting thread.
 
         May return early, check for if it actually is complete.
     */
-    void blockUntilComplete(Duration timeout = Duration.max) scope @system {
+    void blockUntilCompleteOrHaveValue(Duration timeout = Duration.max) scope @system {
         if (isNull)
             return;
-        pair.blockUntilComplete(timeout);
+        pair.blockUntilCompleteOrHaveValue(timeout);
     }
 
     @disable auto opCast(T)();

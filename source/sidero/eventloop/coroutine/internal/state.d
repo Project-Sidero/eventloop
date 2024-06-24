@@ -114,14 +114,14 @@ export @safe nothrow @nogc:
         return ret;
     }
 
-    void blockUntilComplete(Duration timeout) scope @trusted {
+    void blockUntilCompleteOrHaveValue(Duration timeout) scope @trusted {
         if(state is null)
             return;
 
         auto err = state.base.completionSynchronization.lock;
         logAssert(cast(bool)err, "Failed to lock", err.getError);
 
-        if(!atomicLoad(state.isComplete)) {
+        if(!atomicLoad(state.base.isComplete)) {
             // we don't actually care what the return is
             cast(void)state.base.completionSynchronization.waitForCondition(timeout);
         }
@@ -196,7 +196,7 @@ export @safe nothrow @nogc:
         return state !is null && state.conditionToContinue.waitingOn != CoroutineCondition.WaitingOn.Nothing;
     }
 
-    void blockUntilComplete(Duration timeout) scope @trusted {
+    void blockUntilCompleteOrHaveValue(Duration timeout) scope @trusted {
         if(state is null)
             return;
 
