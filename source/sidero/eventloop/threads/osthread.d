@@ -88,6 +88,7 @@ export @safe nothrow @nogc:
             mutex.lock.assumeOkay;
 
             Thread.State* state = threadAllocator.make!State;
+            state.owns = true;
             state.entry = cast(void*)entryFunction;
             state.currentlyRegisteredOnRuntimes = typeof(state.currentlyRegisteredOnRuntimes)(globalAllocator());
             state.rc(true);
@@ -108,7 +109,7 @@ export @safe nothrow @nogc:
             }
 
             void cleanup() {
-                (*efa).destroy;
+                state.rc(false);
                 (*state).destroy;
 
                 retThread.state = null;
@@ -123,7 +124,10 @@ export @safe nothrow @nogc:
             version(Windows) {
                 import core.sys.windows.winbase : CreateThread, CREATE_SUSPENDED, ResumeThread, GetThreadId;
 
+                state.rc(true);
                 auto handle = CreateThread(null, stackSize, &start_routine!(EntryFunctionArgs!Args), state, CREATE_SUSPENDED, null);
+                assert(state.owns);
+
                 if(handle is null) {
                     cleanup;
                     ret = Result!Thread(UnknownPlatformBehaviorException("Unknown platform thread creation behavior failure"));
@@ -159,9 +163,11 @@ export @safe nothrow @nogc:
                 atomicStore(state.isRunning, true);
                 mutex.unlock;
 
+                state.rc(true);
                 pthread_t handle;
                 s = pthread_create(&handle, &attr, &start_routine!(EntryFunctionArgs!Args), cast(void*)state);
                 s |= pthread_attr_destroy(&attr);
+
                 if(s != 0) {
                     atomicStore(state.isRunning, false);
                     cleanup;
@@ -500,7 +506,7 @@ version(Windows) {
 
         accessGlobals((ref mutex, ref allThreads, ref threadAllocator) {
             self.state = cast(Thread.State*)state;
-            self.state.rc(true);
+            assert(self.state.owns);
 
             efa = cast(EFA*)self.state.args;
 
@@ -510,7 +516,7 @@ version(Windows) {
         scope(exit) {
             auto efaTemp = efa;
             efaTemp.destroy;
-            threadAllocator.deallocate(cast(void[])efa[0 .. 1]);
+            threadAllocator.deallocate(cast(void[])(efa[0 .. 1]));
 
             onDetachOfThread(self);
         }
@@ -589,10 +595,9 @@ version(Windows) {
 
             Thread.State* state = cast(Thread.State*)state_;
             self.state = state;
-            self.state.rc(true);
+            assert(self.state.owns);
 
             efa = cast(EFA*)state.args;
-            state.args = null;
             mutex.unlock;
 
             // duplicated assignment, so that if thread start routine happens first, it'll set or if this returns first, this will
@@ -609,7 +614,7 @@ version(Windows) {
         scope(exit) {
             auto efaTemp = efa;
             efaTemp.destroy;
-            threadAllocator.deallocate(cast(void[])efa[0 .. 1]);
+            threadAllocator.deallocate(cast(void[])(efa[0 .. 1]));
 
             cleanupPosixRunning(state_);
         }
