@@ -27,8 +27,8 @@ struct PlatformSocket {
     bool isWaitingForRetrigger;
     bool havePendingAlwaysWaitingRead, havePendingRead;
 
-    enum keepAReadAlwaysGoing = false;
-    //enum keepAReadAlwaysGoing = true;
+    //enum keepAReadAlwaysGoing = false;
+    enum keepAReadAlwaysGoing = true;
 
 @safe nothrow @nogc:
 
@@ -68,8 +68,14 @@ struct PlatformSocket {
             this.readOverlapped = OVERLAPPED.init;
             this.havePendingAlwaysWaitingRead = true;
 
+            logger.debug_("Starting a constantly running read request for ", socketState.handle, " on ", Thread.self);
+
             DWORD flags;
+
+            ubyte[1] buf;
             WSABUF wsaBuffer;
+            wsaBuffer.buf = buf.ptr;
+
             auto result = WSARecv(socketState.handle, &wsaBuffer, 1, null, &flags, &this.readOverlapped, null);
 
             if(result == 0) {
@@ -299,6 +305,10 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
             addEventWaiterHandle(socketState.onCloseEvent, &handleSocketEvent, socketState);
 
         socketState.pin();
+
+        if(socketState.keepAReadAlwaysGoing)
+            socketState.initiateAConstantlyRunningReadRequest(socketState);
+
         return ErrorResult.init;
     } else
         assert(0);

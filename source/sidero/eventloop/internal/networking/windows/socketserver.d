@@ -482,6 +482,9 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
 
                 acquiredSocket.state.pin();
 
+                if(acquiredSocket.state.keepAReadAlwaysGoing)
+                    acquiredSocket.state.initiateAConstantlyRunningReadRequest(acquiredSocket.state);
+
                 auto acceptSocketCO = listenSocketState.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
                 registerAsTask(acceptSocketCO);
             }

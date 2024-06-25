@@ -75,10 +75,6 @@ package(sidero.eventloop):
                 logger.debug_("Failed to setup up raw reading for " ~ TitleOfPipe ~ " with a buffer of ", toRead, " for a length of ",
                         buffer.length, " from ", oldLength, " for socket ", stateObject.readHandle, " on thread ", Thread.self);
                 triggered = false;
-
-                if(stateObject.keepAReadAlwaysGoing)
-                    stateObject.initiateAConstantlyRunningReadRequest(stateObject);
-
                 return false;
             }
         }
@@ -133,9 +129,6 @@ package(sidero.eventloop):
             logger.info("Received too much data ", completedAmount, " with a prepared buffered count of ",
                     amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
 
-            if(stateObject.keepAReadAlwaysGoing)
-                stateObject.initiateAConstantlyRunningReadRequest(stateObject);
-
             return;
         }
 
@@ -143,8 +136,5 @@ package(sidero.eventloop):
                 amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
 
         amountFilled += completedAmount;
-
-        if(stateObject.keepAReadAlwaysGoing)
-            stateObject.initiateAConstantlyRunningReadRequest(stateObject);
     }
 }

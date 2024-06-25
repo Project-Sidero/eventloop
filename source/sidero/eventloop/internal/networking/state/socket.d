@@ -153,6 +153,9 @@ struct SocketState {
         logger.debug_("Starting read/write for ", this.handle, " on ", Thread.self);
 
         scope(exit) {
+            if (this.keepAReadAlwaysGoing)
+                this.initiateAConstantlyRunningReadRequest(&this);
+
             logger.debug_("Done with read/write for ", this.handle, " on ", Thread.self);
         }
 
