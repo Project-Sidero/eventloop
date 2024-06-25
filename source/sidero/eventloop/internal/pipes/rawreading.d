@@ -129,6 +129,7 @@ package(sidero.eventloop):
         stateObject.notifiedOfReadComplete(stateObject);
 
         if(completedAmount > amountPrepared) {
+            assert(logger);
             logger.info("Received too much data ", completedAmount, " with a prepared buffered count of ",
                     amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
 

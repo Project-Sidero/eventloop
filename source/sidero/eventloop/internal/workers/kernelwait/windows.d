@@ -98,6 +98,8 @@ void triggerACoroutineMechanism(size_t count) @trusted {
 
 bool associateWithIOCP(Socket socket) @trusted {
     version (Windows) {
+        logger.debug_("Associated socket with IOCP for socket ", socket.state.handle);
+
         socket.state.iocpWork.key = cast(ubyte[4])"SOCK";
         socket.state.iocpWork.ptr = socket.state;
 
@@ -131,7 +133,7 @@ void workerProc() @trusted {
             OVERLAPPED* overlapped;
             auto result = GetQueuedCompletionStatus(completionPort, &numberOfBytesTransferred, &completionKey, &overlapped, INFINITE);
 
-            logger.debug_("IOCP worker thread got ", result, " ", Thread.self);
+            logger.debug_("IOCP worker thread got ", result, " on ", Thread.self);
 
             if (result == 0) {
                 const errorCode = GetLastError();
@@ -139,9 +141,9 @@ void workerProc() @trusted {
                 } else if (errorCode == ERROR_OPERATION_ABORTED) {
                     // ok, explicitly cancelled event
                 } else if (overlapped is null) {
-                    logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " ", Thread.self);
+                    logger.warning("IOCP worker GetQueuedCompletionStatus did not complete ", errorCode, " on ", Thread.self);
                 } else {
-                    logger.warning("IOCP worker GetQueuedCompletionStatus failed ", errorCode, " ", Thread.self);
+                    logger.warning("IOCP worker GetQueuedCompletionStatus failed ", errorCode, " on ", Thread.self);
                     return;
                 }
             } else if (overlapped is null && completionKey is cast(ULONG_PTR)&shutdownByte) {
@@ -209,7 +211,6 @@ void handleSocketRead(Socket socket) @trusted {
             logger.debug_("Read from socket ", transferredBytes, " with flags ", flags, " for ", socket.state.handle, " on ", Thread.self);
             socket.state.guard(() {
                 socket.state.rawReading.complete(socket.state, transferredBytes);
-                socket.state.performReadWrite();
             });
         }
     } else

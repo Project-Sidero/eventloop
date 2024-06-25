@@ -40,6 +40,7 @@ struct EventWaiterThread {
             import core.sys.windows.winnt : DUPLICATE_SAME_ACCESS, WAIT_TIMEOUT, ERROR_INVALID_HANDLE, HANDLE;
 
             logger.info("Starting event waiter thread ", thread);
+            atomicStore(isAlive, true);
 
             scope(exit) {
                 atomicStore(isAlive, false);
@@ -61,7 +62,7 @@ struct EventWaiterThread {
                 if(this.eventHandles.length == 0) {
                     auto result = SleepEx(INFINITE, true);
 
-                    logger.debug_("Got event waiting thread event from sleep with code", result, " on ", thread);
+                    logger.debug_("Got event waiting thread event from sleep with code ", result, " on ", thread);
 
                     switch(result) {
                     case WAIT_IO_COMPLETION:

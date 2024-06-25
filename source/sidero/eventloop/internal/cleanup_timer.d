@@ -234,6 +234,8 @@ void onTimerFunction(void* handle, void* user, scope void* eventResponsePtr) @tr
         }
 
         pthread_mutex_unlock(&timerMutex);
+    } else version(Windows) {
+        // nothing to do
     } else
         assert(0);
 

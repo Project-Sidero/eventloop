@@ -204,23 +204,23 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
         {
             if(bind(platformListenSocket.handle, cast(sockaddr*)serverAddressBuffer.ptr, serverAddressSize) == SOCKET_ERROR) {
-                logger.notice("Error could not bind on port ", platformListenSocket.handle, " with error ",
-                        WSAGetLastError(), " on ", Thread.self);
+                logger.notice("Error could not bind on port ", address.port, " for ", platformListenSocket.handle,
+                        " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
                 return false;
             } else {
-                logger.debug_("Bound on port successfully ", platformListenSocket.handle, " on ", Thread.self);
+                logger.debug_("Bound on port successfully ", address.port, " for ", platformListenSocket.handle, " on ", Thread.self);
             }
         }
 
         {
             if(listen(platformListenSocket.handle, SOMAXCONN) == SOCKET_ERROR) {
-                logger.notice("Error could not listen on port ", platformListenSocket.handle, " with error ",
-                        WSAGetLastError(), " on ", Thread.self);
+                logger.notice("Error could not listen on port ", address.port, " for ", platformListenSocket.handle,
+                        " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
                 return false;
             } else {
-                logger.debug_("Listening on port ", platformListenSocket.handle, " on ", Thread.self);
+                logger.debug_("Listening on port ", address.port, " for ", platformListenSocket.handle, " on ", Thread.self);
             }
         }
 
@@ -277,9 +277,10 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
                         perSockState.handle, " with error ", error, " on ", Thread.self);
             }
         } else if((wsaEvent.lNetworkEvents & FD_ACCEPT) == FD_ACCEPT && wsaEvent.iErrorCode[FD_ACCEPT_BIT] == 0) {
+            logger.debug_("Listen socket got an accept ", perSockState.handle, " on ", Thread.self);
             onAccept(listenSocketState, perSockState);
         } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
-            logger.debug_("Socket closing cleanly ", perSockState.handle, " on ", Thread.self);
+            logger.debug_("Listen socket closing cleanly ", perSockState.handle, " on ", Thread.self);
             closesocket(perSockState.handle);
             listenSocketState.unpin();
         }
@@ -439,21 +440,23 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
                 acquiredSocket.state.cameFromServer = true;
 
-                if(acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {
-                    logger.notice("Error occured while creating the on close event with code ", acceptedSocket,
-                            " for ", perSockState.handle, " with error ", GetLastError(), " on ", Thread.self);
-                    return;
-                } else {
-                    logger.debug_("WSA on close event created ", acceptedSocket, " on ", Thread.self);
-                }
+                if(!acquiredSocket.state.keepAReadAlwaysGoing) {
+                    if(acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {
+                        logger.notice("Error occured while creating the on close event with code ", acceptedSocket,
+                                " for ", perSockState.handle, " with error ", GetLastError(), " on ", Thread.self);
+                        return;
+                    } else {
+                        logger.debug_("WSA on close event created ", acceptedSocket, " on ", Thread.self);
+                    }
 
-                if(WSAEventSelect(acceptedSocket, acquiredSocket.state.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
-                    logger.notice("Could not associated on close event with accepted socket ", acceptedSocket, " for ",
-                            perSockState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
-                    closesocket(acceptedSocket);
-                    return;
-                } else {
-                    logger.debug_("Associated on close event on accepted socket ", acceptedSocket, " on ", Thread.self);
+                    if(WSAEventSelect(acceptedSocket, acquiredSocket.state.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
+                        logger.notice("Could not associated on close event with accepted socket ", acceptedSocket,
+                                " for ", perSockState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
+                        closesocket(acceptedSocket);
+                        return;
+                    } else {
+                        logger.debug_("Associated on close event on accepted socket ", acceptedSocket, " on ", Thread.self);
+                    }
                 }
 
                 if(!associateWithIOCP(acquiredSocket)) {
@@ -474,7 +477,9 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                     }
                 }
 
-                addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);
+                if(!acquiredSocket.state.keepAReadAlwaysGoing)
+                    addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);
+
                 acquiredSocket.state.pin();
 
                 auto acceptSocketCO = listenSocketState.onAccept.makeInstance(RCAllocator.init, acquiredSocket);

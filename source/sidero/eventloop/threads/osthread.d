@@ -97,15 +97,12 @@ export @safe nothrow @nogc:
             retThread.state = state;
 
             EntryFunctionArgs!Args* efa;
-            void[] efaMemory;
 
             {
-                efaMemory = threadAllocator.allocate(EntryFunctionArgs!Args.sizeof);
-                assert(efaMemory.length == EntryFunctionArgs!Args.sizeof);
-                state.args = efaMemory.ptr;
-
-                efa = cast(EntryFunctionArgs!Args*)state.args;
+                efa = threadAllocator.make!(EntryFunctionArgs!Args);
                 efa.args = args;
+
+                state.args = efa;
             }
 
             void cleanup() {
@@ -114,11 +111,8 @@ export @safe nothrow @nogc:
 
                 retThread.state = null;
 
-                EntryFunctionArgs!Args* tempEfa = cast(EntryFunctionArgs!Args*)efaMemory.ptr;
-                tempEfa.destroy;
-
                 threadAllocator.dispose(state);
-                threadAllocator.deallocate(efaMemory);
+                threadAllocator.dispose(efa);
             }
 
             version(Windows) {

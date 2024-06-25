@@ -16,7 +16,7 @@ import sidero.base.datetime.duration;
 @safe nothrow @nogc:
 
 struct PlatformSocket {
-    version (Windows) {
+    version(Windows) {
         SOCKET handle;
         WSAEVENT onCloseEvent;
         OVERLAPPED readOverlapped, writeOverlapped;
@@ -27,11 +27,12 @@ struct PlatformSocket {
     bool isWaitingForRetrigger;
     bool havePendingAlwaysWaitingRead, havePendingRead;
 
-    enum keepAReadAlwaysGoing = true;
+    enum keepAReadAlwaysGoing = false;
+    //enum keepAReadAlwaysGoing = true;
 
 @safe nothrow @nogc:
 
-    ~this() scope {
+     ~this() scope {
     }
 
     // NOTE: needs to be guarded
@@ -39,7 +40,7 @@ struct PlatformSocket {
         import sidero.eventloop.internal.cleanup_timer;
         import sidero.base.internal.atomic : atomicLoad;
 
-        if (isWaitingForRetrigger || atomicLoad(isClosed))
+        if(isWaitingForRetrigger || atomicLoad(isClosed))
             return;
 
         Socket socket;
@@ -60,23 +61,24 @@ struct PlatformSocket {
     }
 
     void initiateAConstantlyRunningReadRequest(scope SocketState* socketState) scope @trusted {
-        version (Windows) {
-            if (this.havePendingAlwaysWaitingRead || this.havePendingRead)
+        version(Windows) {
+            if(this.havePendingAlwaysWaitingRead || this.havePendingRead)
                 return;
 
             this.readOverlapped = OVERLAPPED.init;
             this.havePendingAlwaysWaitingRead = true;
 
             DWORD flags;
-            auto result = WSARecv(socketState.handle, null, 0, null, &flags, &this.readOverlapped, null);
+            WSABUF wsaBuffer;
+            auto result = WSARecv(socketState.handle, &wsaBuffer, 1, null, &flags, &this.readOverlapped, null);
 
-            if (result == 0) {
+            if(result == 0) {
                 // completed, IOCP will be notified of completion
                 logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
             } else {
                 const errorCode = WSAGetLastError();
 
-                switch (errorCode) {
+                switch(errorCode) {
                 case WSA_OPERATION_ABORTED:
                 case WSAETIMEDOUT:
                 case WSAESHUTDOWN:
@@ -127,7 +129,7 @@ struct PlatformSocket {
 }
 
 ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @trusted {
-    version (Windows) {
+    version(Windows) {
         SocketState* socketState = socket.state;
 
         enum SockAddress4Size = sockaddr_in.sizeof;
@@ -169,11 +171,11 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
                 // needs to be have been already resolved
             }, () {});
 
-            if (!validAddress)
+            if(!validAddress)
                 return ErrorResult(MalformedInputException("Not a valid network address, must be resolved ip/port"));
         }
 
-        final switch (socketState.protocol) {
+        final switch(socketState.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -187,7 +189,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
         {
             socketState.handle = WSASocketW(addressFamily, socketType, socketProtocol, null, 0, WSA_FLAG_OVERLAPPED);
 
-            if (socketState.handle == INVALID_SOCKET) {
+            if(socketState.handle == INVALID_SOCKET) {
                 logger.notice("Could not open socket ", address, " with error ", WSAGetLastError(), " on ", Thread.self);
                 return ErrorResult(UnknownPlatformBehaviorException("Could not create socket"));
             } else {
@@ -196,7 +198,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
         }
 
         {
-            if (connect(socketState.handle, cast(sockaddr*)remoteAddressBuffer.ptr, remoteAddressSize) == SOCKET_ERROR) {
+            if(connect(socketState.handle, cast(sockaddr*)remoteAddressBuffer.ptr, remoteAddressSize) == SOCKET_ERROR) {
                 logger.notice("Could not connect to address on port ", socketState.handle, " with error ",
                         WSAGetLastError(), " on ", Thread.self);
                 closesocket(socketState.handle);
@@ -206,10 +208,10 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
             }
         }
 
-        {
+        if(!socketState.keepAReadAlwaysGoing) {
             socketState.onCloseEvent = WSACreateEvent();
 
-            if (socketState.onCloseEvent is WSA_INVALID_EVENT) {
+            if(socketState.onCloseEvent is WSA_INVALID_EVENT) {
                 logger.notice("Error occured while creating the close event ", socketState.handle, " with error ",
                         WSAGetLastError(), " on ", Thread.self);
                 closesocket(socketState.handle);
@@ -218,7 +220,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
                 logger.debug_("WSA close event created ", socketState.handle, " on ", Thread.self);
             }
 
-            if (WSAEventSelect(socketState.handle, socketState.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
+            if(WSAEventSelect(socketState.handle, socketState.onCloseEvent, FD_CLOSE) == SOCKET_ERROR) {
                 logger.notice("Error could not associated on close event with socket accept event ",
                         socketState.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(socketState.handle);
@@ -230,7 +232,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
             }
         }
 
-        if (!associateWithIOCP(socket)) {
+        if(!associateWithIOCP(socket)) {
             closesocket(socketState.handle);
             CloseHandle(socketState.onCloseEvent);
             return ErrorResult(UnknownPlatformBehaviorException("Could not associate socket with IOCP workers"));
@@ -242,7 +244,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
             NetworkAddress localAddress;
             sockaddr_in* localAddressPtr = cast(sockaddr_in*)localAddressBuffer.ptr;
 
-            if (getsockname(socketState.handle, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
+            if(getsockname(socketState.handle, cast(sockaddr*)localAddressBuffer.ptr, &localAddressSize) != 0) {
                 logger.notice("Error could not acquire local network address for socket client ", socketState.handle,
                         " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(socketState.handle);
@@ -250,10 +252,10 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
                 return ErrorResult(UnknownPlatformBehaviorException("Could not associate on close event for socket"));
             }
 
-            if (localAddressPtr.sin_family == AF_INET) {
+            if(localAddressPtr.sin_family == AF_INET) {
                 sockaddr_in* localAddress4 = localAddressPtr;
                 localAddress = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
-            } else if (localAddressPtr.sin_family == AF_INET6) {
+            } else if(localAddressPtr.sin_family == AF_INET6) {
                 sockaddr_in6* localAddress6 = cast(sockaddr_in6*)localAddressPtr;
                 localAddress = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.Word, true, true);
             }
@@ -278,7 +280,7 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
                 notRecognized = true;
             });
 
-            if (notRecognized) {
+            if(notRecognized) {
                 logger.notice("Did not recognize an IP address for socket client local ", localAddress, " remote ",
                         address, " for ", socketState.handle, " on ", Thread.self);
                 closesocket(socketState.handle);
@@ -293,8 +295,9 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
             socketState.remoteAddress = address;
         }
 
-        if (!socketState.keepAReadAlwaysGoing)
+        if(!socketState.keepAReadAlwaysGoing)
             addEventWaiterHandle(socketState.onCloseEvent, &handleSocketEvent, socketState);
+
         socketState.pin();
         return ErrorResult.init;
     } else
@@ -302,23 +305,23 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
 }
 
 void shutdown(scope SocketState* socketState, bool haveReferences = true) @trusted {
-    version (Windows) {
+    version(Windows) {
         import sidero.base.internal.atomic;
         import core.sys.windows.winsock2 : shutdown;
 
-        if (cas(socketState.isShutdown, false, true)) {
+        if(cas(socketState.isShutdown, false, true)) {
             logger.info("Shutting down socket ", socketState.handle, " on ", Thread.self);
             socketState.performReadWrite();
             shutdown(socketState.handle, SD_SEND);
 
-            if (socketState.onCloseEvent !is null) {
+            if(socketState.onCloseEvent !is null) {
                 logger.info("Removing on close event ", socketState.handle, " on ", Thread.self);
                 removeEventWaiterHandle(socketState.onCloseEvent);
                 CloseHandle(socketState.onCloseEvent);
                 socketState.onCloseEvent = null;
             }
 
-            if (socketState.rawReading.inProgress) {
+            if(socketState.rawReading.inProgress) {
                 CancelIoEx(socketState.handle, &socketState.readOverlapped);
             }
 
@@ -330,11 +333,11 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
 }
 
 void forceClose(scope SocketState* socketState) @trusted {
-    version (Windows) {
+    version(Windows) {
         import sidero.base.internal.atomic;
         import core.sys.windows.winsock2 : closesocket;
 
-        if (cas(socketState.isClosed, false, true)) {
+        if(cas(socketState.isClosed, false, true)) {
             logger.debug_("Forcing closed socket ", socketState.handle);
             closesocket(socketState.handle);
         }
@@ -343,7 +346,7 @@ void forceClose(scope SocketState* socketState) @trusted {
 }
 
 bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
-    version (Windows) {
+    version(Windows) {
         socketState.writeOverlapped = OVERLAPPED.init;
 
         WSABUF wsaBuffer;
@@ -354,7 +357,7 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
         DWORD flags;
         auto result = WSASend(socketState.handle, &wsaBuffer, 1, &transferredBytes, flags, &socketState.writeOverlapped, null);
 
-        if (result == 0) {
+        if(result == 0) {
             // completed, transferredBytes will have the amount of data that was sent
             logger.debug_("Immediate completion of write ", socketState.handle, " on ", Thread.self);
             //socketState.rawWriting.complete(socketState, transferredBytes);
@@ -362,7 +365,7 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
         } else {
             const errorCode = WSAGetLastError();
 
-            switch (errorCode) {
+            switch(errorCode) {
             case WSAECONNABORTED:
             case WSAECONNRESET:
             case WSAEFAULT:
@@ -408,31 +411,30 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
 }
 
 bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
-    version (Windows) {
-        if (socketState.havePendingAlwaysWaitingRead) {
+    version(Windows) {
+        if(socketState.havePendingAlwaysWaitingRead) {
             CancelIoEx(socketState.handle, &socketState.readOverlapped);
             socketState.havePendingAlwaysWaitingRead = false;
         }
 
         socketState.havePendingRead = true;
-
         socketState.readOverlapped = OVERLAPPED.init;
 
+        DWORD flags;
         WSABUF wsaBuffer;
         wsaBuffer.buf = buffer.ptr;
         wsaBuffer.len = cast(uint)buffer.length;
 
-        DWORD flags;
         auto result = WSARecv(socketState.handle, &wsaBuffer, 1, null, &flags, &socketState.readOverlapped, null);
 
-        if (result == 0) {
+        if(result == 0) {
             // completed, IOCP will be notified of completion
             logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
             return true;
         } else {
             const errorCode = WSAGetLastError();
 
-            switch (errorCode) {
+            switch(errorCode) {
             case WSA_OPERATION_ABORTED:
             case WSAETIMEDOUT:
             case WSAESHUTDOWN:
@@ -479,15 +481,15 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
 }
 
 void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @trusted {
-    version (Windows) {
+    version(Windows) {
         SocketState* socketState = cast(SocketState*)user;
         WSANETWORKEVENTS wsaEvent;
 
-        if (socketState.onCloseEvent !is null) {
-            if (WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
+        if(socketState.onCloseEvent !is null) {
+            if(WSAEnumNetworkEvents(socketState.handle, socketState.onCloseEvent, &wsaEvent) != 0) {
                 auto error = WSAGetLastError();
 
-                if (error == WSAENOTSOCK) {
+                if(error == WSAENOTSOCK) {
                     logger.debug_("Handle not socket message for ", socketState.handle, " on ", Thread.self);
                     // ok just in case lets just unpin it
                     socketState.unpin;
@@ -495,7 +497,7 @@ void handleSocketEvent(void* handle, void* user, scope void* eventResponsePtr) @
                     logger.error("Error could not enumerate WSA network socket events with code ", error, " for ",
                             socketState.handle, " on ", Thread.self);
                 }
-            } else if ((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
+            } else if((wsaEvent.lNetworkEvents & FD_CLOSE) == FD_CLOSE && wsaEvent.iErrorCode[FD_CLOSE_BIT] == 0) {
                 logger.debug_("Socket closed ", socketState.handle, " on ", Thread.self);
                 socketState.unpin;
             } else {
