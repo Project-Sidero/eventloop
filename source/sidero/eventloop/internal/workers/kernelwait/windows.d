@@ -212,7 +212,7 @@ void handleSocketReadNotification(Socket socket, DWORD transferredBytes) @truste
             logger.debug_("Peer socket has been accepted ", socket.state.handle, " on ", Thread.self);
             // its now accepted!!!
 
-            socket.state.uponAccept(socket.state);
+            socket.state.uponAccept(socket);
 
             socket.state.hasJustBeenAccepted = false;
             wasAccepted = true;

@@ -4,6 +4,7 @@ import sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.internal.workers.kernelwait.windows;
 import sidero.eventloop.internal.windows.bindings;
+import sidero.eventloop.coroutine.instanceable;
 import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.containers.readonlyslice;
@@ -12,16 +13,20 @@ import sidero.base.path.networking;
 import sidero.base.path.hostname;
 import sidero.base.typecons : Optional;
 import sidero.base.datetime.duration;
+import sidero.base.allocators;
 
 @safe nothrow @nogc:
 
 struct PlatformSocket {
     version(Windows) {
         SOCKET handle;
+        SOCKET listenSocketHandle;
         WSAEVENT onCloseEvent;
         OVERLAPPED readOverlapped, writeOverlapped;
         IOCPwork iocpWork;
     }
+
+    InstanceableCoroutine!(void, Socket) onAcceptCO;
 
     shared(bool) isClosed;
     bool isWaitingForRetrigger;
@@ -51,6 +56,71 @@ struct PlatformSocket {
         addSocketToRetrigger(socket);
     }
 
+    private bool acquireAddresses(scope SocketState* socketState) scope @trusted {
+        version(Windows) {
+            ubyte[SockAddressMaxSize] addressBuffer;
+            sockaddr_in* addressPtr = cast(sockaddr_in*)addressBuffer.ptr;
+
+            int addressSize = SockAddressMaxSize;
+            bool haveError;
+
+            NetworkAddress handle(int result) {
+                if(result != 0) {
+                    logger.notice("Error could not acquire network address for socket client ", socketState.handle,
+                            " with error ", WSAGetLastError(), " on ", Thread.self);
+                    haveError = true;
+                    return NetworkAddress.init;
+                }
+
+                NetworkAddress address;
+
+                if(addressPtr.sin_family == AF_INET) {
+                    sockaddr_in* localAddress4 = addressPtr;
+                    address = NetworkAddress.fromIPv4(localAddress4.sin_port, localAddress4.sin_addr.s_addr, true, true);
+                } else if(addressPtr.sin_family == AF_INET6) {
+                    sockaddr_in6* localAddress6 = cast(sockaddr_in6*)addressPtr;
+                    address = NetworkAddress.fromIPv6(localAddress6.sin6_port, localAddress6.sin6_addr.Word, true, true);
+                }
+
+                bool notRecognized;
+
+                address.onNetworkOrder((value) {
+                    // ipv4
+                }, (value) {
+                    // ipv6
+                }, () {
+                    // any4
+                    notRecognized = true;
+                }, () {
+                    // any6
+                    notRecognized = true;
+                }, (scope String_ASCII) {
+                    // hostname
+                    notRecognized = true;
+                }, () {
+                    // invalid
+                    notRecognized = true;
+                });
+
+                if(notRecognized) {
+                    logger.notice("Did not recognize an IP address for socket client local ", address, " remote ",
+                            address, " for ", socketState.handle, " on ", Thread.self);
+                    haveError = true;
+                    return NetworkAddress.init;
+                } else
+                    return address;
+            }
+
+            addressSize = SockAddressMaxSize;
+            socketState.localAddress = handle(getsockname(this.handle, cast(sockaddr*)addressBuffer.ptr, &addressSize));
+            addressSize = SockAddressMaxSize;
+            socketState.remoteAddress = handle(getpeername(this.handle, cast(sockaddr*)addressBuffer.ptr, &addressSize));
+
+            return !haveError;
+        } else
+            assert(0);
+    }
+
     package(sidero.eventloop.internal) {
         // NOTE: must not be guarded
         void haveBeenRetriggered(scope SocketState* socketState) scope {
@@ -60,8 +130,31 @@ struct PlatformSocket {
         }
 
         // needs guarding
-        void uponAccept(scope SocketState* socketState) scope {
+        void uponAccept(Socket socket) scope @trusted {
+            version(Windows) {
+                import sidero.eventloop.tasks.workers : registerAsTask;
 
+                auto result = setsockopt(this.handle, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, &this.listenSocketHandle, SOCKET.sizeof);
+
+                if(result == SOCKET_ERROR) {
+                    logger.debug_("Failed to configure accepted socket for listen socket with error ", WSAGetLastError(),
+                            " for ", this.handle, " for listen ", this.listenSocketHandle, " on ", Thread.self);
+                    socket.state.unpinGuarded;
+                    return;
+                }
+
+                if(!this.acquireAddresses(socket.state)) {
+                    socket.state.unpinGuarded;
+                    return;
+                }
+
+                if (!this.onAcceptCO.isNull) {
+                    auto acceptSocketCO = this.onAcceptCO.makeInstance(RCAllocator.init, socket);
+                    this.onAcceptCO = typeof(this.onAcceptCO).init;
+                    registerAsTask(acceptSocketCO);
+                }
+            } else
+                assert(0);
         }
     }
 
@@ -119,7 +212,8 @@ struct PlatformSocket {
 
                 case WSAEWOULDBLOCK, WSA_IO_PENDING:
                     // this is okay, its delayed via IOCP
-                    logger.debug_("Reading delayed via IOCP for ", socketState.handle, " on ", Thread.self);
+                    logger.debug_("Reading delayed via IOCP for ",
+                            socketState.handle, " on ", Thread.self);
                     return;
 
                 default:
@@ -141,10 +235,6 @@ struct PlatformSocket {
 ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @trusted {
     version(Windows) {
         SocketState* socketState = socket.state;
-
-        enum SockAddress4Size = sockaddr_in.sizeof;
-        enum SockAddress6Size = sockaddr_in6.sizeof;
-        enum SockAddressMaxSize = SockAddress6Size > SockAddress4Size ? SockAddress6Size : SockAddress4Size;
 
         ubyte[SockAddressMaxSize] localAddressBuffer, remoteAddressBuffer;
         int localAddressSize = SockAddressMaxSize, remoteAddressSize;

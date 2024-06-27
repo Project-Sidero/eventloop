@@ -23,6 +23,10 @@ version(Windows) {
     alias WSAEVENT = HANDLE;
     alias LPWSAOVERLAPPED_COMPLETION_ROUTINE = extern (Windows) void function(DWORD, DWORD, OVERLAPPED*, DWORD) nothrow;
 
+    enum SockAddress4Size = sockaddr_in.sizeof;
+    enum SockAddress6Size = sockaddr_in6.sizeof;
+    enum SockAddressMaxSize = SockAddress6Size > SockAddress4Size ? SockAddress6Size : SockAddress4Size;
+
     extern (Windows) nothrow @nogc {
         SOCKET WSASocketA(int, int, int, WSAPROTOCOL_INFOA*, GROUP, DWORD);
         SOCKET WSASocketW(int, int, int, WSAPROTOCOL_INFOW*, GROUP, DWORD);
@@ -89,6 +93,7 @@ version(Windows) {
         SOCKET accept(SOCKET s, sockaddr* addr, int* addrlen);
         int listen(SOCKET s, int backlog);
         int getsockname(SOCKET s, sockaddr* name, int* namelen);
+        int getpeername(SOCKET s, sockaddr* name, int* namelen);
 
         bool GetExitCodeProcess(HANDLE, DWORD*);
         bool CreateProcessW(wchar*, wchar*, SECURITY_ATTRIBUTES*, SECURITY_ATTRIBUTES*, bool, DWORD, void*,
@@ -223,6 +228,7 @@ version(Windows) {
         SOL_SOCKET = 0xFFFF,
         SO_REUSEADDR = 0x0004,
         SO_KEEPALIVE = 0x0008,
+        SO_UPDATE_ACCEPT_CONTEXT = 0x700B,
 
         INADDR_ANY = 0,
         IN6ADDR_ANY = in6_addr.init,
