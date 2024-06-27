@@ -30,6 +30,7 @@ struct SocketState {
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
     bool cameFromServer;
+    bool hasJustBeenAccepted;
 
     WritingState writing;
     EncryptionState encryption;
@@ -111,7 +112,7 @@ struct SocketState {
         return atomicLoad(this.isShutdown);
     }
 
-    package(sidero.eventloop.internal.networking) void unpinGuarded() scope @trusted {
+    package(sidero.eventloop.internal) void unpinGuarded() scope @trusted {
         if(!atomicLoad(isAlive)) {
             return;
         }

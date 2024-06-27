@@ -32,6 +32,7 @@ int main(string[] args) {
     import sidero.base.text.format;
     import sidero.base.path.networking;
     import sidero.base.datetime;
+    import sidero.base.internal.atomic: atomicStore;
 
     /+if(args.length < 2) {
         writeln("Usage: port");
@@ -117,6 +118,8 @@ int main(string[] args) {
 
         if(!listenSocket)
             return 5;
+
+        atomicStore(haveACo, true);
     }
 
     version(UseClient) {
@@ -248,7 +251,13 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
         }
 
         {
-            writeln("RECEIVED: ", cast(string)result.unsafeGetLiteral());
+            String_UTF8 text = String_UTF8(cast(string)result.unsafeGetLiteral());
+            if(text.endsWith("\r\n"))
+                text = text[0 .. $ - 2];
+            else if(text.endsWith("\n"))
+                text = text[0 .. $ - 1];
+
+            writeln("RECEIVED: ", text);
 
             cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"> "));
             cast(void)state.socket.write(result);

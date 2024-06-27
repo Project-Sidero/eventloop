@@ -9,7 +9,6 @@ import sidero.base.internal.atomic;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
-    import core.sys.windows.basetsd : HANDLE;
 
     private __gshared {
         LoggerReference logger;
@@ -20,6 +19,8 @@ version(Windows) {
         shared(ptrdiff_t) runningWorkers;
         shared(ptrdiff_t) startedWorkers;
     }
+} else {
+    alias DWORD = uint;
 }
 
 struct IOCPwork {
@@ -153,7 +154,7 @@ void workerProc() @trusted {
                         socket.state = cast(SocketState*)work.ptr;
                         socket.state.rc(true);
 
-                        handleSocketRead(socket);
+                        handleSocketReadNotification(socket, numberOfBytesTransferred);
 
                         socket.state.guard(&socket.state.performReadWrite);
                     } else {
@@ -186,12 +187,14 @@ void workerProc() @trusted {
 
                     logger.debug_("Seeing IOCP work for socket ", socket.state.handle, " on ", Thread.self);
 
-                    if(overlapped is &socket.state.writeOverlapped)
-                        handleSocketWrite(socket);
-                    else if(overlapped is &socket.state.readOverlapped)
-                        handleSocketRead(socket);
+                    socket.state.guard(() {
+                        if(overlapped is &socket.state.writeOverlapped)
+                            socket.state.rawWriting.complete(socket.state, numberOfBytesTransferred);
+                        else if(overlapped is &socket.state.readOverlapped)
+                            handleSocketReadNotification(socket, numberOfBytesTransferred);
 
-                    socket.state.guard(&socket.state.performReadWrite);
+                        socket.state.performReadWrite;
+                    });
                 }
             }
         }
@@ -199,87 +202,32 @@ void workerProc() @trusted {
         assert(0);
 }
 
-void handleSocketRead(Socket socket) @trusted {
+void handleSocketReadNotification(Socket socket, DWORD transferredBytes) @trusted {
     version(Windows) {
-        import core.sys.windows.windef : DWORD;
         import core.sys.windows.winbase : GetLastError;
 
-        DWORD transferredBytes, flags;
-        auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.readOverlapped, &transferredBytes, false, &flags);
+        bool wasAccepted;
 
-        if(!result) {
-            socket.state.guard(() {
-                socket.state.notifiedOfReadComplete(socket.state);
-            });
+        if(socket.state.hasJustBeenAccepted) {
+            logger.debug_("Peer socket has been accepted ", socket.state.handle, " on ", Thread.self);
+            // its now accepted!!!
 
-            auto error = GetLastError();
-            if (error == WSA_IO_INCOMPLETE) {
-                // no data?
-                return;
-            } else if (error == WSAENOTSOCK) {
-                logger.debug_("Handle not a socket message ", socket.state.handle, " on ", Thread.self);
-                // ok just in case lets just unpin it
-                socket.state.unpin;
-                return;
-            } else if (error == WSA_OPERATION_ABORTED) {
-                logger.debug_("WSA operation aborted ", socket.state.handle, " on ", Thread.self);
-                return;
-            } else {
-                logger.warning("Unknown read socket error with code ", error, " for ", socket.state.handle, " on ", Thread.self);
-                return;
-            }
-        } else if (transferredBytes == 0) {
-            // peer closed connection
+            socket.state.uponAccept(socket.state);
 
-            logger.debug_("Peer closed socket ", socket.state.handle, " on ", Thread.self);
-            // ok just in case lets just unpin it
-            socket.state.unpin;
-            return;
-        } else {
-            logger.debug_("Read from socket ", transferredBytes, " with flags ", flags, " for ", socket.state.handle, " on ", Thread.self);
-            socket.state.guard(() { socket.state.rawReading.complete(socket.state, transferredBytes); });
+            socket.state.hasJustBeenAccepted = false;
+            wasAccepted = true;
         }
-    } else
-        assert(0);
-}
 
-void handleSocketWrite(Socket socket) @trusted {
-    version(Windows) {
-        import core.sys.windows.windef : DWORD;
-        import core.sys.windows.winbase : GetLastError;
-
-        DWORD transferredBytes, flags;
-        auto result = WSAGetOverlappedResult(socket.state.handle, &socket.state.writeOverlapped, &transferredBytes, false, &flags);
-
-        if(result == 0) {
-            auto error = GetLastError();
-            if(error == WSA_IO_INCOMPLETE) {
-                // no data?
-                logger.debug_("WSA wrote no data ", socket, " on ", Thread.self);
-                return;
-            } else if(error == WSAENOTSOCK) {
-                logger.debug_("Handle not a socket message ", socket.state.handle, " on ", Thread.self);
+        if(transferredBytes == 0) {
+            if(!wasAccepted) {
+                // peer closed connection
+                logger.debug_("Peer closed socket ", socket.state.handle, " on ", Thread.self);
                 // ok just in case lets just unpin it
-                socket.state.unpin;
-                return;
-            } else {
-                logger.warning("Unknown write socket error with code ", error, " ", socket.state.handle, " ", Thread.self);
-                return;
+                socket.state.unpinGuarded;
             }
         } else {
-            logger.debug_("Written on socket ", transferredBytes, " with flags ", flags, " for ",
-                    socket.state.handle, " on ", Thread.self);
-
-            version(none) {
-                socket.state.rawWritingState.protect(() {
-                    socket.state.rawWritingState.complete(transferredBytes);
-                    if(socket.state.rawWritingState.haveData)
-                        socket.state.triggerWrite(socket.state);
-                    return true;
-                });
-            } else {
-                socket.state.guard(() { socket.state.rawWriting.complete(socket.state, transferredBytes); });
-            }
+            logger.debug_("Read from socket ", transferredBytes, " for ", socket.state.handle, " on ", Thread.self);
+            socket.state.rawReading.complete(socket.state, transferredBytes);
         }
     } else
         assert(0);

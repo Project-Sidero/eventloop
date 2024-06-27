@@ -359,6 +359,8 @@ export @safe nothrow @nogc:
         ret.state = allocator.make!SocketState(allocator, protocol, true);
         ret.state.localAddress = localAddress;
         ret.state.remoteAddress = remoteAddress;
+        ret.state.hasJustBeenAccepted = true;
+        ret.state.cameFromServer = true;
 
         return ret;
     }

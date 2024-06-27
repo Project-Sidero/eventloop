@@ -438,7 +438,6 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
                 Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
                 acquiredSocket.state.handle = acceptedSocket;
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
-                acquiredSocket.state.cameFromServer = true;
 
                 if(!acquiredSocket.state.keepAReadAlwaysGoing) {
                     if(acquiredSocket.state.onCloseEvent is WSA_INVALID_EVENT) {

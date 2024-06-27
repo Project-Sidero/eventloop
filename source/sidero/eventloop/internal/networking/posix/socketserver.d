@@ -433,7 +433,6 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
 
         Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
         acquiredSocket.state.fd = acceptedSocket;
-        acquiredSocket.state.cameFromServer = true;
 
         if(!listenSocketState.fallbackCertificate.isNull) {
             if(!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,

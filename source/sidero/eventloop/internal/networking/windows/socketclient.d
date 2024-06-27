@@ -51,18 +51,25 @@ struct PlatformSocket {
         addSocketToRetrigger(socket);
     }
 
-    // NOTE: must not be guarded
-    package(sidero.eventloop) {
+    package(sidero.eventloop.internal) {
+        // NOTE: must not be guarded
         void haveBeenRetriggered(scope SocketState* socketState) scope {
             isWaitingForRetrigger = false;
 
             socketState.guard(&socketState.performReadWrite);
         }
+
+        // needs guarding
+        void uponAccept(scope SocketState* socketState) scope {
+
+        }
     }
 
     void initiateAConstantlyRunningReadRequest(scope SocketState* socketState) scope @trusted {
         version(Windows) {
-            if(this.havePendingAlwaysWaitingRead || this.havePendingRead)
+            import sidero.base.internal.atomic : atomicLoad;
+
+            if(atomicLoad(socketState.isClosed) || this.havePendingAlwaysWaitingRead || this.havePendingRead)
                 return;
 
             this.readOverlapped = OVERLAPPED.init;
@@ -80,7 +87,7 @@ struct PlatformSocket {
 
             if(result == 0) {
                 // completed, IOCP will be notified of completion
-                logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
+                logger.trace("Immediate completion of read ", socketState.handle, " on ", Thread.self);
             } else {
                 const errorCode = WSAGetLastError();
 
@@ -102,26 +109,23 @@ struct PlatformSocket {
                 case WSAEFAULT:
                 case WSAEINPROGRESS:
                 case WSAEOPNOTSUPP:
+                    havePendingAlwaysWaitingRead = false;
+
                     // these are all failure modes for a socket
                     // we must make sure to tell the socket that we are no longer connected
                     logger.info("Failed to read initiate closing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
                     socketState.unpin;
-                    break;
+                    return;
 
-                case WSAEWOULDBLOCK:
-                    // we cannot read right now, so we'll say none is read and attempt again later
-                    socketState.needToBeRetriggered(socketState);
-                    logger.debug_("Reading failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
-                    break;
-
-                case WSA_IO_PENDING:
+                case WSAEWOULDBLOCK, WSA_IO_PENDING:
                     // this is okay, its delayed via IOCP
                     logger.debug_("Reading delayed via IOCP for ", socketState.handle, " on ", Thread.self);
-                    break;
+                    return;
 
                 default:
+                    havePendingAlwaysWaitingRead = false;
                     logger.notice("Unknown error while reading ", errorCode, " for ", socketState.handle, " on ", Thread.self);
-                    break;
+                    return;
                 }
             }
         } else
