@@ -37,16 +37,11 @@ export @safe nothrow @nogc:
 
     ///
     bool isNull() scope const {
-        return pair.isNull;
-    }
-
-    ///
-    bool canInstance() scope const {
         return pair.canInstance();
     }
 
     ///
-    InstanceableCoroutine!ResultType makeInstance(return scope RCAllocator allocator, return scope Args args) scope @trusted {
+    Future!ResultType makeInstance(return scope RCAllocator allocator, return scope Args args) scope @trusted {
         if (!pair.canInstance)
             return typeof(return).init;
 
@@ -56,7 +51,7 @@ export @safe nothrow @nogc:
         ArgsStorage!Args argsStorage;
         argsStorage.values = args;
 
-        InstanceableCoroutine!ResultType ret;
+        Future!ResultType ret;
         ret.pair.descriptor = this.pair.descriptor;
 
         if (this.constructionState.isNull) {
@@ -106,60 +101,6 @@ export @safe nothrow @nogc:
         ret.pair.rc(true);
         cstate.rc(true);
         return ret;
-    }
-
-    ///
-    bool isComplete() scope {
-        return this.isNull() || pair.isComplete();
-    }
-
-    ///
-    CoroutineCondition condition() scope {
-        if (pair.isWaiting)
-            return pair.state.base.conditionToContinue;
-        else
-            return typeof(return).init;
-    }
-
-    ///
-    Future!ResultType asFuture() return scope @trusted {
-        Future!ResultType ret;
-        ret.pair = this.pair;
-        ret.pair.rc(true);
-        return ret;
-    }
-
-    ///
-    GenericCoroutine asGeneric() return scope {
-        GenericCoroutine ret;
-        ret.pair = this.pair.asGeneric();
-        ret.pair.rc(true);
-        return ret;
-    }
-
-    ///
-    Result!ResultType result() {
-        if (isNull)
-            return typeof(return)(NullPointerException("Coroutine not instantiated"));
-        return this.pair.state.result;
-    }
-
-    /// Execute the coroutine step by step. Warning: you must handle condition to continue prior.
-    ErrorResult unsafeResume() scope @system {
-        return pair.resume;
-    }
-
-    /**
-        Blocks until coroutine is complete, have value or timeout elapses.
-
-        Warning: you must not be a worker/event waiting thread.
-
-        May return early, check for if it actually is complete.
-    */
-    void blockUntilCompleteOrHaveValue(Duration timeout = Duration.max) scope @system {
-        if (isNull)
-            return;
-        pair.blockUntilCompleteOrHaveValue(timeout);
     }
 
     @disable auto opCast(T)();

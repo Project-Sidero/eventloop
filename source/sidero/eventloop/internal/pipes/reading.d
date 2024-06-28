@@ -66,8 +66,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
             return false;
 
         auto ifu = acquireInstantiableFuture!(Slice!ubyte);
-        auto ifui = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
-        future = ifui.asFuture;
+        future = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
 
         cast(void)waitOnTrigger(future, triggerForHandler);
         assert(triggerForHandler !is null);
@@ -85,8 +84,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
             return false;
 
         auto ifu = acquireInstantiableFuture!(Slice!ubyte);
-        auto ifui = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
-        future = ifui.asFuture;
+        future = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
 
         cast(void)waitOnTrigger(future, triggerForHandler);
         assert(triggerForHandler !is null);

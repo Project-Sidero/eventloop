@@ -377,7 +377,7 @@ Result!Process executeWindows(T)(scope String_UTF8 executable, scope String_UTF8
             CloseHandle(processInformation.hThread);
 
             auto instantiableFuture = acquireInstantiableFuture!int;
-            ret.state.result = instantiableFuture.makeInstance(allocator, &ret.state.resultStorage).asFuture;
+            ret.state.result = instantiableFuture.makeInstance(allocator, &ret.state.resultStorage);
 
             auto waitError = waitOnTrigger(ret.state.result, ret.state.resultStorage);
             assert(waitError);

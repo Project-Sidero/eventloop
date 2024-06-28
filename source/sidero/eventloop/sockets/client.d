@@ -246,7 +246,7 @@ struct Socket {
         Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
-        if (!onConnect.canInstance)
+        if (onConnect.isNull)
             return typeof(return)(MalformedInputException("On connect coroutine cannot be null"));
 
         if (allocator.isNull)

@@ -74,7 +74,7 @@ struct ListenSocket {
         bool reuseAddr = true, Optional!Duration keepAliveInterval = Optional!Duration.init,
         bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) @trusted {
 
-        if (!onAccept.canInstance)
+        if (onAccept.isNull)
             return typeof(return)(MalformedInputException("On accept coroutine cannot be null"));
 
         if (allocator.isNull)
