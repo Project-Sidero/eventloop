@@ -9,6 +9,7 @@ import sidero.base.allocators;
 import sidero.base.internal.atomic;
 import sidero.base.typecons : Optional;
 import sidero.base.datetime.duration;
+import sidero.base.errors;
 
 @safe nothrow @nogc:
 
@@ -97,5 +98,25 @@ struct ListenSocketState {
 
     bool startUp(bool reuseAddr, Optional!Duration keepAlive) scope @trusted {
         return listenOnAddress(&this, reuseAddr, keepAlive);
+    }
+}
+
+struct ListenSocketPair {
+    ListenSocket listenSocket;
+    ResultReference!PlatformListenSocket perSocket;
+
+    @safe nothrow @nogc:
+
+    this(return scope ref ListenSocketPair other) scope @trusted {
+        this.tupleof = other.tupleof;
+    }
+
+    void opAssign(return scope ListenSocketPair other) scope @trusted {
+        this.destroy;
+        this.__ctor(other);
+    }
+
+    bool isNull() scope const {
+        return listenSocket.isNull;
     }
 }

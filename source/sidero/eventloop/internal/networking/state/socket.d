@@ -1,5 +1,6 @@
 module sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.internal.networking.state.defs;
+import sidero.eventloop.internal.networking.state.listensocket;
 import sidero.eventloop.internal.networking.state.writing;
 import sidero.eventloop.internal.networking.state.encryption;
 import sidero.eventloop.internal.pipes.reading;
@@ -29,7 +30,7 @@ struct SocketState {
     shared(bool) isAlive, isShutdown;
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
-    ListenSocket listenSocket;
+    ListenSocketPair listenSocketPair;
     bool hasJustBeenAccepted;
 
     WritingState writing;
@@ -58,11 +59,11 @@ struct SocketState {
         logAssert(rawWriting.initialize, "Could not initialize raw writing for socket");
     }
 
-    this(return scope RCAllocator allocator, ListenSocket listenSocket) scope {
+    this(return scope RCAllocator allocator, ListenSocketPair listenSocketPair) scope {
         import sidero.base.internal.logassert;
 
-        this(allocator, listenSocket.state.protocol);
-        this.listenSocket = listenSocket;
+        this(allocator, listenSocketPair.listenSocket.state.protocol);
+        this.listenSocketPair = listenSocketPair;
     }
 
     ~this() scope {

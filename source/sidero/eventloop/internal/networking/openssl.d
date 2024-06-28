@@ -152,7 +152,7 @@ struct OpenSSLEncryptionStateImpl {
             SSL_set_verify(openSSL, SSL_VERIFY_NONE, null);
         }
 
-        if(socketState.listenSocket.isNull) {
+        if(socketState.listenSocketPair.isNull) {
             SSL_set_connect_state(openSSL);
 
             this.currentSniHostname = socketState.encryption.sniHostname.get;
@@ -191,7 +191,7 @@ struct OpenSSLEncryptionStateImpl {
                 gotCerts = true;
             });
 
-            if(!gotCerts && !socketState.listenSocket.isNull) {
+            if(!gotCerts && !socketState.listenSocketPair.isNull) {
                 logger.info("Failed to initialize openssl TLS certificates for socket ", socketState.handle, " on ", Thread.self);
                 socketState.close(true);
                 return;

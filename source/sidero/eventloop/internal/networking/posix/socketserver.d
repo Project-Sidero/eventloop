@@ -265,7 +265,10 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
     version(Posix) {
         import core.sys.posix.poll;
 
-        ListenSocketState* listenSocketState = cast(ListenSocketState*)user;
+        ListenSocket listenSocket;
+        listenSocket.state = cast(ListenSocketState*)user;
+        listenSocket.state.rc(true);
+
         auto perSockState = listenSocketState.platformSockets[cast(PlatformListenSocketKey)handle];
         assert(perSockState);
 
@@ -273,7 +276,8 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
 
         if(revent != 0) {
             if((revent & POLLIN) == POLLIN) {
-                onAccept(listenSocketState, perSockState);
+                ListenSocketPair pair = ListenSocketPair(listenSocket, perSockState);
+                onAccept(pair);
             } else if((revent & POLLNVAL) == POLLNVAL || (revent & POLLHUP) == POLLHUP) {
                 logger.debug_("Listen socket closed ", perSockState.handle, " on ", Thread.self);
                 listenSocketState.unpin();
@@ -286,18 +290,18 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
         assert(0);
 }
 
-void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket perSockState) @trusted {
+void onAccept(ListenSocketPair listenSocketPair) @trusted {
     version(Posix) {
         import sidero.eventloop.tasks.workers : registerAsTask;
         import sidero.eventloop.internal.event_waiting;
 
-        assert(perSockState);
+        assert(listenSocketPair.perSock);
         short addressFamily, socketType, socketProtocol;
 
         {
             bool notRecognized;
 
-            perSockState.address.onNetworkOrder((uint value) @trusted {
+            listenSocketPair.perSock.address.onNetworkOrder((uint value) @trusted {
                 //ipv4
                 addressFamily = AF_INET;
             }, (ushort[8] value) @trusted {
@@ -318,13 +322,13 @@ void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket pe
             });
 
             if(notRecognized) {
-                logger.error("Did not recognize network address type for accept ", perSockState.address, " for ",
-                        perSockState.handle, " on ", Thread.self);
+                logger.error("Did not recognize network address type for accept ", listenSocketPair.perSock.address,
+                        " for ", listenSocketPair.perSock.handle, " on ", Thread.self);
                 return;
             }
         }
 
-        final switch(listenSocket.state.protocol) {
+        final switch(listenSocketPair.listenSocket.state.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -339,12 +343,12 @@ void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket pe
         enum SockAddress6Size = sockaddr_in6.sizeof;
         enum SockAddressMaxSize = SockAddress6Size > SockAddress4Size ? SockAddress6Size : SockAddress4Size;
 
-        int acceptedSocket = accept(perSockState.fd, null, null);
+        int acceptedSocket = accept(listenSocketPair.perSock.fd, null, null);
         NetworkAddress localAddress, remoteAddress;
 
         if(acceptedSocket == -1) {
-            logger.error("Error could not accept socket with error ", perSockState.handle, " for ",
-                    perSockState.handle, " with error ", errno, " on ", Thread.self);
+            logger.error("Error could not accept socket with error ", listenSocketPair.perSock.handle, " for ",
+                    listenSocketPair.perSock.handle, " with error ", errno, " on ", Thread.self);
             return;
         }
 
@@ -356,12 +360,12 @@ void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket pe
 
             if(getsockname(acceptedSocket, cast(sockaddr*)localBuffer.ptr, &localAddressSize) == -1) {
                 logger.notice("Did not recognize a local IP address for accepted socket ", acceptedSocket, " error ",
-                        errno, " for ", perSockState.handle, " on ", Thread.self);
+                        errno, " for ", listenSocketPair.perSock.handle, " on ", Thread.self);
                 close(acceptedSocket);
                 return;
             } else if(getpeername(acceptedSocket, cast(sockaddr*)remoteBuffer.ptr, &remoteAddressSize) == -1) {
                 logger.notice("Did not recognize a remote IP address for accepted socket ", acceptedSocket, " error ",
-                        errno, " for ", perSockState.handle, " on ", Thread.self);
+                        errno, " for ", listenSocketPair.perSock.handle, " on ", Thread.self);
                 close(acceptedSocket);
                 return;
             }
@@ -422,24 +426,24 @@ void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket pe
 
             if(notRecognized) {
                 logger.notice("Did not recognize an IP address for accepted socket ", acceptedSocket, " local ",
-                        localAddress, " remote ", remoteAddress, " for ", perSockState.handle, " on ", Thread.self);
+                        localAddress, " remote ", remoteAddress, " for ", listenSocketPair.perSock.handle, " on ", Thread.self);
                 close(acceptedSocket);
                 return;
             } else {
                 logger.debug_("Accepted socket addresses ", acceptedSocket, " local ", localAddress, " remote ",
-                        remoteAddress, " for ", perSockState.handle, " on ", Thread.self);
+                        remoteAddress, " for ", listenSocketPair.perSock.handle, " on ", Thread.self);
             }
         }
 
-        Socket acquiredSocket = Socket.fromListen(listenSocket, localAddress, remoteAddress);
+        Socket acquiredSocket = Socket.fromListen(listenSocketPair, localAddress, remoteAddress);
         acquiredSocket.state.fd = acceptedSocket;
 
-        if(!listenSocket.state.fallbackCertificate.isNull) {
+        if(!listenSocketPair.listenSocket.state.fallbackCertificate.isNull) {
             if(!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
-                    listenSocket.state.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
-                    listenSocket.state.encryption, listenSocket.state.validateCertificates)) {
+                    listenSocketPair.listenSocket.state.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
+                    listenSocketPair.listenSocket.state.encryption, listenSocketPair.listenSocket.state.validateCertificates)) {
                 logger.notice("Could not initialize encryption on socket ", acceptedSocket, " for ",
-                        perSockState.handle, " on ", Thread.self);
+                        listenSocketPair.perSock.handle, " on ", Thread.self);
                 close(acceptedSocket);
                 return;
             }
@@ -453,7 +457,7 @@ void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket pe
         addEventWaiterHandle(acquiredSocket.state.handle, &handleSocketEvent, acquiredSocket.state);
         acquiredSocket.state.pin();
 
-        auto acceptSocketCO = listenSocket.state.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
+        auto acceptSocketCO = listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
         registerAsTask(acceptSocketCO);
     } else
         assert(0);

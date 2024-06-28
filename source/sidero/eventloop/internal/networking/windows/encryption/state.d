@@ -84,12 +84,12 @@ struct EncryptionStateWinCrypt {
                 currentSniHostname = socketState.encryption.sniHostname.decoded.byUTF16.asReadOnly;
             }
 
-            auto credDirection = socketState.listenSocket.isNull ? SECPKG_CRED_OUTBOUND : SECPKG_CRED_INBOUND;
+            auto credDirection = socketState.listenSocketPair.isNull ? SECPKG_CRED_OUTBOUND : SECPKG_CRED_INBOUND;
 
             PCCERT_CONTEXT certificateContext;
             TLS_PARAMETERS[1] tlsParameters;
 
-            if(socketState.listenSocket.isNull) {
+            if(socketState.listenSocketPair.isNull) {
                 enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT |
                     SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_2_CLIENT;
 
@@ -121,7 +121,7 @@ struct EncryptionStateWinCrypt {
 
             SCH_CREDENTIALS tlsCredentials;
             tlsCredentials.dwVersion = SCH_CREDENTIALS_VERSION;
-            tlsCredentials.cCreds = (!socketState.listenSocket.isNull || !socketState.encryption.currentCertificate.isNull) ? 1 : 0;
+            tlsCredentials.cCreds = (!socketState.listenSocketPair.isNull || !socketState.encryption.currentCertificate.isNull) ? 1 : 0;
             tlsCredentials.paCred = &certificateContext;
             tlsCredentials.cTlsParameters = 1;
             tlsCredentials.pTlsParameters = tlsParameters.ptr;
@@ -129,7 +129,7 @@ struct EncryptionStateWinCrypt {
             if(socketState.encryption.validateCertificates) {
                 tlsCredentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION;
             } else {
-                if(socketState.listenSocket.isNull)
+                if(socketState.listenSocketPair.isNull)
                     tlsCredentials.dwFlags = SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_SERVERNAME_CHECK;
                 else
                     tlsCredentials.dwFlags = 0;
@@ -270,7 +270,7 @@ struct EncryptionStateWinCrypt {
     bool negotiate(scope SocketState* socketState) scope {
         // returns if it did any work (consumed or written something)
         version(Windows) {
-            if(socketState.listenSocket.isNull)
+            if(socketState.listenSocketPair.isNull)
                 return negotationState.negotiateClient(socketState);
             else
                 return negotationState.negotiateServer(socketState);

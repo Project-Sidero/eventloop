@@ -101,7 +101,7 @@ struct EncryptionState {
         bool acquireContext, noDataForSNI;
 
         if(this.encryptionEngine == Certificate.Type.None || this.encryptionEngine == Certificate.Type.Default) {
-            if(!socketState.listenSocket.isNull) {
+            if(!socketState.listenSocketPair.isNull) {
                 if(socketState.encryption.acquireCertificateForSNI.isNull) {
                     this.currentCertificate = this.fallbackCertificate;
                 } else {

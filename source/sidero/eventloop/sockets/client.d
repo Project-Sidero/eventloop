@@ -262,13 +262,13 @@ struct Socket {
         return ret;
     }
 
-    package(sidero.eventloop) static Socket fromListen(ListenSocket listenSocket, NetworkAddress localAddress,
+    package(sidero.eventloop) static Socket fromListen(ListenSocketPair listenSocketPair, NetworkAddress localAddress,
         NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
 
         Socket ret;
-        ret.state = allocator.make!SocketState(allocator, listenSocket);
+        ret.state = allocator.make!SocketState(allocator, listenSocketPair);
         ret.state.localAddress = localAddress;
         ret.state.remoteAddress = remoteAddress;
         ret.state.hasJustBeenAccepted = true;
