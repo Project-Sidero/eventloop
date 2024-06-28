@@ -1,23 +1,21 @@
-module sidero.eventloop.sockets;
+module sidero.eventloop.sockets.client;
+import sidero.eventloop.sockets.control;
+import sidero.eventloop.sockets.server;
 import sidero.eventloop.internal.networking.state;
-import sidero.eventloop.internal.networking.platform;
-import sidero.eventloop.certificates;
-import sidero.eventloop.coroutine.instanceable;
-import sidero.eventloop.coroutine.future;
-import sidero.eventloop.closure.callable;
 import sidero.eventloop.handles;
-import sidero.base.containers.dynamicarray;
-import sidero.base.path.networking;
+import sidero.eventloop.certificates;
+import sidero.eventloop.closure.callable;
+import sidero.eventloop.coroutine.future;
+import sidero.eventloop.coroutine.instanceable;
 import sidero.base.path.hostname;
-import sidero.base.allocators;
 import sidero.base.attributes;
 import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
+import sidero.base.allocators;
 import sidero.base.errors;
-import sidero.base.internal.atomic;
 import sidero.base.text;
-import sidero.base.typecons : Optional;
-import sidero.base.datetime.duration;
+import sidero.base.path.networking;
+import sidero.base.internal.atomic;
 
 export @safe nothrow @nogc:
 
@@ -25,92 +23,12 @@ export @safe nothrow @nogc:
 enum SocketHandleIdentifier = SystemHandleType.from("socket");
 
 ///
-struct ListenSocket {
-    package(sidero.eventloop) @PrintIgnore @PrettyPrintIgnore {
-        ListenSocketState* state;
-    }
-
-export @safe nothrow @nogc:
-
-    ///
-    this(return scope ref ListenSocket other) scope {
-        this.state = other.state;
-
-        if (state !is null)
-            state.rc(true);
-    }
-
-    ///
-    ~this() scope {
-        if (state !is null)
-            state.rc(false);
-    }
-
-    ///
-    bool isNull() scope const {
-        return state is null;
-    }
-
-    ///
-    NetworkAddress address() scope {
-        if (isNull)
-            return NetworkAddress.init;
-        return state.address;
-    }
-
-    ///
-    bool isAlive() scope {
-        return !isNull && atomicLoad(state.isAlive) > 0;
-    }
-
-    /**
-        Listen on a set of network addresses with optional encryption using a coroutine handler per socket.
-
-        Params:
-            onAccept             = The coroutine that will be instanced with a socket.
-            address              = The address to listen on, hostnames must map directly to a network address of this machine (such as localhost).
-            protocol             = The socket protocol (TCP, UDP, ext.) to listen via, only set this if you don't need to do per-socket certificates.
-            encryption           = The encryption protocol to apply to any connections established.
-            fallbackCertificate  = If no certificate can be found, fallback to this one.
-            reuseAddr            = Set the listen socket as having a reusable address, ideally with load balancing between processes.
-            keepAliveInterval    = Start keep alive with a provided interval. Not all platforms support setting the interval so use a non-zero value.
-            validateCertificates = Any certificates that are seen for encryption, do they need to validate? (Turn off for unsigned).
-            allocator            = The memory allocator to use.
-
-        Returns: The listen socket or the error.
-    */
-    static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address, Socket.Protocol protocol,
-            Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
-            bool reuseAddr = true, Optional!Duration keepAliveInterval = Optional!Duration.init,
-            bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) @trusted {
-
-        if (!onAccept.canInstance)
-            return typeof(return)(MalformedInputException("On accept coroutine cannot be null"));
-
-        if (allocator.isNull)
-            allocator = globalAllocator();
-
-        if (!ensureItIsSetup)
-            return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
-
-        ListenSocket ret;
-        ret.state = allocator.make!ListenSocketState(allocator, onAccept, address, protocol, encryption,
-                fallbackCertificate, validateCertificates);
-
-        if (!ret.state.startUp(reuseAddr, keepAliveInterval))
-            return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
-
-        return typeof(return)(ret);
-    }
-}
-
-///
 struct Socket {
     package(sidero.eventloop) @PrintIgnore @PrettyPrintIgnore {
         SocketState* state;
     }
 
-export @safe nothrow @nogc:
+    export @safe nothrow @nogc:
 
     ///
     this(return scope ref Socket other) scope nothrow {
@@ -234,12 +152,12 @@ export @safe nothrow @nogc:
         See_Also: addEncryption, addEncryptionServer
     */
     ErrorResult addEncryptionClient(Hostname sniHostname = Hostname.init, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
-            Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
+        Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
         if (!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
         if (!state.encryption.addEncryption(this.state, sniHostname, certificate, Closure!(Certificate, String_UTF8)
-                .init, encryption, validateCertificates))
+        .init, encryption, validateCertificates))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
@@ -250,7 +168,7 @@ export @safe nothrow @nogc:
         See_Also: addEncryption, addEncryptionClient
     */
     ErrorResult addEncryptionServer(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
-            Certificate fallbackCertificate = Certificate.init, Closure!(Certificate, String_UTF8) acquireCertificateForSNI) scope {
+        Certificate fallbackCertificate = Certificate.init, Closure!(Certificate, String_UTF8) acquireCertificateForSNI) scope {
         if (!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
@@ -325,7 +243,7 @@ export @safe nothrow @nogc:
         Returns: The connected socket or the error.
     */
     static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
-            Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
+        Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
         if (!onConnect.canInstance)
@@ -345,7 +263,7 @@ export @safe nothrow @nogc:
     }
 
     package(sidero.eventloop) static Socket fromListen(ListenSocket listenSocket, NetworkAddress localAddress,
-            NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
+        NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
 
@@ -400,57 +318,6 @@ export @safe nothrow @nogc:
     ///
     void toStringPretty(Sink)(scope ref Sink sink) @trusted {
         sink.formattedWrite("Socket({:p}@{:p}, isAlive={:s}, isReadInProgress={:s})", this.unsafeGetHandle().handle,
-                cast(void*)this.state, this.isAlive, this.isReadInProgress);
+        cast(void*)this.state, this.isAlive, this.isReadInProgress);
     }
-}
-
-///
-ErrorResult startUpNetworking() @trusted {
-    mutex.pureLock;
-    scope (exit)
-        mutex.unlock;
-
-    if (isInitialized)
-        return ErrorResult.init;
-
-    if (!startUpNetworkingMechanism)
-        return ErrorResult(UnknownPlatformBehaviorException("Could not start networking"));
-
-    isInitialized = true;
-    return ErrorResult.init;
-}
-
-///
-void shutdownNetworking() @trusted {
-    import sidero.eventloop.internal.event_waiting;
-
-    mutex.pureLock;
-    scope (exit)
-        mutex.unlock;
-
-    if (!isInitialized)
-        return;
-
-    shutdownEventWaiterThreads;
-    shutdownNetworkingMechanism;
-    isInitialized = false;
-}
-
-private:
-import sidero.base.synchronization.mutualexclusion;
-
-__gshared {
-    TestTestSetLockInline mutex;
-    bool isInitialized;
-}
-
-bool ensureItIsSetup() {
-    import sidero.eventloop.tasks.workers;
-
-    if (!startUpNetworking)
-        return false;
-    else if (!startWorkers(0))
-        return false;
-
-    return true;
 }

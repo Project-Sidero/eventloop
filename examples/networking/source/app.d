@@ -1,5 +1,6 @@
 import sidero.base.text;
 import sidero.eventloop.sockets;
+import sidero.eventloop.sockets.control;
 import sidero.eventloop.certificates;
 import sidero.eventloop.coroutine;
 import sidero.base.console;
