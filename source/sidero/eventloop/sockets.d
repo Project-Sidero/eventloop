@@ -304,7 +304,7 @@ export @safe nothrow @nogc:
             return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         Socket ret;
-        ret.state = allocator.make!SocketState(allocator, protocol, false);
+        ret.state = allocator.make!SocketState(allocator, protocol);
 
         auto errorResult = ret.state.startUp(address);
         if (!errorResult)
@@ -334,33 +334,26 @@ export @safe nothrow @nogc:
         if (allocator.isNull)
             allocator = globalAllocator();
 
-        if (!ensureItIsSetup)
-            return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
+        typeof(return) ret = Socket.connectTo(address, protocol, allocator);
 
-        Socket ret;
-        ret.state = allocator.make!SocketState(allocator, protocol, false);
+        if (ret) {
+            auto connectSocketCO = onConnect.makeInstance(allocator, ret);
+            registerAsTask(connectSocketCO);
+        }
 
-        auto errorResult = ret.state.startUp(address);
-        if (!errorResult)
-            return typeof(return)(errorResult.getError());
-
-        auto connectSocketCO = onConnect.makeInstance(RCAllocator.init, ret);
-        registerAsTask(connectSocketCO);
-
-        return typeof(return)(ret);
+        return ret;
     }
 
-    package(sidero.eventloop) static Socket fromListen(Protocol protocol, NetworkAddress localAddress,
+    package(sidero.eventloop) static Socket fromListen(ListenSocket listenSocket, NetworkAddress localAddress,
             NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
         if (allocator.isNull)
             allocator = globalAllocator();
 
         Socket ret;
-        ret.state = allocator.make!SocketState(allocator, protocol, true);
+        ret.state = allocator.make!SocketState(allocator, listenSocket);
         ret.state.localAddress = localAddress;
         ret.state.remoteAddress = remoteAddress;
         ret.state.hasJustBeenAccepted = true;
-        ret.state.cameFromServer = true;
 
         return ret;
     }

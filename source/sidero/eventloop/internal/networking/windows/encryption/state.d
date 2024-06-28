@@ -62,12 +62,12 @@ struct EncryptionStateWinCrypt {
 
 @safe nothrow @nogc:
 
-    ~this() scope {
+     ~this() scope {
     }
 
     void acquireCredentials(scope SocketState* socketState) scope @trusted {
         version(Windows) {
-            if (credentialHandleSet) {
+            if(credentialHandleSet) {
                 // cleanup the credential handle
 
                 FreeCredentialsHandle(&credentialHandle);
@@ -84,26 +84,12 @@ struct EncryptionStateWinCrypt {
                 currentSniHostname = socketState.encryption.sniHostname.decoded.byUTF16.asReadOnly;
             }
 
-            auto credDirection = socketState.cameFromServer ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND;
+            auto credDirection = socketState.listenSocket.isNull ? SECPKG_CRED_OUTBOUND : SECPKG_CRED_INBOUND;
 
             PCCERT_CONTEXT certificateContext;
             TLS_PARAMETERS[1] tlsParameters;
 
-            if(socketState.cameFromServer) {
-                enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_1_SERVER |
-                    SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_2_SERVER;
-
-                static immutable Flags = [
-                    All, All & (~(SP_PROT_TLS1_SERVER | SP_PROT_DTLS1_SERVER)),
-                    All & (~(SP_PROT_TLS1_1_SERVER | SP_PROT_DTLS1_SERVER)),
-                    All & (~(SP_PROT_TLS1_2_SERVER | SP_PROT_DTLS1_2_SERVER)),
-                    All & (~(SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_2_SERVER)),
-                    All & (~(SP_PROT_TLS1_SERVER | SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER |
-                            SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_2_SERVER))
-                ];
-                static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
-                tlsParameters[0].grbitDisabledProtocols = Flags[socketState.encryption.currentProtocol];
-            } else {
+            if(socketState.listenSocket.isNull) {
                 enum All = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT |
                     SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT | SP_PROT_DTLS1_CLIENT | SP_PROT_DTLS1_2_CLIENT;
 
@@ -117,11 +103,25 @@ struct EncryptionStateWinCrypt {
                 ];
                 static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
                 tlsParameters[0].grbitDisabledProtocols = Flags[socketState.encryption.currentProtocol];
+            } else {
+                enum All = SP_PROT_SSL2_SERVER | SP_PROT_SSL3_SERVER | SP_PROT_TLS1_SERVER | SP_PROT_TLS1_1_SERVER |
+                    SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_2_SERVER;
+
+                static immutable Flags = [
+                    All, All & (~(SP_PROT_TLS1_SERVER | SP_PROT_DTLS1_SERVER)),
+                    All & (~(SP_PROT_TLS1_1_SERVER | SP_PROT_DTLS1_SERVER)),
+                    All & (~(SP_PROT_TLS1_2_SERVER | SP_PROT_DTLS1_2_SERVER)),
+                    All & (~(SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_2_SERVER)),
+                    All & (~(SP_PROT_TLS1_SERVER | SP_PROT_TLS1_1_SERVER | SP_PROT_TLS1_2_SERVER |
+                            SP_PROT_TLS1_3_SERVER | SP_PROT_DTLS1_SERVER | SP_PROT_DTLS1_2_SERVER))
+                ];
+                static assert(Flags.length == __traits(allMembers, Socket.EncryptionProtocol).length);
+                tlsParameters[0].grbitDisabledProtocols = Flags[socketState.encryption.currentProtocol];
             }
 
             SCH_CREDENTIALS tlsCredentials;
             tlsCredentials.dwVersion = SCH_CREDENTIALS_VERSION;
-            tlsCredentials.cCreds = (socketState.cameFromServer || !socketState.encryption.currentCertificate.isNull) ? 1 : 0;
+            tlsCredentials.cCreds = (!socketState.listenSocket.isNull || !socketState.encryption.currentCertificate.isNull) ? 1 : 0;
             tlsCredentials.paCred = &certificateContext;
             tlsCredentials.cTlsParameters = 1;
             tlsCredentials.pTlsParameters = tlsParameters.ptr;
@@ -129,10 +129,10 @@ struct EncryptionStateWinCrypt {
             if(socketState.encryption.validateCertificates) {
                 tlsCredentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION;
             } else {
-                if(socketState.cameFromServer)
-                    tlsCredentials.dwFlags = 0;
-                else
+                if(socketState.listenSocket.isNull)
                     tlsCredentials.dwFlags = SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_SERVERNAME_CHECK;
+                else
+                    tlsCredentials.dwFlags = 0;
             }
 
             auto certificateHandle = socketState.encryption.currentCertificate.unsafeGetHandle;
@@ -249,7 +249,7 @@ struct EncryptionStateWinCrypt {
                 consumed = encrypted.length;
 
                 foreach_reverse(ref buffer; buffers) {
-                    if (buffer.BufferType == SECBUFFER_EXTRA) {
+                    if(buffer.BufferType == SECBUFFER_EXTRA) {
                         consumed -= buffer.cbBuffer;
                         break;
                     }
@@ -270,10 +270,10 @@ struct EncryptionStateWinCrypt {
     bool negotiate(scope SocketState* socketState) scope {
         // returns if it did any work (consumed or written something)
         version(Windows) {
-            if(socketState.cameFromServer)
-                return negotationState.negotiateServer(socketState);
-            else
+            if(socketState.listenSocket.isNull)
                 return negotationState.negotiateClient(socketState);
+            else
+                return negotationState.negotiateServer(socketState);
         } else
             assert(0);
     }

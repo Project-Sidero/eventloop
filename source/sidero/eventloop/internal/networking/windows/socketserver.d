@@ -371,7 +371,7 @@ void postAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket 
             logger.debug_("Accepted a socket ", acceptedSocket, " for ", perSockState.handle, " on ", Thread.self);
 
             // we'll setup the local/remote addresses later
-            Socket acquiredSocket = Socket.fromListen(listenSocket.state.protocol, NetworkAddress.init, NetworkAddress.init);
+            Socket acquiredSocket = Socket.fromListen(listenSocket, NetworkAddress.init, NetworkAddress.init);
             acquiredSocket.state.handle = acceptedSocket;
             acquiredSocket.state.listenSocketHandle = perSockState.handle;
             acquiredSocket.state.onAcceptCO = listenSocket.state.onAccept;

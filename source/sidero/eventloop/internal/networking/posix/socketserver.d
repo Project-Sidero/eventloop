@@ -286,7 +286,7 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
         assert(0);
 }
 
-void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformListenSocket perSockState) @trusted {
+void onAccept(ListenSocket listenSocket, ResultReference!PlatformListenSocket perSockState) @trusted {
     version(Posix) {
         import sidero.eventloop.tasks.workers : registerAsTask;
         import sidero.eventloop.internal.event_waiting;
@@ -324,7 +324,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
             }
         }
 
-        final switch(listenSocketState.protocol) {
+        final switch(listenSocket.state.protocol) {
         case Socket.Protocol.TCP:
             socketType = SOCK_STREAM;
             socketProtocol = IPPROTO_TCP;
@@ -431,13 +431,13 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
             }
         }
 
-        Socket acquiredSocket = Socket.fromListen(listenSocketState.protocol, localAddress, remoteAddress);
+        Socket acquiredSocket = Socket.fromListen(listenSocket, localAddress, remoteAddress);
         acquiredSocket.state.fd = acceptedSocket;
 
-        if(!listenSocketState.fallbackCertificate.isNull) {
+        if(!listenSocket.state.fallbackCertificate.isNull) {
             if(!acquiredSocket.state.encryption.addEncryption(acquiredSocket.state, Hostname.init,
-                    listenSocketState.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
-                    listenSocketState.encryption, listenSocketState.validateCertificates)) {
+                    listenSocket.state.fallbackCertificate, Closure!(Certificate, String_UTF8).init,
+                    listenSocket.state.encryption, listenSocket.state.validateCertificates)) {
                 logger.notice("Could not initialize encryption on socket ", acceptedSocket, " for ",
                         perSockState.handle, " on ", Thread.self);
                 close(acceptedSocket);
@@ -453,7 +453,7 @@ void onAccept(ListenSocketState* listenSocketState, ResultReference!PlatformList
         addEventWaiterHandle(acquiredSocket.state.handle, &handleSocketEvent, acquiredSocket.state);
         acquiredSocket.state.pin();
 
-        auto acceptSocketCO = listenSocketState.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
+        auto acceptSocketCO = listenSocket.state.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
         registerAsTask(acceptSocketCO);
     } else
         assert(0);

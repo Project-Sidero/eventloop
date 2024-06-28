@@ -29,7 +29,7 @@ struct SocketState {
     shared(bool) isAlive, isShutdown;
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
-    bool cameFromServer;
+    ListenSocket listenSocket;
     bool hasJustBeenAccepted;
 
     WritingState writing;
@@ -45,18 +45,24 @@ struct SocketState {
 
 @safe nothrow @nogc:
 
-    this(return scope RCAllocator allocator, Socket.Protocol protocol, bool cameFromServer) scope {
+    this(return scope RCAllocator allocator, Socket.Protocol protocol) scope {
         import sidero.base.internal.logassert;
 
         checkInit;
         this.allocator = allocator;
         this.refCount = 1;
         this.protocol = protocol;
-        this.cameFromServer = cameFromServer;
 
         logAssert(reading.initialize, "Could not initialize reading for socket");
         logAssert(rawReading.initialize, "Could not initialize raw reading for socket");
         logAssert(rawWriting.initialize, "Could not initialize raw writing for socket");
+    }
+
+    this(return scope RCAllocator allocator, ListenSocket listenSocket) scope {
+        import sidero.base.internal.logassert;
+
+        this(allocator, listenSocket.state.protocol);
+        this.listenSocket = listenSocket;
     }
 
     ~this() scope {
@@ -154,7 +160,7 @@ struct SocketState {
         logger.debug_("Starting read/write for ", this.handle, " on ", Thread.self);
 
         scope(exit) {
-            if (this.keepAReadAlwaysGoing)
+            if(this.keepAReadAlwaysGoing)
                 this.initiateAConstantlyRunningReadRequest(&this);
 
             logger.debug_("Done with read/write for ", this.handle, " on ", Thread.self);
@@ -198,6 +204,7 @@ struct SocketState {
     package(sidero.eventloop) {
         size_t amountToRead() scope {
             import std.algorithm : max;
+
             return max(this.encryption.amountOfBytesToRead(), 4096);
         }
 
