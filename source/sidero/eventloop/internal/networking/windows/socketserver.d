@@ -374,8 +374,6 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
             // we'll setup the local/remote addresses later
             Socket acquiredSocket = Socket.fromListen(listenSocketPair, NetworkAddress.init, NetworkAddress.init);
             acquiredSocket.state.handle = acceptedSocket;
-            acquiredSocket.state.listenSocketHandle = listenSocketPair.perSocket.handle;
-            acquiredSocket.state.onAcceptCO = listenSocketPair.listenSocket.state.onAccept;
 
             static if(!acquiredSocket.state.keepAReadAlwaysGoing) {
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();
@@ -424,7 +422,7 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
                 addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);
             }
 
-            if(acquiredSocket.state.onAcceptCO.isNull) {
+            version(all) {
                 auto acceptSocketCO = listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
                 registerAsTask(acceptSocketCO);
             }

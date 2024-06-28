@@ -4,7 +4,6 @@ import sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.internal.event_waiting;
 import sidero.eventloop.internal.workers.kernelwait.windows;
 import sidero.eventloop.internal.windows.bindings;
-import sidero.eventloop.coroutine.instanceable;
 import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.containers.readonlyslice;
@@ -20,13 +19,10 @@ import sidero.base.allocators;
 struct PlatformSocket {
     version(Windows) {
         SOCKET handle;
-        SOCKET listenSocketHandle;
         WSAEVENT onCloseEvent;
         OVERLAPPED readOverlapped, writeOverlapped;
         IOCPwork iocpWork;
     }
-
-    InstanceableCoroutine!(void, Socket) onAcceptCO;
 
     shared(bool) isClosed;
     bool isWaitingForRetrigger;
@@ -134,11 +130,15 @@ struct PlatformSocket {
             version(Windows) {
                 import sidero.eventloop.tasks.workers : registerAsTask;
 
-                auto result = setsockopt(this.handle, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, &this.listenSocketHandle, SOCKET.sizeof);
+                if (socket.state.listenSocketPair.isNull)
+                    return;
+
+                auto result = setsockopt(this.handle, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
+                        &socket.state.listenSocketPair.perSocket.handle, SOCKET.sizeof);
 
                 if(result == SOCKET_ERROR) {
-                    logger.debug_("Failed to configure accepted socket for listen socket with error ", WSAGetLastError(),
-                            " for ", this.handle, " for listen ", this.listenSocketHandle, " on ", Thread.self);
+                    logger.debug_("Failed to configure accepted socket for listen socket with error ", WSAGetLastError(), " for ",
+                            this.handle, " for listen ", socket.state.listenSocketPair.perSocket.handle, " on ", Thread.self);
                     socket.state.unpinGuarded;
                     return;
                 }
@@ -148,9 +148,8 @@ struct PlatformSocket {
                     return;
                 }
 
-                if (!this.onAcceptCO.isNull) {
-                    auto acceptSocketCO = this.onAcceptCO.makeInstance(RCAllocator.init, socket);
-                    this.onAcceptCO = typeof(this.onAcceptCO).init;
+                version(all) {
+                    auto acceptSocketCO = socket.state.listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, socket);
                     registerAsTask(acceptSocketCO);
                 }
             } else
