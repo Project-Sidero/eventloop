@@ -27,6 +27,7 @@ struct PlatformSocket {
     shared(bool) isClosed;
     bool isWaitingForRetrigger;
     bool havePendingAlwaysWaitingRead, havePendingRead;
+    bool isDelayedAccept;
 
     //enum keepAReadAlwaysGoing = false;
     enum keepAReadAlwaysGoing = true;
@@ -132,7 +133,7 @@ struct PlatformSocket {
             version(Windows) {
                 import sidero.eventloop.tasks.workers : registerAsTask;
 
-                if (socket.state.listenSocketPair.isNull)
+                if(socket.state.listenSocketPair.isNull)
                     return;
 
                 assert(socket.state.listenSocketPair.perSocket);
@@ -151,7 +152,7 @@ struct PlatformSocket {
                     return;
                 }
 
-                version(none) {
+                if(socket.state.isDelayedAccept) {
                     auto acceptSocketCO = socket.state.listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, socket);
                     registerAsTask(acceptSocketCO);
                 }
@@ -454,7 +455,7 @@ void forceClose(scope SocketState* socketState) @trusted {
 
 bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version(Windows) {
-        if (socketState.haveBeenShutdown())
+        if(socketState.haveBeenShutdown())
             return false;
 
         socketState.writeOverlapped = OVERLAPPED.init;
@@ -522,7 +523,7 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
 
 bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version(Windows) {
-        if (socketState.haveBeenShutdown())
+        if(socketState.haveBeenShutdown())
             return false;
 
         if(socketState.havePendingAlwaysWaitingRead) {

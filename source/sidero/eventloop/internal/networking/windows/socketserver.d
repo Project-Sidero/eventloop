@@ -19,6 +19,9 @@ import sidero.base.datetime.duration;
 
 alias PlatformListenSocketKey = void*;
 
+//enum CanAcceptLater = true;
+enum CanAcceptLater = false;
+
 struct PlatformListenSocket {
     version(Windows) {
         SOCKET handle;
@@ -239,7 +242,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
             uint eventsFlag = FD_CLOSE;
 
-            version(all) {
+            static if(!CanAcceptLater) {
                 eventsFlag |= FD_ACCEPT;
             }
 
@@ -261,7 +264,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
         listenSocketState.platformSockets[platformListenSocket.eventHandle] = platformListenSocket;
         addEventWaiterHandle(platformListenSocket.eventHandle, &handleListenSocketEvent, listenSocketState);
 
-        version(none) {
+        static if(CanAcceptLater) {
             ListenSocket listenSocket;
             listenSocket.state = listenSocketState;
             listenSocket.state.rc(true);
@@ -270,7 +273,7 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             assert(perSockState);
 
             ListenSocketPair pair = ListenSocketPair(listenSocket, perSockState);
-            postAccept(pair, 10);
+            postAccept(pair, 4);
         }
         return true;
     } else
@@ -377,18 +380,30 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
             Socket acquiredSocket = Socket.fromListen(listenSocketPair, NetworkAddress.init, NetworkAddress.init);
             acquiredSocket.state.handle = acceptedSocket;
 
-            ubyte[(SockAddressMaxSize * 2) + 32] buffer;
             DWORD received;
             OVERLAPPED overlapped;
 
-            auto result = AcceptEx(listenSocketPair.perSocket.handle, acceptedSocket, acquiredSocket.state.addressBuffer.ptr, 0,
-                    SockAddressMaxSize + 16, SockAddressMaxSize + 16, &received, &overlapped);
+            auto result = AcceptEx(listenSocketPair.perSocket.handle, acceptedSocket, acquiredSocket.state.addressBuffer.ptr,
+                    0, SockAddressMaxSize + 16, SockAddressMaxSize + 16, &received, &overlapped);
 
-            if(result != 0 && result != ERROR_IO_PENDING) {
-                logger.notice("Error could not accept socket with error ", listenSocketPair.perSocket.handle, " for ",
-                        listenSocketPair.perSocket.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
-                closesocket(acceptedSocket);
-                return;
+            if(result != 0) {
+                auto error = WSAGetLastError();
+
+                switch(error) {
+                case ERROR_IO_PENDING:
+                    static if(!CanAcceptLater)
+                        goto default;
+                    else {
+                        acceptedSocket.state.isDelayedAccept = true;
+                        break;
+                    }
+
+                default:
+                    logger.notice("Error could not accept socket with error ", listenSocketPair.perSocket.handle,
+                            " for ", listenSocketPair.perSocket.handle, " with error ", error, " on ", Thread.self);
+                    closesocket(acceptedSocket);
+                    return;
+                }
             }
 
             logger.debug_("Accepted a socket ", acceptedSocket, " for ", listenSocketPair.perSocket.handle, " on ", Thread.self);
@@ -440,12 +455,12 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
                 addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);
             }
 
-            version(all) {
+            if (acquiredSocket.state.isDelayedAccept) {
+                atomicIncrementAndLoad(listenSocketPair.perSocket.numberOfAccepts, 1);
+            } else {
                 auto acceptSocketCO = listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
                 registerAsTask(acceptSocketCO);
             }
-
-            atomicIncrementAndLoad(listenSocketPair.perSocket.numberOfAccepts, 1);
         } else
             assert(0);
     }

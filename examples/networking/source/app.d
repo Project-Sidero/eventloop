@@ -117,8 +117,10 @@ int main(string[] args) {
                     Socket.Protocol.TCP, Socket.EncryptionProtocol.None);
         }
 
-        if(!listenSocket)
+        if(!listenSocket) {
+            debugWriteln(listenSocket);
             return 5;
+        }
 
         atomicStore(haveACo, true);
     }
@@ -270,6 +272,7 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
         }
 
         {
+            assert(!state.socket.isNull);
             state.nextLine = state.socket.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
             assert(!state.nextLine.isNull);
 
