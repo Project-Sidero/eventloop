@@ -67,6 +67,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
         auto ifu = acquireInstantiableFuture!(Slice!ubyte);
         future = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
+        assert(!future.isNull);
 
         cast(void)waitOnTrigger(future, triggerForHandler);
         assert(triggerForHandler !is null);
@@ -85,6 +86,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
         auto ifu = acquireInstantiableFuture!(Slice!ubyte);
         future = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
+        assert(!future.isNull);
 
         cast(void)waitOnTrigger(future, triggerForHandler);
         assert(triggerForHandler !is null);
@@ -231,6 +233,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
         if(success) {
             assert(toTrigger !is null);
+            assert(triggerForHandler is null);
             cast(void)trigger(toTrigger, dataToCallWith);
         } else {
             assert(toTrigger is null);

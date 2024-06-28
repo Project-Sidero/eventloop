@@ -237,7 +237,13 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
                 logger.debug_("WSA accept/close event created ", platformListenSocket.handle, " on ", Thread.self);
             }
 
-            if(WSAEventSelect(platformListenSocket.handle, platformListenSocket.eventHandle, FD_ACCEPT | FD_CLOSE) == SOCKET_ERROR) {
+            uint eventsFlag = FD_CLOSE;
+
+            version(all) {
+                eventsFlag |= FD_ACCEPT;
+            }
+
+            if(WSAEventSelect(platformListenSocket.handle, platformListenSocket.eventHandle, eventsFlag) == SOCKET_ERROR) {
                 logger.notice("Error could not associated on accept/close event with listen socket accept event ",
                         platformListenSocket.handle, " with error ", WSAGetLastError(), " on ", Thread.self);
                 closesocket(platformListenSocket.handle);
@@ -254,6 +260,18 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
 
         listenSocketState.platformSockets[platformListenSocket.eventHandle] = platformListenSocket;
         addEventWaiterHandle(platformListenSocket.eventHandle, &handleListenSocketEvent, listenSocketState);
+
+        version(none) {
+            ListenSocket listenSocket;
+            listenSocket.state = listenSocketState;
+            listenSocket.state.rc(true);
+
+            auto perSockState = listenSocket.state.platformSockets[platformListenSocket.eventHandle];
+            assert(perSockState);
+
+            ListenSocketPair pair = ListenSocketPair(listenSocket, perSockState);
+            postAccept(pair, 10);
+        }
         return true;
     } else
         assert(0);
@@ -355,11 +373,15 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
                 return;
             }
 
+            // we'll setup the local/remote addresses later
+            Socket acquiredSocket = Socket.fromListen(listenSocketPair, NetworkAddress.init, NetworkAddress.init);
+            acquiredSocket.state.handle = acceptedSocket;
+
             ubyte[(SockAddressMaxSize * 2) + 32] buffer;
             DWORD received;
             OVERLAPPED overlapped;
 
-            auto result = AcceptEx(listenSocketPair.perSocket.handle, acceptedSocket, buffer.ptr, 0,
+            auto result = AcceptEx(listenSocketPair.perSocket.handle, acceptedSocket, acquiredSocket.state.addressBuffer.ptr, 0,
                     SockAddressMaxSize + 16, SockAddressMaxSize + 16, &received, &overlapped);
 
             if(result != 0 && result != ERROR_IO_PENDING) {
@@ -370,10 +392,6 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
             }
 
             logger.debug_("Accepted a socket ", acceptedSocket, " for ", listenSocketPair.perSocket.handle, " on ", Thread.self);
-
-            // we'll setup the local/remote addresses later
-            Socket acquiredSocket = Socket.fromListen(listenSocketPair, NetworkAddress.init, NetworkAddress.init);
-            acquiredSocket.state.handle = acceptedSocket;
 
             static if(!acquiredSocket.state.keepAReadAlwaysGoing) {
                 acquiredSocket.state.onCloseEvent = WSACreateEvent();

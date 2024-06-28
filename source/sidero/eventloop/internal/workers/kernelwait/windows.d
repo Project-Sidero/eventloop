@@ -227,8 +227,9 @@ void handleSocketReadNotification(Socket socket, DWORD transferredBytes) @truste
             }
         } else {
             logger.debug_("Read from socket ", transferredBytes, " for ", socket.state.handle, " on ", Thread.self);
-            socket.state.rawReading.complete(socket.state, transferredBytes);
         }
+
+        socket.state.rawReading.complete(socket.state, transferredBytes);
 
         if (wasAccepted) {
 

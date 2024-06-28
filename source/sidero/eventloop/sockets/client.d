@@ -100,6 +100,7 @@ struct Socket {
             }
         });
 
+        assert(!ret.isNull);
         return ret;
     }
 
@@ -128,6 +129,7 @@ struct Socket {
             }
         });
 
+        assert(!ret.isNull);
         return ret;
     }
 

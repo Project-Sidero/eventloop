@@ -29,7 +29,6 @@ package(sidero.eventloop):
         if(!logger || logger.isNull)
             return false;
 
-
         buffer = DynamicArray!ubyte(RCAllocator.init);
         return true;
     }
@@ -72,6 +71,7 @@ package(sidero.eventloop):
                 stateObject.delayReadForLater;
                 return true;
             } else {
+                assert(logger);
                 logger.debug_("Failed to setup up raw reading for " ~ TitleOfPipe ~ " with a buffer of ", toRead, " for a length of ",
                         buffer.length, " from ", oldLength, " for socket ", stateObject.readHandle, " on thread ", Thread.self);
                 triggered = false;
@@ -132,6 +132,7 @@ package(sidero.eventloop):
             return;
         }
 
+        assert(logger);
         logger.debug_("Received data successfully ", completedAmount, " with a prepared buffered count of ",
                 amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
 

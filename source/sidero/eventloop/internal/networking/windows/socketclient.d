@@ -31,6 +31,8 @@ struct PlatformSocket {
     //enum keepAReadAlwaysGoing = false;
     enum keepAReadAlwaysGoing = true;
 
+    ubyte[(SockAddressMaxSize * 2) + 32] addressBuffer;
+
 @safe nothrow @nogc:
 
      ~this() scope {
@@ -133,6 +135,7 @@ struct PlatformSocket {
                 if (socket.state.listenSocketPair.isNull)
                     return;
 
+                assert(socket.state.listenSocketPair.perSocket);
                 auto result = setsockopt(this.handle, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
                         &socket.state.listenSocketPair.perSocket.handle, SOCKET.sizeof);
 
@@ -148,7 +151,7 @@ struct PlatformSocket {
                     return;
                 }
 
-                version(all) {
+                version(none) {
                     auto acceptSocketCO = socket.state.listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, socket);
                     registerAsTask(acceptSocketCO);
                 }
@@ -161,7 +164,7 @@ struct PlatformSocket {
         version(Windows) {
             import sidero.base.internal.atomic : atomicLoad;
 
-            if(atomicLoad(socketState.isClosed) || this.havePendingAlwaysWaitingRead || this.havePendingRead)
+            if(atomicLoad(socketState.isShutdown) || this.havePendingAlwaysWaitingRead || this.havePendingRead)
                 return;
 
             this.readOverlapped = OVERLAPPED.init;
@@ -430,6 +433,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
 
             socketState.reading.cleanup();
             socketState.performReadWrite();
+            forceClose(socketState);
         }
     } else
         assert(0);
@@ -450,6 +454,9 @@ void forceClose(scope SocketState* socketState) @trusted {
 
 bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version(Windows) {
+        if (socketState.haveBeenShutdown())
+            return false;
+
         socketState.writeOverlapped = OVERLAPPED.init;
 
         WSABUF wsaBuffer;
@@ -515,6 +522,9 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
 
 bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version(Windows) {
+        if (socketState.haveBeenShutdown())
+            return false;
+
         if(socketState.havePendingAlwaysWaitingRead) {
             CancelIoEx(socketState.handle, &socketState.readOverlapped);
             socketState.havePendingAlwaysWaitingRead = false;

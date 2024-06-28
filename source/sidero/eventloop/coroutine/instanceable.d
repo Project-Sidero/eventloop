@@ -37,7 +37,7 @@ export @safe nothrow @nogc:
 
     ///
     bool isNull() scope const {
-        return pair.canInstance();
+        return !pair.canInstance();
     }
 
     ///

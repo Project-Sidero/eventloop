@@ -79,10 +79,10 @@ struct SocketState {
             } else if(refCount == 0) {
                 inShutdownProcess = true;
 
-                encryption.cleanup(&this);
-                reading.cleanup;
                 shutdown(&this, false);
                 forceClose(&this);
+                encryption.cleanup(&this);
+                reading.cleanup;
 
                 RCAllocator alloc = this.allocator;
                 alloc.dispose(&this);
@@ -102,17 +102,13 @@ struct SocketState {
     }
 
     void unpin() scope @trusted {
-        if(!atomicLoad(isAlive)) {
-            mutex.unlock;
-            return;
-        }
-
         mutex.lock.assumeOkay;
-        atomicStore(isAlive, false);
+        bool wasAlive = cas(isAlive, true, false);
         shutdown(&this);
         mutex.unlock;
 
-        rc(false);
+        if (wasAlive)
+            rc(false);
     }
 
     bool haveBeenShutdown() scope {
@@ -120,14 +116,11 @@ struct SocketState {
     }
 
     package(sidero.eventloop.internal) void unpinGuarded() scope @trusted {
-        if(!atomicLoad(isAlive)) {
-            return;
-        }
-
-        atomicStore(isAlive, false);
+        bool wasAlive = cas(isAlive, true, false);
         shutdown(&this);
 
-        rc(false);
+        if (wasAlive)
+            rc(false);
     }
 
     void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
