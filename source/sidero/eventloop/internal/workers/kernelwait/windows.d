@@ -192,6 +192,8 @@ void workerProc() @trusted {
                             socket.state.rawWriting.complete(socket.state, numberOfBytesTransferred);
                         else if(overlapped is &socket.state.readOverlapped)
                             handleSocketReadNotification(socket, numberOfBytesTransferred);
+                        else if(overlapped is &socket.state.acceptOverlapped)
+                            socket.state.uponAccept(socket);
 
                         socket.state.performReadWrite;
                     });
@@ -206,34 +208,16 @@ void handleSocketReadNotification(Socket socket, DWORD transferredBytes) @truste
     version(Windows) {
         import core.sys.windows.winbase : GetLastError;
 
-        bool wasAccepted;
-
-        if(socket.state.hasJustBeenAccepted) {
-            logger.debug_("Peer socket has been accepted ", socket.state.handle, " on ", Thread.self);
-            // its now accepted!!!
-
-            socket.state.uponAccept(socket);
-
-            socket.state.hasJustBeenAccepted = false;
-            wasAccepted = true;
-        }
-
         if(transferredBytes == 0) {
-            if(!wasAccepted) {
-                // peer closed connection
-                logger.debug_("Peer closed socket ", socket.state.handle, " on ", Thread.self);
-                // ok just in case lets just unpin it
-                socket.state.unpinGuarded;
-            }
+            // peer closed connection
+            logger.debug_("Peer closed socket ", socket.state.handle, " on ", Thread.self);
+            // ok just in case lets just unpin it
+            socket.state.unpinGuarded;
         } else {
             logger.debug_("Read from socket ", transferredBytes, " for ", socket.state.handle, " on ", Thread.self);
         }
 
         socket.state.rawReading.complete(socket.state, transferredBytes);
-
-        if (wasAccepted) {
-
-        }
     } else
         assert(0);
 }

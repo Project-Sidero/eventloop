@@ -273,7 +273,6 @@ struct Socket {
         ret.state = allocator.make!SocketState(allocator, listenSocketPair);
         ret.state.localAddress = localAddress;
         ret.state.remoteAddress = remoteAddress;
-        ret.state.hasJustBeenAccepted = true;
 
         return ret;
     }

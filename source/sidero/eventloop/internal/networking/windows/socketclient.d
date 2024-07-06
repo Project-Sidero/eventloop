@@ -20,7 +20,7 @@ struct PlatformSocket {
     version(Windows) {
         SOCKET handle;
         WSAEVENT onCloseEvent;
-        OVERLAPPED readOverlapped, writeOverlapped;
+        OVERLAPPED readOverlapped, writeOverlapped, acceptOverlapped;
         IOCPwork iocpWork;
     }
 
@@ -131,10 +131,15 @@ struct PlatformSocket {
         // needs guarding
         void uponAccept(Socket socket) scope @trusted {
             version(Windows) {
+                import sidero.eventloop.internal.networking.windows.socketserver : checkForAccepts;
                 import sidero.eventloop.tasks.workers : registerAsTask;
+
+                logger.debug_("Received accept for socket ", socket.state.handle, " on ", Thread.handle);
 
                 if(socket.state.listenSocketPair.isNull)
                     return;
+
+                checkForAccepts(socket.state.listenSocketPair);
 
                 assert(socket.state.listenSocketPair.perSocket);
                 auto result = setsockopt(this.handle, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
@@ -156,6 +161,8 @@ struct PlatformSocket {
                     auto acceptSocketCO = socket.state.listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, socket);
                     registerAsTask(acceptSocketCO);
                 }
+
+                socket.state.initiateAConstantlyRunningReadRequest(socket.state);
             } else
                 assert(0);
         }

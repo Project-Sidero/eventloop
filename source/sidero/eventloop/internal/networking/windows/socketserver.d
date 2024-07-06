@@ -14,6 +14,8 @@ import sidero.base.allocators;
 import sidero.base.text;
 import sidero.base.typecons : Optional;
 import sidero.base.datetime.duration;
+import sidero.base.datetime.stopwatch;
+import sidero.base.synchronization.mutualexclusion;
 
 @safe nothrow @nogc:
 
@@ -31,6 +33,12 @@ struct PlatformListenSocket {
     shared(ptrdiff_t) isAlive;
     shared(ptrdiff_t) numberOfAccepts;
     NetworkAddress address;
+
+    StopWatch timeSinceLastInitiatedAcceptStandOff, timeSinceLastInitiatedAccept;
+    shared(size_t) lastInitiatedAcceptCount;
+    size_t lastInitiatedAcceptStandOff;
+
+    TestSetLockInline mutextToProtectAccepts;
 
 @safe nothrow @nogc:
 
@@ -84,6 +92,57 @@ bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr,
     }
 
     return false;
+}
+
+void checkForAccepts(ListenSocketPair listenSocketPair) {
+    import sidero.base.internal.atomic;
+    import core.stdc.math : hypotf, cbrtf;
+
+    version(Windows) {
+        assert(listenSocketPair.perSocket);
+
+        const currentCount = atomicLoad(listenSocketPair.perSocket.lastInitiatedAcceptCount);
+
+        if(atomicDecrementAndLoad(listenSocketPair.perSocket.numberOfAccepts, 1) <= currentCount / 2) {
+            if(listenSocketPair.perSocket.mutextToProtectAccepts.tryLock) {
+                scope(exit)
+                    listenSocketPair.perSocket.mutextToProtectAccepts.unlock;
+
+                // A lot of what we do here is actually "magic".
+                // The numbers here were picked to try and prevent both denial of service attacks taking a foot hold.
+                // By having both a stand off attempts and stand off in seconds,
+                //  we can guarantee we will only attempt to have accepts that we can actually handle.
+
+                // This number provides us the ability to know
+                const nextStandOffAmount = cast(size_t)hypotf(currentCount, currentCount).cbrtf;
+
+                if(currentCount < 5_000 && listenSocketPair.perSocket.timeSinceLastInitiatedAcceptStandOff.peek < 1.seconds) {
+                    listenSocketPair.perSocket.lastInitiatedAcceptStandOff++;
+
+                    if(listenSocketPair.perSocket.lastInitiatedAcceptStandOff > nextStandOffAmount) {
+                        // Ok the number posts has occured, but also has the right number of seconds occured also?
+
+                        if(listenSocketPair.perSocket.timeSinceLastInitiatedAccept.peek >= nextStandOffAmount.seconds) {
+                            // ok bump it to next value
+
+                            // This formula will take around 6 hours to boot up all the way to 5_000 accepts
+                            float diff = cbrtf(5000 - (5000 / currentCount)) * ((nextStandOffAmount + currentCount.cbrtf));
+                            atomicStore(listenSocketPair.perSocket.lastInitiatedAcceptCount, currentCount + cast(size_t)diff);
+
+                            listenSocketPair.perSocket.lastInitiatedAcceptStandOff = 0;
+                            listenSocketPair.perSocket.timeSinceLastInitiatedAccept.start;
+                        }
+                    }
+                } else {
+                    listenSocketPair.perSocket.lastInitiatedAcceptStandOff = 0;
+                }
+
+                listenSocketPair.perSocket.timeSinceLastInitiatedAcceptStandOff.start;
+
+                postAccept(listenSocketPair, atomicLoad(listenSocketPair.perSocket.lastInitiatedAcceptCount));
+            }
+        }
+    }
 }
 
 private:
@@ -272,8 +331,14 @@ bool listenOnSpecificAddress(ListenSocketState* listenSocketState, NetworkAddres
             auto perSockState = listenSocket.state.platformSockets[platformListenSocket.eventHandle];
             assert(perSockState);
 
+            // start up the state needed for accept stand off
+            perSockState.timeSinceLastInitiatedAcceptStandOff.start;
+            perSockState.timeSinceLastInitiatedAccept.start;
+            atomicStore(lastInitiatedAcceptCount, 3);
+
             ListenSocketPair pair = ListenSocketPair(listenSocket, perSockState);
-            postAccept(pair, 4);
+            // post away the initial accepts
+            postAccept(pair, 3);
         }
         return true;
     } else
@@ -381,10 +446,9 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
             acquiredSocket.state.handle = acceptedSocket;
 
             DWORD received;
-            OVERLAPPED overlapped;
 
             auto result = AcceptEx(listenSocketPair.perSocket.handle, acceptedSocket, acquiredSocket.state.addressBuffer.ptr,
-                    0, SockAddressMaxSize + 16, SockAddressMaxSize + 16, &received, &overlapped);
+                    0, SockAddressMaxSize + 16, SockAddressMaxSize + 16, &received, &acquiredSocket.state.acceptOverlapped);
 
             if(result != 0) {
                 auto error = WSAGetLastError();
@@ -449,15 +513,17 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
 
             acquiredSocket.state.pin();
 
-            static if(acquiredSocket.state.keepAReadAlwaysGoing) {
-                acquiredSocket.state.initiateAConstantlyRunningReadRequest(acquiredSocket.state);
-            } else {
+            static if(!acquiredSocket.state.keepAReadAlwaysGoing) {
                 addEventWaiterHandle(acquiredSocket.state.onCloseEvent, &handleSocketEvent, acquiredSocket.state);
             }
 
-            if (acquiredSocket.state.isDelayedAccept) {
+            if(acquiredSocket.state.isDelayedAccept) {
                 atomicIncrementAndLoad(listenSocketPair.perSocket.numberOfAccepts, 1);
             } else {
+                static if(acquiredSocket.state.keepAReadAlwaysGoing) {
+                    acquiredSocket.state.initiateAConstantlyRunningReadRequest(acquiredSocket.state);
+                }
+
                 auto acceptSocketCO = listenSocketPair.listenSocket.state.onAccept.makeInstance(RCAllocator.init, acquiredSocket);
                 registerAsTask(acceptSocketCO);
             }

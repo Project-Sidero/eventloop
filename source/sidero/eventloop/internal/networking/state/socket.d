@@ -31,7 +31,6 @@ struct SocketState {
     Socket.Protocol protocol;
     NetworkAddress localAddress, remoteAddress;
     ListenSocketPair listenSocketPair;
-    bool hasJustBeenAccepted;
 
     WritingState writing;
     EncryptionState encryption;
