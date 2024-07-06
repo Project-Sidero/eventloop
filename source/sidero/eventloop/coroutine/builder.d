@@ -251,7 +251,7 @@ unittest {
     }
 
     auto co = createCo();
-    assert(co.canInstance);
+    assert(!co.isNull);
 
     auto co2 = co.makeInstance(RCAllocator.init, 4);
     assert(!co2.isNull);
@@ -333,7 +333,7 @@ unittest {
             state.lock.unlock;
 
             auto worker = createCo1();
-            state.worker = worker.makeInstance(RCAllocator.init, state.value).asFuture;
+            state.worker = worker.makeInstance(RCAllocator.init, state.value);
             assert(!state.worker.isNull);
 
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -351,7 +351,7 @@ unittest {
     }
 
     auto co = createCo2();
-    assert(co.canInstance);
+    assert(!co.isNull);
 
     auto coI = co.makeInstance(RCAllocator.init, 4);
     assert(!coI.isNull);

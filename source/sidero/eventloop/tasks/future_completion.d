@@ -26,7 +26,7 @@ InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireIns
     return storage;
 }
 
-ErrorResult waitOnTrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(Future!ResultType coroutine,
+ErrorResult waitOnTrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!ResultType coroutine,
         TriggerStorage triggerStorage) @trusted {
     if(triggerStorage is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
@@ -35,7 +35,7 @@ ErrorResult waitOnTrigger(ResultType, TriggerStorage = FutureTriggerStorage!Resu
     return waitOnTrigger(co, cast(FutureTrigger*)triggerStorage);
 }
 
-ErrorResult waitOnTrigger(GenericCoroutine coroutine, FutureTrigger* trigger) @trusted {
+ErrorResult waitOnTrigger(scope GenericCoroutine coroutine, FutureTrigger* trigger) @trusted {
     if(trigger is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
     else if(coroutine.isNull)
@@ -119,7 +119,7 @@ unittest {
 
     FutureTriggerStorage!int* triggerStorage;
 
-    Future!int future = instantiable.makeInstance(RCAllocator.init, &triggerStorage).asFuture;
+    Future!int future = instantiable.makeInstance(RCAllocator.init, &triggerStorage);
     assert(!future.isNull);
     assert(!future.isComplete);
     assert(triggerStorage !is null);
