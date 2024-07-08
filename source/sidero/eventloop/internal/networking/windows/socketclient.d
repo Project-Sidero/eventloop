@@ -134,7 +134,7 @@ struct PlatformSocket {
                 import sidero.eventloop.internal.networking.windows.socketserver : checkForAccepts;
                 import sidero.eventloop.tasks.workers : registerAsTask;
 
-                logger.debug_("Received accept for socket ", socket.state.handle, " on ", Thread.handle);
+                logger.debug_("Received accept for socket ", socket.state.handle, " on ", Thread.self);
 
                 if(socket.state.listenSocketPair.isNull)
                     return;
