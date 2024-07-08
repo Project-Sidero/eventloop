@@ -105,9 +105,6 @@ void checkForAccepts(ListenSocketPair listenSocketPair) {
 
         if(atomicDecrementAndLoad(listenSocketPair.perSocket.numberOfAccepts, 1) <= currentCount / 2) {
             if(listenSocketPair.perSocket.mutextToProtectAccepts.tryLock) {
-                scope(exit)
-                    listenSocketPair.perSocket.mutextToProtectAccepts.unlock;
-
                 // A lot of what we do here is actually "magic".
                 // The numbers here were picked to try and prevent both denial of service attacks taking a foot hold.
                 // By having both a stand off attempts and stand off in seconds,
@@ -126,6 +123,7 @@ void checkForAccepts(ListenSocketPair listenSocketPair) {
                             // ok bump it to next value
 
                             // This formula will take around 6 hours to boot up all the way to 5_000 accepts
+                            // However it is fine if it doesn't, it'll accept more immediately.
                             float diff = cbrtf(5000 - (5000 / currentCount)) * ((nextStandOffAmount + currentCount.cbrtf));
                             atomicStore(listenSocketPair.perSocket.lastInitiatedAcceptCount, currentCount + cast(size_t)diff);
 
@@ -140,6 +138,8 @@ void checkForAccepts(ListenSocketPair listenSocketPair) {
                 listenSocketPair.perSocket.timeSinceLastInitiatedAcceptStandOff.start;
 
                 postAccept(listenSocketPair, atomicLoad(listenSocketPair.perSocket.lastInitiatedAcceptCount));
+                listenSocketPair.perSocket.mutextToProtectAccepts.unlock;
+                postAccept(listenSocketPair, 10);
             }
         }
     }
@@ -388,6 +388,9 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
     import sidero.base.internal.atomic;
 
     foreach(_; 0 .. numberOfAccepts) {
+        if(!listenSocketPair.listenSocket.isAlive())
+            return;
+
         version(Windows) {
             assert(listenSocketPair.perSocket);
             short addressFamily, socketType, socketProtocol;
