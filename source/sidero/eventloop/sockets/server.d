@@ -50,7 +50,7 @@ struct ListenSocket {
 
     ///
     bool isAlive() scope {
-        return !isNull && atomicLoad(state.isAlive) > 0;
+        return !isNull && atomicLoad(state.isAlive);
     }
 
     /**

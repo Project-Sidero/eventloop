@@ -24,6 +24,7 @@ version(Windows) {
 }
 
 version(Windows) {
+    public import sidero.eventloop.internal.networking.windows.socket;
     public import sidero.eventloop.internal.networking.windows.socketclient;
 } else version(Posix) {
     public import sidero.eventloop.internal.networking.posix.socketclient;
@@ -92,7 +93,7 @@ version(Windows) {
         }
     }
 
-    bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!uint keepAlive) {
+    bool listenOnAddress(scope ListenSocketState* listenSocketState, bool reuseAddr, Optional!Duration keepAlive) {
         assert(0);
     }
 

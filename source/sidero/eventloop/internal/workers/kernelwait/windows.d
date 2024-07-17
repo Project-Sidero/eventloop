@@ -1,11 +1,13 @@
 module sidero.eventloop.internal.workers.kernelwait.windows;
 import sidero.eventloop.internal.workers;
 import sidero.eventloop.internal.networking.state;
+import sidero.eventloop.internal.networking.windows.socketserver;
 import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.internal.atomic;
+import sidero.base.errors;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
@@ -24,8 +26,22 @@ version(Windows) {
 }
 
 struct IOCPwork {
-    ubyte[4] key; //sock
-    void* ptr;
+    ubyte[5] key; //(l)sock
+
+    SocketState* socketState;
+    ListenSocketState* listenSocketState;
+    ResultReference!PlatformListenSocket perSocket;
+
+@safe nothrow @nogc:
+
+    this(return scope ref IOCPwork other) scope {
+        this.tupleof = other.tupleof;
+    }
+
+    enum : ubyte[5] {
+        Socket = cast(ubyte[5])"SOCK\0",
+        ListenSocket = cast(ubyte[5])"LSOCK",
+    }
 }
 
 @safe nothrow @nogc:
@@ -36,6 +52,7 @@ bool initializeWorkerPlatformMechanism(size_t numberOfWorkers) @trusted {
         if(!logger || logger.isNull)
             return false;
         logger.setLevel = LogLevel.Warning;
+        logger.setLevel = LogLevel.Trace;
 
         requiredWorkers = cast(uint)numberOfWorkers;
 
@@ -83,13 +100,13 @@ void shutdownWorkerPlatformMechanism() @trusted {
 void triggerACoroutineMechanism(size_t count) @trusted {
     version(Windows) {
         ULONG_PTR coroutineKey = cast(ULONG_PTR)&coroutineByte;
-        logger.debug_("Posting coroutine work with key ", coroutineKey, " times ", count);
+        logger.debug_("Posting coroutine work with key ", coroutineKey, " times ", count, " on ", Thread.self);
 
         foreach(_; 0 .. count) {
             auto result = PostQueuedCompletionStatus(completionPort, 0, coroutineKey, null);
 
             if(result == 0) {
-                logger.warning("IOCP worker could not send coroutine execution message ", GetLastError());
+                logger.warning("IOCP worker could not send coroutine execution message ", GetLastError(), " on ", Thread.self);
                 return;
             }
         }
@@ -99,16 +116,42 @@ void triggerACoroutineMechanism(size_t count) @trusted {
 
 bool associateWithIOCP(Socket socket) @trusted {
     version(Windows) {
-        logger.debug_("Associated socket with IOCP for socket ", socket.state.handle, " using key ", cast(size_t)&socket.state.iocpWork);
+        logger.debug_("Associated socket with IOCP for socket ", socket.state.handle, " using key ",
+                cast(size_t)&socket.state.iocpWork, " on ", Thread.self);
 
-        socket.state.iocpWork.key = cast(ubyte[4])"SOCK";
-        socket.state.iocpWork.ptr = socket.state;
+        socket.state.iocpWork.key = IOCPwork.Socket;
+        socket.state.iocpWork.socketState = socket.state;
 
         HANDLE completionPort2 = CreateIoCompletionPort(cast(void*)socket.state.handle, completionPort,
                 cast(size_t)&socket.state.iocpWork, 0);
 
         if(completionPort2 !is completionPort) {
-            logger.debug_("Could not associate socket with IOCP with code ", WSAGetLastError(), " for socket ", socket.state.handle);
+            logger.debug_("Could not associate socket with IOCP with code ", WSAGetLastError(), " for socket ",
+                    socket.state.handle, " on ", Thread.self);
+            return false;
+        }
+
+        return true;
+    } else
+        assert(0);
+}
+
+bool associateWithIOCP(ListenSocketPair listenSocketPair) @trusted {
+    version(Windows) {
+        assert(listenSocketPair.perSocket);
+        logger.debug_("Associated socket with IOCP for socket ", listenSocketPair.perSocket.handle, " using key ",
+                cast(size_t)&listenSocketPair.perSocket.iocpWork, " on ", Thread.self);
+
+        listenSocketPair.perSocket.iocpWork.key = IOCPwork.ListenSocket;
+        listenSocketPair.perSocket.iocpWork.listenSocketState = listenSocketPair.listenSocket.state;
+        listenSocketPair.perSocket.iocpWork.perSocket = listenSocketPair.perSocket;
+
+        HANDLE completionPort2 = CreateIoCompletionPort(cast(void*)listenSocketPair.perSocket.handle, completionPort,
+                cast(size_t)&listenSocketPair.perSocket.iocpWork, 0);
+
+        if(completionPort2 !is completionPort) {
+            logger.debug_("Could not associate listen socket with IOCP with code ", WSAGetLastError(), " for socket ",
+                    listenSocketPair.perSocket.handle, " on ", Thread.self);
             return false;
         }
 
@@ -147,16 +190,8 @@ void workerProc() @trusted {
                 } else {
                     IOCPwork* work = cast(IOCPwork*)completionKey;
 
-                    if(work !is null && work.key == cast(ubyte[4])"SOCK") {
-                        // Well we know what to do here!
-
-                        Socket socket;
-                        socket.state = cast(SocketState*)work.ptr;
-                        socket.state.rc(true);
-
-                        handleSocketReadNotification(socket, numberOfBytesTransferred);
-
-                        socket.state.guard(&socket.state.performReadWrite);
+                    if(work !is null) {
+                        seeError(work);
                     } else {
                         logger.warning("IOCP worker GetQueuedCompletionStatus failed with error ", errorCode, " with transferred bytes ",
                                 numberOfBytesTransferred, " with overlapped ", overlapped, " with key ",
@@ -176,29 +211,88 @@ void workerProc() @trusted {
                     coroutineCompletedTask(workToDo, errorResult);
                 }
             } else {
-                logger.debug_("Got IOCP work ", numberOfBytesTransferred, " ", completionKey, " ", result, " ", Thread.self);
-
                 IOCPwork* work = cast(IOCPwork*)completionKey;
 
-                if(work.key == cast(ubyte[4])"SOCK") {
-                    Socket socket;
-                    socket.state = cast(SocketState*)work.ptr;
-                    socket.state.rc(true);
-
-                    logger.debug_("Seeing IOCP work for socket ", socket.state.handle, " on ", Thread.self);
-
-                    socket.state.guard(() {
-                        if(overlapped is &socket.state.writeOverlapped)
-                            socket.state.rawWriting.complete(socket.state, numberOfBytesTransferred);
-                        else if(overlapped is &socket.state.readOverlapped)
-                            handleSocketReadNotification(socket, numberOfBytesTransferred);
-                        else if(overlapped is &socket.state.acceptOverlapped)
-                            socket.state.uponAccept(socket);
-
-                        socket.state.performReadWrite;
-                    });
+                if(work !is null) {
+                    seeWork(work, numberOfBytesTransferred, overlapped);
                 }
             }
+        }
+    } else
+        assert(0);
+}
+
+void seeError(IOCPwork* work) @trusted {
+    version(Windows) {
+        logger.debug_("Got IOCP error for key: ", work.key, ", on ", Thread.self);
+
+        if(work.key == IOCPwork.Socket) {
+            Socket socket;
+            socket.state = work.socketState;
+            socket.state.rc(true);
+
+            logger.debug_("Seeing IOCP error for socket ", socket.state.handle, " on ", Thread.self);
+
+            socket.state.unpin;
+        } else if(work.key == IOCPwork.ListenSocket) {
+            assert(work.perSocket);
+
+            ListenSocket listenSocket;
+            listenSocket.state = work.listenSocketState;
+            listenSocket.state.rc(true);
+
+            forceClose(&work.perSocket.get());
+            listenSocket.state.unpin;
+        } else {
+            logger.warning("Unknown work type ", cast(char[5])work.key, " on ", Thread.self);
+        }
+    }
+}
+
+void seeWork(IOCPwork* work, DWORD numberOfBytesTransferred, OVERLAPPED* overlapped) @trusted {
+    version(Windows) {
+        import sidero.eventloop.internal.networking.windows.socketserver : uponSocketAccept;
+
+        logger.debug_("Got IOCP work: ", work.key, ", number of bytes transferred: ", numberOfBytesTransferred,
+                ", overlapped: ", overlapped, ", on ", Thread.self);
+
+        if(work.key == IOCPwork.Socket) {
+            Socket socket;
+            socket.state = work.socketState;
+            socket.state.rc(true);
+
+            logger.debug_("Seeing IOCP work for socket ", socket.state.handle, " on ", Thread.self);
+
+            socket.state.guard(() {
+                if(overlapped is &socket.state.writeOverlapped)
+                    socket.state.rawWriting.complete(socket.state, numberOfBytesTransferred);
+                else if(overlapped is &socket.state.readOverlapped)
+                    handleSocketReadNotification(socket, numberOfBytesTransferred);
+                else if(overlapped is &socket.state.acceptOverlapped)
+                    uponSocketAccept(socket);
+
+                socket.state.performReadWrite;
+            });
+        } else if(work.key == IOCPwork.ListenSocket) {
+            assert(work.perSocket);
+
+            ListenSocket listenSocket;
+            listenSocket.state = work.listenSocketState;
+            listenSocket.state.rc(true);
+
+            auto socket = work.perSocket.overlappedToBeAcceptSockets[overlapped];
+
+            if(socket) {
+                logger.debug_("Seeing IOCP work for listen socket ", work.perSocket.handle, " with socket ",
+                        socket.state.handle, " on ", Thread.self);
+
+                work.perSocket.overlappedToBeAcceptSockets.remove(overlapped);
+                uponSocketAccept(socket);
+            } else {
+                logger.debug_("Seeing IOCP work for listen socket ", work.perSocket.handle, " on ", Thread.self);
+            }
+        } else {
+            logger.warning("Unknown work type ", cast(char[5])work.key, " on ", Thread.self);
         }
     } else
         assert(0);

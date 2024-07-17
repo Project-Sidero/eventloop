@@ -81,19 +81,17 @@ struct ListenSocketState {
     }
 
     void pin(ptrdiff_t amount) scope {
-        if(atomicLoad(isAlive) > 0)
-            assert(0, "Pinned");
-
-        rc(true);
-        atomicStore(isAlive, amount);
+        if (atomicIncrementAndLoad(this.isAlive, amount) == amount) {
+            rc(true);
+        }
     }
 
     void unpin() scope {
         if(atomicLoad(isAlive) == 0)
             assert(0, "Not pinned");
 
-        if(atomicDecrementAndLoad(isAlive, 1) == 0)
-            rc(false);
+        atomicStore(this.isAlive, 0);
+        rc(false);
     }
 
     bool startUp(bool reuseAddr, Optional!Duration keepAlive) scope @trusted {
