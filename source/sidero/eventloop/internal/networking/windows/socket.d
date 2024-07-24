@@ -21,7 +21,7 @@ struct PlatformSocket {
     version(Windows) {
         SOCKET handle;
         WSAEVENT onCloseEvent;
-        OVERLAPPED readOverlapped, writeOverlapped, acceptOverlapped;
+        OVERLAPPED readOverlapped, alwaysReadingOverlapped, writeOverlapped, acceptOverlapped;
         IOCPwork iocpWork;
     }
 
@@ -61,7 +61,7 @@ struct PlatformSocket {
             if(atomicLoad(socketState.isShutdown) || socketState.havePendingAlwaysWaitingRead || socketState.havePendingRead)
                 return;
 
-            socketState.readOverlapped = OVERLAPPED.init;
+            socketState.alwaysReadingOverlapped = OVERLAPPED.init;
             socketState.havePendingAlwaysWaitingRead = true;
 
             logger.debug_("Starting a constantly running read request for ", socketState.handle, " on ", Thread.self);
@@ -72,7 +72,7 @@ struct PlatformSocket {
             WSABUF wsaBuffer;
             wsaBuffer.buf = buf.ptr;
 
-            auto result = WSARecv(socketState.handle, &wsaBuffer, 1, null, &flags, &socketState.readOverlapped, null);
+            auto result = WSARecv(socketState.handle, &wsaBuffer, 1, null, &flags, &socketState.alwaysReadingOverlapped, null);
 
             if(result == 0) {
                 // completed, IOCP will be notified of completion
@@ -201,6 +201,30 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
 
             if(socketState.rawReading.inProgress) {
                 CancelIoEx(socketState.handle, &socketState.readOverlapped);
+
+                if(CancelIoEx(socketState.handle, &socketState.readOverlapped) != 0) {
+                    logger.debug_("Successfully cancelled read for socket ", socketState.handle, " on ", Thread.self);
+
+                    DWORD transferred;
+                    DWORD flags;
+                    WSAGetOverlappedResult(socketState.handle, &socketState.readOverlapped, &transferred, false, &flags);
+                } else {
+                    logger.info("Read for socket ", socketState.handle, " failed to cancel ",
+                            &socketState.readOverlapped, " with error ", WSAGetLastError(), " on thread ", Thread.self);
+                }
+            }
+
+            if(socketState.havePendingAlwaysWaitingRead) {
+                if(CancelIoEx(socketState.handle, &socketState.alwaysReadingOverlapped) != 0) {
+                    logger.debug_("Successfully cancelled always reading read for socket ", socketState.handle, " on ", Thread.self);
+
+                    DWORD transferred;
+                    DWORD flags;
+                    WSAGetOverlappedResult(socketState.handle, &socketState.alwaysReadingOverlapped, &transferred, false, &flags);
+                } else {
+                    logger.info("Always pending read for socket ", socketState.handle, " failed to cancel ",
+                            &socketState.alwaysReadingOverlapped, " with error ", WSAGetLastError(), " on thread ", Thread.self);
+                }
             }
 
             socketState.reading.cleanup();
@@ -298,7 +322,20 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
             return false;
 
         if(socketState.havePendingAlwaysWaitingRead) {
-            CancelIoEx(socketState.handle, &socketState.readOverlapped);
+            if(CancelIoEx(socketState.handle, &socketState.alwaysReadingOverlapped) != 0) {
+                logger.debug_("Successfully cancelled always reading read for socket ", socketState.handle, " on ", Thread.self);
+
+                // This is required otherwise the receive is going to fail with a very
+                //  non-understandable error of: ERROR_PATH_NOT_FOUND.
+
+                DWORD transferred;
+                DWORD flags;
+                WSAGetOverlappedResult(socketState.handle, &socketState.alwaysReadingOverlapped, &transferred, false, &flags);
+            } else {
+                logger.debug_("Always pending read for socket ", socketState.handle, " failed to cancel ",
+                        &socketState.alwaysReadingOverlapped, " with error ", WSAGetLastError(), " on thread ", Thread.self);
+            }
+
             socketState.havePendingAlwaysWaitingRead = false;
         }
 

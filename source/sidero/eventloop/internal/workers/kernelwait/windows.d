@@ -191,7 +191,7 @@ void workerProc() @trusted {
                     IOCPwork* work = cast(IOCPwork*)completionKey;
 
                     if(work !is null) {
-                        seeError(work);
+                        seeError(work, overlapped, errorCode);
                     } else {
                         logger.warning("IOCP worker GetQueuedCompletionStatus failed with error ", errorCode, " with transferred bytes ",
                                 numberOfBytesTransferred, " with overlapped ", overlapped, " with key ",
@@ -222,16 +222,39 @@ void workerProc() @trusted {
         assert(0);
 }
 
-void seeError(IOCPwork* work) @trusted {
+void seeError(IOCPwork* work, OVERLAPPED* overlapped, int errorCode) @trusted {
     version(Windows) {
-        logger.debug_("Got IOCP error for key: ", work.key, ", on ", Thread.self);
+        logger.debug_("Got IOCP error for key: ", work.key, ", with error ", errorCode, ", with overlapped ",
+                overlapped, ", on ", Thread.self);
 
         if(work.key == IOCPwork.Socket) {
             Socket socket;
             socket.state = work.socketState;
             socket.state.rc(true);
 
-            logger.debug_("Seeing IOCP error for socket ", socket.state.handle, " on ", Thread.self);
+            logger.debug_("Seeing IOCP error for socket ", socket.state.handle, " as overlapped read ",
+                    &socket.state.readOverlapped, " as overlapped write ", &socket.state.writeOverlapped, " as overlapped accept ",
+                    &socket.state.acceptOverlapped, " as overlapped always reading ",
+                    &socket.state.alwaysReadingOverlapped, " on ", Thread.self);
+
+            if(overlapped is &socket.state.alwaysReadingOverlapped) {
+                DWORD transferred;
+                DWORD flags;
+
+                const wasError = WSAGetOverlappedResult(socket.state.handle, &socket.state.alwaysReadingOverlapped,
+                        &transferred, false, &flags);
+                errorCode = WSAGetLastError();
+
+                switch(errorCode) {
+                case WSA_OPERATION_ABORTED:
+                    // This is completely ok, it is normal operation!
+                    return;
+
+                default:
+                    // Ugh oh...
+                    break;
+                }
+            }
 
             socket.state.unpin;
         } else if(work.key == IOCPwork.ListenSocket) {
@@ -244,7 +267,7 @@ void seeError(IOCPwork* work) @trusted {
             forceClose(&work.perSocket.get());
             listenSocket.state.unpin;
         } else {
-            logger.warning("Unknown work type ", cast(char[5])work.key, " on ", Thread.self);
+            logger.warning("Unknown work type ", work.key, " on ", Thread.self);
         }
     }
 }

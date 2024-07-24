@@ -67,6 +67,8 @@ void uponSocketAccept(Socket socket) @trusted {
 
         {
             ListenSocketPair listenSocketPair = socket.state.listenSocketPair;
+            assert(listenSocketPair.perSocket);
+
             const currentMax = atomicLoad(listenSocketPair.perSocket.lastInitiatedAcceptCount);
             const currentCount = atomicDecrementAndLoad(listenSocketPair.perSocket.numberOfAccepts, 1);
 
@@ -107,7 +109,7 @@ void uponSocketAccept(Socket socket) @trusted {
                     postAccept(listenSocketPair, atomicLoad(listenSocketPair.perSocket.lastInitiatedAcceptCount));
                     listenSocketPair.perSocket.mutextToProtectAccepts.unlock;
                 }
-            } else if (currentCount < 2 || currentCount <= currentMax / 8) {
+            } else if(currentCount < 2 || currentCount <= currentMax / 8) {
                 listenSocketPair.perSocket.mutextToProtectAccepts.lock.assumeOkay;
                 postAccept(listenSocketPair, currentMax);
                 listenSocketPair.perSocket.mutextToProtectAccepts.unlock;
