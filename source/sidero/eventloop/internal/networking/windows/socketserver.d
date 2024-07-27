@@ -94,7 +94,8 @@ void uponSocketAccept(Socket socket) @trusted {
                                 // This formula will take around 6 hours to boot up all the way to 5_000 accepts
                                 // However it is fine if it doesn't, it'll accept more immediately.
                                 float diff = cbrtf(5000 - (5000 / currentMax)) * ((nextStandOffAmount + currentMax.cbrtf));
-                                atomicStore(listenSocketPair.perSocket.lastInitiatedAcceptCount, currentMax + cast(size_t)diff);
+                                // Multiplying the formula by 3, because quite frankly it's far too slow if it takes 6 hours to start up.
+                                atomicStore(listenSocketPair.perSocket.lastInitiatedAcceptCount, (currentMax + cast(size_t)diff) * 3);
 
                                 listenSocketPair.perSocket.lastInitiatedAcceptStandOff = 0;
                                 listenSocketPair.perSocket.timeSinceLastInitiatedAccept.start;

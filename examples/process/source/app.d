@@ -40,6 +40,6 @@ void main() {
 
     import sidero.eventloop.tasks.workers;
     import sidero.eventloop.sockets;
-    shutdownWorkers;
+    shutdownWorkerThreads;
     shutdownNetworking;
 }

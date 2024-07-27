@@ -69,7 +69,7 @@ int main(string[] args) {
     version(all) {
         if(!startUpNetworking)
             return 3;
-        if(!startWorkers(1))
+        if(!startWorkerThreads())
             return 4;
     }
 
@@ -161,7 +161,7 @@ int main(string[] args) {
 
     acceptLoop;
 
-    shutdownWorkers;
+    shutdownWorkerThreads;
     shutdownNetworking;
     return 0;
 }

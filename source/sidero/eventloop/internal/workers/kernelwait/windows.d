@@ -52,7 +52,6 @@ bool initializeWorkerPlatformMechanism(size_t numberOfWorkers) @trusted {
         if(!logger || logger.isNull)
             return false;
         logger.setLevel = LogLevel.Warning;
-        logger.setLevel = LogLevel.Trace;
 
         requiredWorkers = cast(uint)numberOfWorkers;
 

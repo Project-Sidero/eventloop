@@ -49,7 +49,7 @@ bool ensureItIsSetup() {
 
     if(!startUpNetworking)
         return false;
-    else if(!startWorkers(0))
+    else if(!startWorkerThreads)
         return false;
 
     return true;

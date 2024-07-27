@@ -16,7 +16,7 @@ bool initializeLinuxEventWaiting() {
     version(linux) {
         // EPOLLEXCLUSIVE was added in 4.5
 
-        if((os.major > 4 || (os.major == 4 && os.minor >= 5)) && startWorkers(0) && usesKernelWait())
+        if((os.major > 4 || (os.major == 4 && os.minor >= 5)) && checkWorkerInit() && usesKernelWait())
             return true;
     }
 

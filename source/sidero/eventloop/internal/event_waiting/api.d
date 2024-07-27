@@ -114,8 +114,6 @@ package(sidero.eventloop.internal) {
     bool guardEventWaiting(Del)(scope Del del) @trusted {
         import linuxeventwait = sidero.eventloop.internal.event_waiting.linux;
         import threadedeventwait = sidero.eventloop.internal.event_waiting.threaded.api;
-
-        import sidero.eventloop.internal.workers.api : startWorkers, usesKernelWait;
         import sidero.base.system : operatingSystem, OperatingSystem;
 
         auto lockError = eventWaiterMutex.lock;

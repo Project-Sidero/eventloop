@@ -8,17 +8,28 @@ import iw = sidero.eventloop.internal.workers;
 
 export @safe nothrow @nogc:
 
-/// Params: workerMultiplier = Default is 2, recommended by Jeffrey Richter and Jason D. Clark for Windows IOCP.
-ErrorResult startWorkers(size_t workerMultiplier = 2) @trusted {
-    if(iw.startWorkers(workerMultiplier))
+///
+ErrorResult startWorkerThreads() @trusted {
+    if(iw.checkWorkerInit())
         return ErrorResult.init;
 
     return ErrorResult(UnknownPlatformBehaviorException("Could not start workers"));
 }
 
 ///
-void shutdownWorkers() @trusted {
+void shutdownWorkerThreads() @trusted {
     iw.shutdownWorkers();
+}
+
+/**
+    Configure the worker maximum multiplier based upon the cpu core count.
+
+    Note: does not start any additional worker threads.
+
+    Params: workerMultiplier = Default is 2, recommended by Jeffrey Richter and Jason D. Clark for Windows IOCP.
+*/
+void configureWorkerMultiplier(size_t workerMultiplier = 2) @trusted {
+    configureWorkerMultiplier(workerMultiplier);
 }
 
 ///
