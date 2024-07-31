@@ -171,6 +171,8 @@ void workerProc() @trusted {
         logger.info("Starting IOCP worker ", Thread.self);
 
         for(;;) {
+            checkForMoreThreadsToSpinUp;
+
             DWORD numberOfBytesTransferred;
             ULONG_PTR completionKey;
             OVERLAPPED* overlapped;

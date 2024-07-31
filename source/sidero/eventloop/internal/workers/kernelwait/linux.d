@@ -169,6 +169,7 @@ void workerProc() @trusted {
         UserEventHandler[128] handlers;
 
         Loop: for (;;) {
+            checkForMoreThreadsToSpinUp;
             int result = epoll_wait(epollContext, eventBuffer.ptr, cast(int)eventBuffer.length, -1);
             logger.debug_("EPOLL worker thread got ", result, " ", Thread.self);
 

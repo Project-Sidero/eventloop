@@ -14,6 +14,7 @@ import sidero.base.allocators;
 import sidero.base.errors;
 import sidero.base.synchronization.system.lock;
 import sidero.base.internal.atomic;
+import sidero.base.datetime;
 
 export @safe nothrow @nogc:
 
@@ -28,6 +29,10 @@ __gshared {
         LoggerReference logger;
 
         DuplicateHashMap!(GenericCoroutine, GenericCoroutine) coroutinesWaitingOnOthers;
+
+        StopWatch threadsUsageStopWatch;
+        ProcessUserStopWatch threadsActualUsageStopWatch;
+        int threadsUsageBackOff;
 
         size_t maxWorkerThreads;
         void function() @safe nothrow @nogc workerProc;
@@ -59,11 +64,17 @@ bool checkWorkerInit() @trusted {
     configureWorkerMultiplier(2);
     mutex.lock.assumeOkay;
 
-    if(kernelwait.initializeWorkerMechanism(maxWorkerThreads)) {
+    threadsUsageStopWatch.start;
+    threadsActualUsageStopWatch.start;
+    threadsUsageBackOff = 0;
+
+    const oldCount = maxWorkerThreads;
+
+    if(kernelwait.initializeWorkerMechanism(oldCount)) {
         logger.info("Workers using kernel mechanism");
         useKernelWait = true;
         workerProc = &kernelwait.workerProc;
-    } else if(userland.initializeWorkerMechanism(maxWorkerThreads)) {
+    } else if(userland.initializeWorkerMechanism(oldCount)) {
         logger.info("Workers using userland mechanism");
         useUserLand = true;
         workerProc = &userland.workerProc;
@@ -164,25 +175,6 @@ bool isWorkerThread(Thread other) @trusted {
     return false;
 }
 
-void triggerACoroutineExecution(size_t estimate = 0) @trusted {
-    if(coroutinesForWorkers.empty)
-        return;
-
-    mutex.lock.assumeOkay;
-    scope(exit)
-        mutex.unlock;
-
-    if(estimate == 0)
-        estimate = coroutinesForWorkers.count;
-
-    if(useKernelWait)
-        kernelwait.triggerACoroutineMechanism(estimate);
-    else if(useUserLand)
-        userland.triggerACoroutineMechanism(estimate);
-    else
-        assert(0);
-}
-
 void addCoroutineTask(GenericCoroutine coroutine) @trusted {
     if(coroutine.isNull)
         return;
@@ -278,22 +270,73 @@ void debugWorkers() @trusted {
     mutex.unlock;
 }
 
-package(sidero.eventloop.internal):
+void checkForMoreThreadsToSpinUp() @trusted {
+    if (threadsUsageStopWatch.peek < 1.seconds)
+        return;
+
+    auto mutexGot = mutex.tryLock;
+
+    if (mutexGot && mutexGot.get) {
+        scope(exit)
+            mutex.unlock;
+
+        if (threadPool.length >= maxWorkerThreads)
+            return;
+        else if (threadsActualUsageStopWatch.peek <= seconds(threadPool.length / 3)) {
+            // some use < 75% of cpu usage, we do the exact opposite, as we WANT double the threads to cores.
+            threadsUsageBackOff = 0;
+            return;
+        }
+
+        threadsUsageStopWatch.start;
+        threadsActualUsageStopWatch.start;
+
+        threadsUsageBackOff++;
+
+        // Give it a minute,
+        if (threadsUsageBackOff < 60) {
+            return;
+        } else {
+            // Now we start another thread.
+            threadsUsageBackOff = 0;
+            startAWorker;
+        }
+    }
+}
+
+private:
+
+void triggerACoroutineExecution(size_t estimate = 0) @trusted {
+    if(coroutinesForWorkers.empty)
+    return;
+
+    mutex.lock.assumeOkay;
+    scope(exit)
+    mutex.unlock;
+
+    if(estimate == 0)
+    estimate = coroutinesForWorkers.count;
+
+    if(useKernelWait)
+    kernelwait.triggerACoroutineMechanism(estimate);
+    else if(useUserLand)
+    userland.triggerACoroutineMechanism(estimate);
+    else
+    assert(0);
+}
 
 // NOTE: must be guarded
 void startAWorker() @trusted {
     if(threadPool.length >= maxWorkerThreads)
-        return;
+    return;
 
     auto thread = Thread.create(workerProc);
 
     if(thread)
-        threadPool ~= thread.get;
+    threadPool ~= thread.get;
     else
-        logger.error("Could not create worker thread ", thread.getError());
+    logger.error("Could not create worker thread ", thread.getError());
 }
-
-private:
 
 void triggerACoroutine(size_t count) @trusted {
     if(useKernelWait) {

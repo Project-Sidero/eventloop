@@ -92,6 +92,8 @@ void workerProc() @trusted {
         logger.info("Starting Posix worker ", Thread.self);
 
         for (;;) {
+            checkForMoreThreadsToSpinUp;
+
             pthread_mutex_lock(&workersWorkMutex);
             while (coroutinesForWorkers.empty && !atomicLoad(workersInShutdown)) {
                 pthread_cond_wait(&workerCondition, &workersWorkMutex);
