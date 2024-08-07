@@ -7,88 +7,13 @@ import sidero.base.system : operatingSystem, OperatingSystem;
 export @safe nothrow @nogc:
 
 /*
-
 move(FilePath from, FilePath to)
 copy(FilePath from, FilePath to)
 mkdir(FilePath path)
-void entries(scope void delegate(FilePath) del);
-void entriesByBreadthFirst(scope void delegate(FilePath) del);
-void entriesByDepthFirst(scope void delegate(FilePath) del);
+ErrorResult createHardLink(FilePath source, FilePath target)
+
+TODO: meta-data rights, last modified, created ext.
 */
-
-///
-enum FileType {
-    Error,
-    File,
-    Directory,
-    SymbolicLink,
-
-    /// Posix specific
-    Block,
-    /// Ditto
-    Character,
-    /// Ditto
-    Fifo,
-    /// Ditto
-    Socket
-}
-
-///
-FileType getType(FilePath path) @trusted {
-    if(!path.couldPointToEntry)
-        return FileType.Error;
-
-    version(Windows) {
-        String_UTF16 path16 = path.toStringUTF16();
-
-        DWORD fileAttributes;
-        if((fileAttributes = GetFileAttributesW(path16.ptr)) == INVALID_FILE_ATTRIBUTES)
-            return FileType.Error;
-
-        if((fileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
-            return FileType.SymbolicLink;
-        else if((fileAttributes & SYMBOLIC_LINK_FLAG_DIRECTORY) != 0)
-            return FileType.Directory;
-        else
-            return FileType.File;
-    } else version(Posix) {
-        String_UTF8 path8 = path.toString();
-
-        stat buf;
-        if(stat(path8.ptr, &buf) != 0)
-            return false;
-
-        switch(S_GETTYPE(buf.st_mode)) {
-        case S_IFREG:
-            return FileType.File;
-
-        case S_IFDIR:
-            return FileType.Directory;
-
-        case S_IFLNK:
-            return FileType.SymbolicLink;
-
-        default:
-            return FileType.Error;
-        }
-    } else
-        static assert(0, "Unimplemented platform");
-}
-
-///
-bool exists(FilePath path) @trusted {
-    return getType(path) != FileType.Error;
-}
-
-///
-bool isFile(FilePath path) @trusted {
-    return getType(path) == FileType.File;
-}
-
-///
-bool isDirectory(FilePath path) @trusted {
-    return getType(path) == FileType.Directory;
-}
 
 /**
 Creates a symbolic link.
@@ -149,7 +74,7 @@ ErrorResult createSymbolicLink(FilePath source, FilePath target, bool targetWill
         static assert(0, "Unimplemented platform");
 }
 
-/// Will delete symbolic links, and is recursive for directories.
+/// Will delete symbolic links (junctions and reparse points too), and is recursive for directories.
 ErrorResult remove(FilePath source) @trusted {
     if(!source.couldPointToEntry)
         return ErrorResult(MalformedInputException("Source file does not point to a file or directory"));
@@ -226,12 +151,12 @@ ErrorResult remove(FilePath source) @trusted {
                 return 0;
             }
 
-            switch (nftw(path8.ptr, &sidero_on_nftw_remove, 64, FTW_DEPTH | FTW_PHYS)) {
-                case 0:
-                    return ErrorResult.init;
+            switch(nftw(path8.ptr, &sidero_on_nftw_remove, 64, FTW_DEPTH | FTW_PHYS)) {
+            case 0:
+                return ErrorResult.init;
 
-                    default:
-                    return ErrorResult(UnknownPlatformBehaviorException);
+            default:
+                return ErrorResult(UnknownPlatformBehaviorException);
             }
         }
     } else

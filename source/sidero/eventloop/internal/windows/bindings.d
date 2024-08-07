@@ -109,7 +109,9 @@ version(Windows) {
         bool CreateSymbolicLinkW(const(wchar)*, const(wchar)*, DWORD);
         DWORD GetFileAttributesW(const(wchar)*);
         int SHFileOperationW(SHFILEOPSTRUCTW*);
+        HANDLE CreateFileW(const(wchar)*, DWORD, DWORD, SECURITY_ATTRIBUTES*, DWORD, DWORD, HANDLE);
         bool DeleteFileW(const(wchar)*);
+        bool DeviceIoControl(HANDLE, DWORD, void*, DWORD, void*, DWORD, DWORD*, OVERLAPPED*);
     }
 
     enum {
@@ -266,6 +268,26 @@ version(Windows) {
         FOF_SILENT = 0x4,
         FOF_NOCONFIRMMKDIR = 0x200,
         FOF_NOERRORUI = 0x400,
+
+        FILE_SHARE_READ = 0x1,
+        FILE_SHARE_WRITE = 0x2,
+        FILE_SHARE_DELETE = 0x4,
+
+        CREATE_NEW = 1,
+        CREATE_ALWAYS = 2,
+        OPEN_EXISTING = 3,
+        OPEN_ALWAYS = 4,
+        TRUNCATE_EXISTING = 5,
+
+        FILE_ATTRIBUTE_NORMAL = 0x80,
+        FILE_ATTRIBUTE_TEMPORARY = 0x100,
+
+        FSCTL_SET_REPARSE_POINT = 0x000900A4,
+        FSCTL_GET_REPARSE_POINT = 0x000900A8,
+        FSCTL_DELETE_REPARSE_POINT = 0x000900AC,
+
+        IO_REPARSE_TAG_MOUNT_POINT = 0xA0000003,
+        IO_REPARSE_TAG_SYMLINK = 0xA000000C,
     }
 
     struct OVERLAPPED {
@@ -607,5 +629,34 @@ version(Windows) {
         BOOL fAnyOperationsAborted;
         void* hNameMappings;
         const(wchar)* lpszProgressTitle;
+    }
+
+    struct REPARSE_DATA_BUFFER {
+        DWORD ReparseTag;
+        ushort ReparseDataLength;
+        ushort Reserved;
+
+        union {
+            struct {
+                ushort SubstituteNameOffset1;
+                ushort SubstituteNameLength1;
+                ushort PrintNameOffset1;
+                ushort PrintNameLength1;
+                DWORD Flags1;
+                wchar[1] PathBuffer1;
+            }
+
+            struct {
+                ushort SubstituteNameOffset2;
+                ushort SubstituteNameLength2;
+                ushort PrintNameOffset2;
+                ushort PrintNameLength2;
+                wchar[1] PathBuffer2;
+            }
+
+            struct {
+                ubyte[1] DataBuffer3;
+            }
+        }
     }
 }
