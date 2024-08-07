@@ -116,10 +116,6 @@ void shutdownWorkerPlatformMechanism() @trusted {
 
         atomicStore(isInProcessOfDieing, true);
 
-        while (atomicLoad(startedWorkers) != requiredWorkers) {
-            Thread.yield;
-        }
-
         {
             int result = eventfd_write(workFd, 1);
 

@@ -77,6 +77,7 @@ struct PlatformSocket {
             if(result == 0) {
                 // completed, IOCP will be notified of completion
                 logger.trace("Immediate completion of read ", socketState.handle, " on ", Thread.self);
+                socketState.pinExtra;
             } else {
                 const errorCode = WSAGetLastError();
 
@@ -110,11 +111,13 @@ struct PlatformSocket {
                     // this is okay, its delayed via IOCP
                     logger.debug_("Reading delayed via IOCP for ",
                             socketState.handle, " on ", Thread.self);
+                    socketState.pinExtra;
                     return;
 
                 default:
                     havePendingAlwaysWaitingRead = false;
                     logger.notice("Unknown error while reading ", errorCode, " for ", socketState.handle, " on ", Thread.self);
+                    socketState.pinExtra;
                     return;
                 }
             }
@@ -227,6 +230,13 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
                 }
             }
 
+            if(CancelIoEx(socketState.handle, null) != 0) {
+                logger.debug_("Successfully cancelled any socket operations for ", socketState.handle, " on ", Thread.self);
+            } else {
+                logger.info("Socket operations for ", socketState.handle, " failed to cancel with error ",
+                        WSAGetLastError(), " on thread ", Thread.self);
+            }
+
             socketState.reading.cleanup();
             socketState.performReadWrite();
             forceClose(socketState);
@@ -267,6 +277,7 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
             // completed, transferredBytes will have the amount of data that was sent
             logger.debug_("Immediate completion of write ", socketState.handle, " on ", Thread.self);
             //socketState.rawWriting.complete(socketState, transferredBytes);
+            socketState.pinExtra;
             return true;
         } else {
             const errorCode = WSAGetLastError();
@@ -303,10 +314,12 @@ bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted 
             case WSA_IO_PENDING:
                 // this is okay, its delayed via IOCP
                 logger.debug_("Writing delayed via IOCP for ", socketState.handle, " on ", Thread.self);
+                socketState.pinExtra;
                 return true;
 
             default:
                 logger.notice("Unknown error while writing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
+                socketState.pinExtra;
                 break;
             }
 
@@ -352,6 +365,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
         if(result == 0) {
             // completed, IOCP will be notified of completion
             logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
+            socketState.pinExtra;
             return true;
         } else {
             const errorCode = WSAGetLastError();
@@ -389,10 +403,12 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
             case WSA_IO_PENDING:
                 // this is okay, its delayed via IOCP
                 logger.debug_("Reading delayed via IOCP for ", socketState.handle, " on ", Thread.self);
+                socketState.pinExtra;
                 return true;
 
             default:
                 logger.notice("Unknown error while reading ", errorCode, " for ", socketState.handle, " on ", Thread.self);
+                socketState.pinExtra;
                 break;
             }
 

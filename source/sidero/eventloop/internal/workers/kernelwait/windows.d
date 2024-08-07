@@ -76,10 +76,6 @@ void shutdownWorkerPlatformMechanism() @trusted {
     version(Windows) {
         ULONG_PTR shutdownKey = cast(ULONG_PTR)&shutdownByte;
 
-        while(atomicLoad(startedWorkers) != requiredWorkers) {
-            Thread.yield;
-        }
-
         while(atomicLoad(runningWorkers) > 0) {
             auto result = PostQueuedCompletionStatus(completionPort, 0, shutdownKey, null);
 
@@ -239,6 +235,8 @@ void seeError(IOCPwork* work, OVERLAPPED* overlapped, int errorCode) @trusted {
                     &socket.state.alwaysReadingOverlapped, " on ", Thread.self);
 
             if(overlapped is &socket.state.alwaysReadingOverlapped) {
+                socket.state.unpinExtra;
+
                 DWORD transferred;
                 DWORD flags;
 
@@ -255,6 +253,9 @@ void seeError(IOCPwork* work, OVERLAPPED* overlapped, int errorCode) @trusted {
                     // Ugh oh...
                     break;
                 }
+            } else if(overlapped is &socket.state.readOverlapped || overlapped is &socket.state.writeOverlapped ||
+                    overlapped is &socket.state.acceptOverlapped) {
+                socket.state.unpinExtra;
             }
 
             socket.state.unpin;
@@ -284,6 +285,7 @@ void seeWork(IOCPwork* work, DWORD numberOfBytesTransferred, OVERLAPPED* overlap
             Socket socket;
             socket.state = work.socketState;
             socket.state.rc(true);
+            socket.state.unpinExtra;
 
             logger.debug_("Seeing IOCP work for socket ", socket.state.handle, " on ", Thread.self);
 

@@ -414,9 +414,11 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
 
                 switch(error) {
                 case ERROR_IO_PENDING:
-                    acquiredSocket.state.isDelayedAccept = true;
                     logger.debug_("Socket is delayed for acceptance ", acquiredSocket.state.handle,
                             " for listen socket ", listenSocketPair.perSocket.handle, " on ", Thread.self);
+
+                    acquiredSocket.state.isDelayedAccept = true;
+                    acquiredSocket.state.pinExtra;
                     break;
 
                 default:

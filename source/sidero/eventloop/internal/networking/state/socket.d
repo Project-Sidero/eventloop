@@ -23,6 +23,7 @@ struct SocketState {
         RCAllocator allocator;
 
         shared(ptrdiff_t) refCount;
+        shared(ptrdiff_t) refCountExtra;
 
         bool inShutdownProcess;
     }
@@ -51,6 +52,7 @@ struct SocketState {
         checkInit;
         this.allocator = allocator;
         this.refCount = 1;
+        this.refCountExtra = 0;
         this.protocol = protocol;
 
         logAssert(reading.initialize, "Could not initialize reading for socket");
@@ -106,8 +108,20 @@ struct SocketState {
         shutdown(&this);
         mutex.unlock;
 
-        if (wasAlive)
+        if(wasAlive)
             rc(false);
+    }
+
+    void pinExtra() scope {
+        if(atomicIncrementAndLoad(this.refCountExtra, 1) == 1) {
+            this.rc(true);
+        }
+    }
+
+    void unpinExtra() scope {
+        if(atomicDecrementAndLoad(this.refCountExtra, 1) == 0) {
+            this.rc(false);
+        }
     }
 
     bool haveBeenShutdown() scope {
@@ -118,7 +132,7 @@ struct SocketState {
         bool wasAlive = cas(isAlive, true, false);
         shutdown(&this);
 
-        if (wasAlive)
+        if(wasAlive)
             rc(false);
     }
 
