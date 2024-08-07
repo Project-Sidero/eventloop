@@ -18,7 +18,8 @@
     "libs-windows": [
         "Mswsock",
         "Crypt32",
-        "Secur32"
+        "Secur32",
+        "Shell32"
     ],
     "libs-posix": [
         "pthread"

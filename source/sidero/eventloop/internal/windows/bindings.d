@@ -105,6 +105,11 @@ version(Windows) {
         bool WriteFile(HANDLE, void*, DWORD, DWORD*, OVERLAPPED*);
 
         bool SetNamedPipeHandleState(HANDLE, DWORD*, DWORD*, DWORD*);
+
+        bool CreateSymbolicLinkW(const(wchar)*, const(wchar)*, DWORD);
+        DWORD GetFileAttributesW(const(wchar)*);
+        int SHFileOperationW(SHFILEOPSTRUCTW*);
+        bool DeleteFileW(const(wchar)*);
     }
 
     enum {
@@ -245,6 +250,22 @@ version(Windows) {
         PIPE_READMODE_BYTE = 0x00000000,
         PIPE_NOWAIT = 0x00000001,
         ERROR_BROKEN_PIPE = 0x6D,
+
+        FILE_ATTRIBUTE_DIRECTORY = 0x10,
+        FILE_ATTRIBUTE_REPARSE_POINT = 0x400,
+        INVALID_FILE_ATTRIBUTES = 4294967295,
+        SYMBOLIC_LINK_FLAG_DIRECTORY = 0x1,
+        SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE = 0x2,
+
+        FO_MOVE = 1,
+        FO_COPY = 2,
+        FO_DELETE = 3,
+        FO_RENAME = 4,
+
+        FOF_NOCONFIRMATION = 0x10,
+        FOF_SILENT = 0x4,
+        FOF_NOCONFIRMMKDIR = 0x200,
+        FOF_NOERRORUI = 0x400,
     }
 
     struct OVERLAPPED {
@@ -571,5 +592,20 @@ version(Windows) {
         HANDLE hThread;
         DWORD dwProcessId;
         DWORD dwThreadId;
+    }
+
+    alias HWND = HANDLE;
+
+    alias FILEOP_FLAGS = WORD;
+
+    struct SHFILEOPSTRUCTW {
+        HWND hwnd;
+        uint wFunc;
+        const(wchar)* pFrom;
+        const(wchar)* pTo;
+        FILEOP_FLAGS fFlags;
+        BOOL fAnyOperationsAborted;
+        void* hNameMappings;
+        const(wchar)* lpszProgressTitle;
     }
 }
