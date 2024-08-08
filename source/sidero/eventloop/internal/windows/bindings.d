@@ -12,7 +12,7 @@ version(Windows) {
     public import core.sys.windows.winsock2 : SOCKET, WSAENOTSOCK;
     public import core.sys.windows.windef : WORD, DWORD, ULONG, LONG, BOOL, MAKEWORD;
     public import core.sys.windows.winbase : INFINITE, WAIT_OBJECT_0, FileTimeToSystemTime, SYSTEMTIME, GetLastError,
-        LocalAlloc, LocalFree;
+        LocalAlloc, LocalFree, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE;
     public import core.sys.windows.winnt : CHAR, WCHAR, LONGLONG, LPSTR, LPCSTR, LPWSTR, LPCWSTR, PLUID, LPCWSTR;
     public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT;
     public import core.sys.windows.basetsd : HANDLE, ULONG_PTR;
@@ -112,6 +112,8 @@ version(Windows) {
         HANDLE CreateFileW(const(wchar)*, DWORD, DWORD, SECURITY_ATTRIBUTES*, DWORD, DWORD, HANDLE);
         bool DeleteFileW(const(wchar)*);
         bool DeviceIoControl(HANDLE, DWORD, void*, DWORD, void*, DWORD, DWORD*, OVERLAPPED*);
+
+        HANDLE GetStdHandle(DWORD);
     }
 
     enum {
