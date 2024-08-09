@@ -112,6 +112,7 @@ version(Windows) {
         HANDLE CreateFileW(const(wchar)*, DWORD, DWORD, SECURITY_ATTRIBUTES*, DWORD, DWORD, HANDLE);
         bool DeleteFileW(const(wchar)*);
         bool DeviceIoControl(HANDLE, DWORD, void*, DWORD, void*, DWORD, DWORD*, OVERLAPPED*);
+        HANDLE CreateNamedPipeW(const(wchar)*, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, SECURITY_ATTRIBUTES*);
 
         HANDLE GetStdHandle(DWORD);
     }
@@ -252,7 +253,6 @@ version(Windows) {
         HANDLE_FLAG_INHERIT = 0x00000001,
 
         PIPE_READMODE_BYTE = 0x00000000,
-        PIPE_NOWAIT = 0x00000001,
         ERROR_BROKEN_PIPE = 0x6D,
 
         FILE_ATTRIBUTE_DIRECTORY = 0x10,
@@ -290,6 +290,28 @@ version(Windows) {
 
         IO_REPARSE_TAG_MOUNT_POINT = 0xA0000003,
         IO_REPARSE_TAG_SYMLINK = 0xA000000C,
+
+        PIPE_ACCESS_INBOUND = 0x1,
+        PIPE_ACCESS_OUTBOUND = 0x2,
+        PIPE_ACCESS_DUPLEX = 0x3,
+
+        FILE_FLAG_OVERLAPPED = 0x40000000,
+
+        PIPE_TYPE_BYTE = 0x0,
+        PIPE_TYPE_MESSAGE = 0x4,
+
+        PIPE_WAIT = 0x0,
+        PIPE_NOWAIT = 0x1,
+
+        PIPE_ACCEPT_REMOTE_CLIENTS = 0x0,
+        PIPE_REJECT_REMOTE_CLIENTS = 0x8,
+
+        PIPE_UNLIMITED_INSTANCES = 255,
+
+        GENERIC_ALL = 0x10000000,
+        GENERIC_EXECUTE = 0x20000000,
+        GENERIC_WRITE = 0x40000000,
+        GENERIC_READ = 0x80000000,
     }
 
     struct OVERLAPPED {

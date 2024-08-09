@@ -92,18 +92,69 @@ ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, 
     return ErrorResult.init;
 }
 
-///
-ErrorResult openNamedPipe(FilePath filePath, out ReadPipe readPipe, bool deleteOnClose = false) {
-    // posix mkfifo will return EEXIST if it already exists
+/**
+Creates a named pipe.
 
-    assert(0);
+Note: on Windows this is limited to local machine and does not support networking.
+
+Note: Windows file paths must take the form ``\\.\\pipes\pipename`` where pipename is your pipe name for absolute paths.
+*/
+ErrorResult createNamedPipe(FilePath filePath, out WritePipe writePipe) {
+    version(Windows) {
+        import sidero.eventloop.internal.windows.bindings : CreateNamedPipeW, INVALID_HANDLE_VALUE, PIPE_ACCESS_OUTBOUND,
+            FILE_FLAG_OVERLAPPED,
+            HANDLE, PIPE_TYPE_BYTE, PIPE_READMODE_BYTE, PIPE_WAIT, PIPE_REJECT_REMOTE_CLIENTS, PIPE_UNLIMITED_INSTANCES;
+
+        // \\.\pipe\pipename
+        // The pipename part of the name can include any character other than a backslash, including numbers and special characters.
+        // The entire pipe name string can be up to 256 characters long.
+        // Pipe names are not case sensitive.
+
+        auto path16 = acquireWindowsPipePath(filePath);
+        if(!path16)
+            return ErrorResult(path16.getError());
+
+        HANDLE handle = CreateNamedPipeW(path16.ptr, PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, PIPE_UNLIMITED_INSTANCES, 8196, 8196, 0, null);
+
+        if(handle is INVALID_HANDLE_VALUE)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe"));
+
+        writePipe = WritePipe.fromSystemHandle(handle);
+        return ErrorResult.init;
+    } else version(Posix) {
+        // posix mkfifo will return EEXIST if it already exists
+        assert(0);
+    } else
+        static assert(0, "Unimplemented platform");
 }
 
 ///
-ErrorResult openNamedPipe(FilePath filePath, out WritePipe writePipe, bool deleteOnClose = true) {
-    // posix mkfifo will return EEXIST if it already exists
+ErrorResult openNamedPipe(FilePath filePath, out ReadPipe readPipe) {
+    version(Windows) {
+        import sidero.eventloop.internal.windows.bindings : CreateFileW, GENERIC_READ, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, INVALID_HANDLE_VALUE;
 
-    assert(0);
+        // \\.\pipe\pipename
+        // The pipename part of the name can include any character other than a backslash, including numbers and special characters.
+        // The entire pipe name string can be up to 256 characters long.
+        // Pipe names are not case sensitive.
+
+        auto path16 = acquireWindowsPipePath(filePath);
+        if(!path16)
+            return ErrorResult(path16.getError());
+
+        HANDLE handle = CreateFileW(path16.ptr, GENERIC_READ | FILE_FLAG_OVERLAPPED, 0, null, OPEN_EXISTING, 0, null);
+
+        if(handle is INVALID_HANDLE_VALUE)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe"));
+
+        readPipe = ReadPipe.fromSystemHandle(handle);
+        return ErrorResult.init;
+    } else version(Posix) {
+        // posix mkfifo will return EEXIST if it already exists
+        assert(0);
+    } else
+        static assert(0, "Unimplemented platform");
 }
 
 ///
@@ -752,5 +803,34 @@ struct State {
 
     void notifiedOfReadComplete(scope State* socketState) scope {
         // Not needed
+    }
+}
+
+Result!String_UTF16 acquireWindowsPipePath(FilePath path) {
+    final switch(path.relativeTo) {
+    case FilePathRelativeTo.Nothing:
+        // absolute
+        String_UTF16 path16 = path.toStringUTF16();
+
+        if(!path16.startsWith("\\\\.\\pipe\\"w))
+            return typeof(return)(MalformedInputException("Pipe file path must begin with \\\\.\\pipe\\"));
+        else if(path16.lastIndexOf("\\"w) > 8)
+            return typeof(return)(MalformedInputException("Pipe file path must not include backslash after \\\\.\\pipe\\"));
+
+        return path16;
+
+    case FilePathRelativeTo.CurrentWorkingDirectory:
+        // relative
+        String_UTF16 path16 = path.toStringUTF16();
+
+        if(path16.contains("\\"))
+            return typeof(return)(MalformedInputException("Pipe file path must not include backslash"));
+
+        StringBuilder_UTF16 builder = StringBuilder_UTF16("\\\\.\\pipe\\"w);
+        builder ~= path16;
+        return typeof(return)(builder.asReadOnly);
+
+    case FilePathRelativeTo.Home, FilePathRelativeTo.DriveAndCWD, FilePathRelativeTo.CurrentDrive:
+        return typeof(return)(MalformedInputException("A windows named pipe must be called \\\\.\\pipes\\pipename"));
     }
 }
