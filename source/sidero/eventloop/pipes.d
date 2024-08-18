@@ -95,11 +95,18 @@ ErrorResult createAnonymousPipe(out ReadPipe readPipe, out WritePipe writePipe, 
 /**
 Creates a named pipe.
 
+No restrictions are placed upon who can read/write to the pipe.
+
 Note: on Windows this is limited to local machine and does not support networking.
 
 Note: Windows file paths must take the form ``\\.\\pipes\pipename`` where pipename is your pipe name for absolute paths.
+
+See_Also: openNamedPipe
 */
 ErrorResult createNamedPipe(FilePath filePath, out WritePipe writePipe) {
+    if(!filePath.couldPointToEntry)
+        return ErrorResult(MalformedInputException("Input file path does not point to a possible file"));
+
     version(Windows) {
         import sidero.eventloop.internal.windows.bindings : CreateNamedPipeW, INVALID_HANDLE_VALUE, PIPE_ACCESS_OUTBOUND,
             FILE_FLAG_OVERLAPPED,
@@ -118,21 +125,58 @@ ErrorResult createNamedPipe(FilePath filePath, out WritePipe writePipe) {
                 PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, PIPE_UNLIMITED_INSTANCES, 8196, 8196, 0, null);
 
         if(handle is INVALID_HANDLE_VALUE)
-            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe"));
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to create/open named pipe"));
 
         writePipe = WritePipe.fromSystemHandle(handle);
         return ErrorResult.init;
     } else version(Posix) {
-        // posix mkfifo will return EEXIST if it already exists
-        assert(0);
+        import core.sys.posix.sys.stat : S_IWUSR, S_IRUSR, S_IRGRP, S_IWGRP, S_IROTH, S_IWOTH, mkfifo;
+        import core.sys.posix.fcntl : O_WRONLY, O_NONBLOCK, open;
+        import core.stdc.errno;
+
+        String_UTF8 path8 = filePath.toString();
+        int err = mkfifo(path8.ptr, S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP | S_IROTH);
+
+        if(err < 0) {
+            switch(errno) {
+            case EEXIST:
+                // all ok
+                break;
+
+            case ENAMETOOLONG:
+                return ErrorResult(MalformedInputException("Failed to create/open named pipe as the file name was too long"));
+
+            case ELOOP, EACCES, ENOENT, ENOSPC, ENOTDIR, EROFS:
+                return ErrorResult(UnknownPlatformBehaviorException(
+                        "Failed to create/open named pipe as there is something wrong with file system for the given path"));
+
+            default:
+                return ErrorResult(UnknownPlatformBehaviorException("Failed to create/open named pipe"));
+            }
+        }
+
+        int fd = open(path8.ptr, O_WRONLY | O_NONBLOCK);
+        if(fd < 0)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to create/open named pipe"));
+
+        writePipe = WritePipe.fromSystemHandle(handle);
+        return ErrorResult.init;
     } else
         static assert(0, "Unimplemented platform");
 }
 
-///
+/**
+Opens an existing named pipe for reading.
+
+See_Also: createNamedPipe
+*/
 ErrorResult openNamedPipe(FilePath filePath, out ReadPipe readPipe) {
+    if(!filePath.couldPointToEntry)
+        return ErrorResult(MalformedInputException("Input file path does not point to a possible file"));
+
     version(Windows) {
-        import sidero.eventloop.internal.windows.bindings : CreateFileW, GENERIC_READ, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, INVALID_HANDLE_VALUE;
+        import sidero.eventloop.internal.windows.bindings : CreateFileW, GENERIC_READ, FILE_FLAG_OVERLAPPED,
+            OPEN_EXISTING, INVALID_HANDLE_VALUE;
 
         // \\.\pipe\pipename
         // The pipename part of the name can include any character other than a backslash, including numbers and special characters.
@@ -151,8 +195,16 @@ ErrorResult openNamedPipe(FilePath filePath, out ReadPipe readPipe) {
         readPipe = ReadPipe.fromSystemHandle(handle);
         return ErrorResult.init;
     } else version(Posix) {
-        // posix mkfifo will return EEXIST if it already exists
-        assert(0);
+        import core.sys.posix.fcntl : O_RDONLY, O_NONBLOCK, open;
+
+        String_UTF8 path8 = filePath.toString();
+
+        int fd = open(path8.ptr, O_RDONLY | O_NONBLOCK);
+        if(fd < 0)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe"));
+
+        readPipe = ReadPipe.fromSystemHandle(handle);
+        return ErrorResult.init;
     } else
         static assert(0, "Unimplemented platform");
 }
