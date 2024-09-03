@@ -130,8 +130,10 @@ ErrorResult createNamedPipe(FilePath filePath, out WritePipe writePipe) {
         writePipe = WritePipe.fromSystemHandle(handle);
         return ErrorResult.init;
     } else version(Posix) {
+        import sidero.base.internal.filesystem;
         import core.sys.posix.sys.stat : S_IWUSR, S_IRUSR, S_IRGRP, S_IWGRP, S_IROTH, S_IWOTH, mkfifo;
         import core.sys.posix.fcntl : O_WRONLY, O_NONBLOCK, open;
+        import core.sys.posix.stat : stat_t, stat, S_IFIFO;
         import core.stdc.errno;
 
         String_UTF8 path8 = filePath.toString();
@@ -155,9 +157,15 @@ ErrorResult createNamedPipe(FilePath filePath, out WritePipe writePipe) {
             }
         }
 
+        stat_t buf;
+        if(stat(path8.ptr, &buf) != 0)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe for writing"));
+        else if(S_GETTYPE(buf.st_mode) != S_IFIFO)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open a named pipe (not a pipe) for writing"));
+
         int fd = open(path8.ptr, O_WRONLY | O_NONBLOCK);
         if(fd < 0)
-            return ErrorResult(UnknownPlatformBehaviorException("Failed to create/open named pipe"));
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe"));
 
         writePipe = WritePipe.fromSystemHandle(handle);
         return ErrorResult.init;
@@ -195,9 +203,17 @@ ErrorResult openNamedPipe(FilePath filePath, out ReadPipe readPipe) {
         readPipe = ReadPipe.fromSystemHandle(handle);
         return ErrorResult.init;
     } else version(Posix) {
+        import sidero.base.internal.filesystem;
         import core.sys.posix.fcntl : O_RDONLY, O_NONBLOCK, open;
+        import core.sys.posix.stat : stat_t, stat, S_IFIFO;
 
         String_UTF8 path8 = filePath.toString();
+
+        stat_t buf;
+        if(stat(path8.ptr, &buf) != 0)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open named pipe for reading"));
+        else if(S_GETTYPE(buf.st_mode) != S_IFIFO)
+            return ErrorResult(UnknownPlatformBehaviorException("Failed to open a named pipe (not a pipe) for reading"));
 
         int fd = open(path8.ptr, O_RDONLY | O_NONBLOCK);
         if(fd < 0)
