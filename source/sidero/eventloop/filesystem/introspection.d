@@ -15,9 +15,13 @@ export @safe nothrow @nogc:
 
 ///
 enum FileType {
+    ///
     Error,
+    ///
     File,
+    ///
     Directory,
+    ///
     SymbolicLink,
 
     /// Posix specific
@@ -25,9 +29,9 @@ enum FileType {
     /// Ditto
     Character,
     /// Ditto
-    Fifo,
-    /// Ditto
     Socket,
+    /// Posix specific Fifo or pipe
+    Fifo,
 
     /// Windows specific
     ReparsePoint,
@@ -80,7 +84,7 @@ FileType getType(FilePath path) @trusted {
     } else version(Posix) {
         String_UTF8 path8 = path.toString();
 
-        stat buf;
+        stat_t buf;
         if(stat(path8.ptr, &buf) != 0)
             return false;
 
@@ -93,6 +97,15 @@ FileType getType(FilePath path) @trusted {
 
         case S_IFLNK:
             return FileType.SymbolicLink;
+
+        case S_IFIFO:
+            return FileType.Fifo;
+
+        case S_IFCHR:
+            return FileType.Character;
+
+        case S_IFBLK:
+            return FileType.Block;
 
         default:
             return FileType.Error;
