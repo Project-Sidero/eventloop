@@ -107,10 +107,14 @@ version(Windows) {
         bool SetNamedPipeHandleState(HANDLE, DWORD*, DWORD*, DWORD*);
 
         bool CreateSymbolicLinkW(const(wchar)*, const(wchar)*, DWORD);
+        DWORD GetFinalPathNameByHandleW(HANDLE, wchar*, DWORD, DWORD);
+
         DWORD GetFileAttributesW(const(wchar)*);
         int SHFileOperationW(SHFILEOPSTRUCTW*);
         HANDLE CreateFileW(const(wchar)*, DWORD, DWORD, SECURITY_ATTRIBUTES*, DWORD, DWORD, HANDLE);
         bool DeleteFileW(const(wchar)*);
+        bool GetFileSizeEx(HANDLE, LARGE_INTEGER*);
+
         bool DeviceIoControl(HANDLE, DWORD, void*, DWORD, void*, DWORD, DWORD*, OVERLAPPED*);
         HANDLE CreateNamedPipeW(const(wchar)*, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, SECURITY_ATTRIBUTES*);
 
@@ -312,6 +316,9 @@ version(Windows) {
         GENERIC_EXECUTE = 0x20000000,
         GENERIC_WRITE = 0x40000000,
         GENERIC_READ = 0x80000000,
+
+        FILE_NAME_NORMALIZED = 0,
+        VOLUME_NAME_DOS = 0,
     }
 
     struct OVERLAPPED {

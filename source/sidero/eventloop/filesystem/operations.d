@@ -11,8 +11,6 @@ move(FilePath from, FilePath to)
 copy(FilePath from, FilePath to)
 mkdir(FilePath path)
 ErrorResult createHardLink(FilePath source, FilePath target)
-
-TODO: meta-data rights, last modified, created ext.
 */
 
 /**
@@ -61,7 +59,7 @@ ErrorResult createSymbolicLink(FilePath source, FilePath target, bool targetWill
 
         switch(errno) {
         case ENAMETOOLONG, ENOENT, ENOTDIR, EEXIST:
-            return ErrorResult(MalformedInputException("Source path or target path do not match the file system"));
+            return ErrorResult(PlatformStateNotMatchingArgument("Source path or target path do not match the file system"));
 
         case EIO, ELOOP, EACCES, ENOSPC, EROFS:
             return ErrorResult(UnknownPlatformBehaviorException(
