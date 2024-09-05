@@ -10,9 +10,9 @@ version(Windows) {
     public import core.sys.windows.security : SECURITY_STATUS, SEC_E_OK, SEC_I_RENEGOTIATE, SEC_I_CONTINUE_NEEDED,
         SEC_E_WRONG_PRINCIPAL, SEC_E_INCOMPLETE_MESSAGE, SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED;
     public import core.sys.windows.winsock2 : SOCKET, WSAENOTSOCK;
-    public import core.sys.windows.windef : WORD, DWORD, ULONG, LONG, BOOL, MAKEWORD;
-    public import core.sys.windows.winbase : INFINITE, WAIT_OBJECT_0, FileTimeToSystemTime, SYSTEMTIME, GetLastError,
-        LocalAlloc, LocalFree, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE;
+    public import core.sys.windows.windef : WORD, DWORD, ULONG, LONG, BOOL, MAKEWORD, MAX_PATH;
+    public import core.sys.windows.winbase : INFINITE, WAIT_OBJECT_0, FileTimeToSystemTime, SYSTEMTIME, GetLastError, LocalAlloc,
+        LocalFree, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE, FINDEX_INFO_LEVELS, FINDEX_SEARCH_OPS, FILETIME;
     public import core.sys.windows.winnt : CHAR, WCHAR, LONGLONG, LPSTR, LPCSTR, LPWSTR, LPCWSTR, PLUID, LPCWSTR;
     public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT;
     public import core.sys.windows.basetsd : HANDLE, ULONG_PTR;
@@ -110,6 +110,8 @@ version(Windows) {
         DWORD GetFinalPathNameByHandleW(HANDLE, wchar*, DWORD, DWORD);
 
         DWORD GetFileAttributesW(const(wchar)*);
+        bool GetFileAttributesExW(const(wchar)*, GET_FILEEX_INFO_LEVELS, void*);
+
         int SHFileOperationW(SHFILEOPSTRUCTW*);
         HANDLE CreateFileW(const(wchar)*, DWORD, DWORD, SECURITY_ATTRIBUTES*, DWORD, DWORD, HANDLE);
         bool DeleteFileW(const(wchar)*);
@@ -119,6 +121,10 @@ version(Windows) {
         HANDLE CreateNamedPipeW(const(wchar)*, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, SECURITY_ATTRIBUTES*);
 
         HANDLE GetStdHandle(DWORD);
+
+        HANDLE FindFirstFileExW(wchar*, FINDEX_INFO_LEVELS, void*, FINDEX_SEARCH_OPS, void*, DWORD);
+        bool FindClose(HANDLE);
+        bool FindNextFileW(HANDLE, WIN32_FIND_DATAW*);
     }
 
     enum {
@@ -259,6 +265,7 @@ version(Windows) {
         PIPE_READMODE_BYTE = 0x00000000,
         ERROR_BROKEN_PIPE = 0x6D,
 
+        FILE_ATTRIBUTE_HIDDEN = 0x2,
         FILE_ATTRIBUTE_DIRECTORY = 0x10,
         FILE_ATTRIBUTE_REPARSE_POINT = 0x400,
         INVALID_FILE_ATTRIBUTES = 4294967295,
@@ -319,6 +326,13 @@ version(Windows) {
 
         FILE_NAME_NORMALIZED = 0,
         VOLUME_NAME_DOS = 0,
+
+        FIND_FIRST_EX_LARGE_FETCH = 2,
+    }
+
+    enum GET_FILEEX_INFO_LEVELS {
+        GetFileExInfoStandard,
+        GetFileExMaxInfoLevel
     }
 
     struct OVERLAPPED {
@@ -689,5 +703,30 @@ version(Windows) {
                 ubyte[1] DataBuffer3;
             }
         }
+    }
+
+    struct WIN32_FIND_DATAW {
+        DWORD dwFileAttributes;
+        FILETIME ftCreationTime;
+        FILETIME ftLastAccessTime;
+        FILETIME ftLastWriteTime;
+        DWORD nFileSizeHigh;
+        DWORD nFileSizeLow;
+        DWORD dwReserved0;
+        DWORD dwReserved1;
+        WCHAR[MAX_PATH] cFileName;
+        WCHAR[14] cAlternateFileName;
+        DWORD dwFileType;
+        DWORD dwCreatorType;
+        WORD wFinderFlags;
+    }
+
+    struct WIN32_FILE_ATTRIBUTE_DATA {
+        DWORD dwFileAttributes;
+        FILETIME ftCreationTime;
+        FILETIME ftLastAccessTime;
+        FILETIME ftLastWriteTime;
+        DWORD nFileSizeHigh;
+        DWORD nFileSizeLow;
     }
 }
