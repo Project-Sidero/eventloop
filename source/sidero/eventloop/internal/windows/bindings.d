@@ -14,7 +14,7 @@ version(Windows) {
     public import core.sys.windows.winbase : INFINITE, WAIT_OBJECT_0, FileTimeToSystemTime, SYSTEMTIME, GetLastError, LocalAlloc,
         LocalFree, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE, FINDEX_INFO_LEVELS, FINDEX_SEARCH_OPS, FILETIME;
     public import core.sys.windows.winnt : CHAR, WCHAR, LONGLONG, LPSTR, LPCSTR, LPWSTR, LPCWSTR, PLUID, LPCWSTR;
-    public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT;
+    public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT, ERROR_SUCCESS;
     public import core.sys.windows.basetsd : HANDLE, ULONG_PTR;
     public import core.sys.windows.basetyps : GUID;
 
@@ -107,12 +107,15 @@ version(Windows) {
         bool SetNamedPipeHandleState(HANDLE, DWORD*, DWORD*, DWORD*);
 
         bool CreateSymbolicLinkW(const(wchar)*, const(wchar)*, DWORD);
+        bool CreateHardLinkW(const(wchar)*, const(wchar)*, SECURITY_ATTRIBUTES*);
         DWORD GetFinalPathNameByHandleW(HANDLE, wchar*, DWORD, DWORD);
 
         DWORD GetFileAttributesW(const(wchar)*);
         bool GetFileAttributesExW(const(wchar)*, GET_FILEEX_INFO_LEVELS, void*);
 
         int SHFileOperationW(SHFILEOPSTRUCTW*);
+        int SHCreateDirectoryExW(HWND, const(wchar)*, SECURITY_ATTRIBUTES*);
+
         HANDLE CreateFileW(const(wchar)*, DWORD, DWORD, SECURITY_ATTRIBUTES*, DWORD, DWORD, HANDLE);
         bool DeleteFileW(const(wchar)*);
         bool GetFileSizeEx(HANDLE, LARGE_INTEGER*);
@@ -281,6 +284,7 @@ version(Windows) {
         FOF_SILENT = 0x4,
         FOF_NOCONFIRMMKDIR = 0x200,
         FOF_NOERRORUI = 0x400,
+        FOF_NORECURSION = 0x1000,
 
         FILE_SHARE_READ = 0x1,
         FILE_SHARE_WRITE = 0x2,
