@@ -1,0 +1,8 @@
+{
+    "name": "example_console",
+    "dependencies": {
+        "sidero_eventloop": {
+            "path": "../.."
+        }
+    }
+}
