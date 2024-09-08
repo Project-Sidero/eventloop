@@ -7,11 +7,6 @@ import sidero.base.system : operatingSystem, OperatingSystem;
 
 export @safe nothrow @nogc:
 
-/*
-move(FilePath from, FilePath to)
-??? createTemporaryFile()
-*/
-
 /**
 Creates a symbolic link.
 
@@ -407,6 +402,46 @@ ErrorResult copy(FilePath source, FilePath target, bool recursive = false) @trus
 
         return ErrorResult.init;
     }
+}
+
+/**
+Move a directory or file.
+
+Note: It the source and target are on different file systems it may fail.
+
+Params:
+    source = What to rename
+    target = What to rename it to
+*/
+ErrorResult move(FilePath source, FilePath target) @trusted {
+    import core.stdc.stdio : rename;
+
+    if(!source.couldPointToEntry)
+        return ErrorResult(MalformedInputException("Source path could not point to something that can be moved"));
+    else if(!target.couldPointToEntry)
+        return ErrorResult(MalformedInputException("Target path could not point to something that can be moved"));
+
+    if(!source.isAbsolute) {
+        Result!FilePath tempPath = source.asAbsolute;
+        if(tempPath)
+            source = tempPath;
+        else
+            return ErrorResult(MalformedInputException("Source path must be able to be made absolute"));
+    }
+
+    if(!target.isAbsolute) {
+        Result!FilePath tempPath = target.asAbsolute;
+        if(tempPath)
+            target = tempPath;
+        else
+            return ErrorResult(MalformedInputException("Target path must be able to be made absolute"));
+    }
+
+    String_UTF8 source8 = source.toString(), target8 = target.toString();
+
+    if(rename(source8.ptr, target8.ptr) != 0)
+        return ErrorResult(UnknownPlatformBehaviorException);
+    return ErrorResult.init;
 }
 
 private:
