@@ -28,19 +28,19 @@ struct Socket {
         SocketState* state;
     }
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     this(return scope ref Socket other) scope nothrow {
         this.state = other.state;
 
-        if (state !is null)
+        if(state !is null)
             state.rc(true);
     }
 
     ///
     ~this() scope nothrow @nogc {
-        if (state !is null)
+        if(state !is null)
             state.rc(false);
     }
 
@@ -51,7 +51,7 @@ struct Socket {
 
     /// Warning: unsafe, you must handle reference counting and keeping this instance alive
     SystemHandle unsafeGetHandle() @system {
-        if (isNull)
+        if(isNull)
             return SystemHandle.init;
         return SystemHandle(cast(void*)this.state.handle, SocketHandleIdentifier);
     }
@@ -63,7 +63,7 @@ struct Socket {
 
     ///
     bool isReadInProgress() scope {
-        if (!isAlive)
+        if(!isAlive)
             return false;
 
         bool ret;
@@ -75,14 +75,14 @@ struct Socket {
 
     /// Stop sending & receiving of data
     void close(bool graceFully = true) scope {
-        if (isNull)
+        if(isNull)
             return;
         state.close(graceFully);
     }
 
     ///
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
@@ -91,10 +91,34 @@ struct Socket {
             const cond = state.reading.requestFromUser(amount, ret);
             const nowOrNever = state.haveBeenShutdown;
 
-            if (cond) {
+            if(cond) {
                 state.performReadWrite;
 
-                if (nowOrNever && !ret.isComplete()) {
+                if(nowOrNever && !ret.isComplete()) {
+                    state.reading.cleanup();
+                }
+            }
+        });
+
+        assert(!ret.isNull);
+        return ret;
+    }
+
+    /// Reads a chunk that is 1 or more bytes big (depends upon implementation, and available data in stream)
+    Future!(Slice!ubyte) readChunk() scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() {
+            const cond = state.reading.requestFromUserChunk(ret);
+            const nowOrNever = state.haveBeenShutdown;
+
+            if(cond) {
+                state.performReadWrite;
+
+                if(nowOrNever && !ret.isComplete()) {
                     state.reading.cleanup();
                 }
             }
@@ -111,7 +135,7 @@ struct Socket {
 
     ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
-        if (isNull)
+        if(isNull)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
@@ -120,10 +144,10 @@ struct Socket {
             const cond = state.reading.requestFromUser(endCondition, ret);
             const nowOrNever = state.haveBeenShutdown;
 
-            if (cond) {
+            if(cond) {
                 state.performReadWrite;
 
-                if (nowOrNever && !ret.isComplete()) {
+                if(nowOrNever && !ret.isComplete()) {
                     state.reading.cleanup();
                 }
             }
@@ -140,7 +164,7 @@ struct Socket {
 
     ///
     void write(scope return Slice!ubyte data) scope {
-        if (isAlive()) {
+        if(isAlive()) {
             state.guard(() @trusted { state.writing.appendToQueue(state, data); state.performReadWrite; });
         }
     }
@@ -154,12 +178,12 @@ struct Socket {
         See_Also: addEncryption, addEncryptionServer
     */
     ErrorResult addEncryptionClient(Hostname sniHostname = Hostname.init, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
-        Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
-        if (!isAlive())
+            Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
+        if(!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if (!state.encryption.addEncryption(this.state, sniHostname, certificate, Closure!(Certificate, String_UTF8)
-        .init, encryption, validateCertificates))
+        if(!state.encryption.addEncryption(this.state, sniHostname, certificate, Closure!(Certificate, String_UTF8)
+                .init, encryption, validateCertificates))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
@@ -170,11 +194,11 @@ struct Socket {
         See_Also: addEncryption, addEncryptionClient
     */
     ErrorResult addEncryptionServer(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
-        Certificate fallbackCertificate = Certificate.init, Closure!(Certificate, String_UTF8) acquireCertificateForSNI) scope {
-        if (!isAlive())
+            Certificate fallbackCertificate = Certificate.init, Closure!(Certificate, String_UTF8) acquireCertificateForSNI) scope {
+        if(!isAlive())
             return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if (!state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate, acquireCertificateForSNI, encryption, true))
+        if(!state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate, acquireCertificateForSNI, encryption, true))
             return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
         return ErrorResult.init;
     }
@@ -213,21 +237,20 @@ struct Socket {
 
         Returns: The connected socket or the error.
     */
-    static Result!Socket connectTo(NetworkAddress address,
-        Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
+    static Result!Socket connectTo(NetworkAddress address, Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
-        if (!ensureItIsSetup)
+        if(!ensureItIsSetup)
             return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         Socket ret;
         ret.state = allocator.make!SocketState(allocator, protocol);
 
         auto errorResult = ret.state.startUp(address);
-        if (!errorResult)
+        if(!errorResult)
             return typeof(return)(errorResult.getError());
 
         return typeof(return)(ret);
@@ -245,18 +268,18 @@ struct Socket {
         Returns: The connected socket or the error.
     */
     static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
-        Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
+            Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
         import sidero.eventloop.tasks.workers : registerAsTask;
 
-        if (onConnect.isNull)
+        if(onConnect.isNull)
             return typeof(return)(MalformedInputException("On connect coroutine cannot be null"));
 
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
         typeof(return) ret = Socket.connectTo(address, protocol, allocator);
 
-        if (ret) {
+        if(ret) {
             auto connectSocketCO = onConnect.makeInstance(allocator, ret);
             registerAsTask(connectSocketCO);
         }
@@ -265,8 +288,8 @@ struct Socket {
     }
 
     package(sidero.eventloop) static Socket fromListen(ListenSocketPair listenSocketPair, NetworkAddress localAddress,
-        NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
-        if (allocator.isNull)
+            NetworkAddress remoteAddress, scope return RCAllocator allocator = RCAllocator.init) {
+        if(allocator.isNull)
             allocator = globalAllocator();
 
         Socket ret;
@@ -284,9 +307,9 @@ struct Socket {
 
     ///
     int opCmp(scope const ref Socket other) scope const {
-        if (this.state < other.state)
+        if(this.state < other.state)
             return -1;
-        else if (this.state > other.state)
+        else if(this.state > other.state)
             return 1;
         else
             return 0;
@@ -319,6 +342,6 @@ struct Socket {
     ///
     void toStringPretty(Sink)(scope ref Sink sink) @trusted {
         sink.formattedWrite("Socket({:p}@{:p}, isAlive={:s}, isReadInProgress={:s})", this.unsafeGetHandle().handle,
-        cast(void*)this.state, this.isAlive, this.isReadInProgress);
+                cast(void*)this.state, this.isAlive, this.isReadInProgress);
     }
 }

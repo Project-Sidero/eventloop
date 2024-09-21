@@ -294,6 +294,26 @@ export @safe nothrow @nogc:
         return ret;
     }
 
+    /// Reads a chunk that is 1 or more bytes big (depends upon implementation, and available data in stream)
+    Future!(Slice!ubyte) readChunk() scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() {
+            const cond = state.reading.requestFromUserChunk(ret);
+
+            if(cond) {
+                state.rawReading.tryRead(state);
+                state.reading.tryFulfillRequest(state);
+            }
+        });
+
+        assert(!ret.isNull);
+        return ret;
+    }
+
     ///
     Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition) scope {
         return this.readUntil(endCondition.asReadOnly());
@@ -565,7 +585,6 @@ struct State {
 
     enum attemptReadLater = true;
     enum amountToRead = 4096;
-    enum keepAReadAlwaysGoing = false;
 
     ReadingState!(State, "pipe", false) reading;
     RawReadingState!(State, "pipe") rawReading;
@@ -592,6 +611,7 @@ struct State {
             CloseHandle(this.readHandle);
         } else version(Posix) {
             removeEventWaiterHandle(this.readHandle);
+            close(cast(int)this.readHandle);
         } else
             static assert(0);
 
@@ -610,6 +630,7 @@ struct State {
             CloseHandle(this.writeHandle);
         } else version(Posix) {
             removeEventWaiterHandle(this.writeHandle);
+            close(cast(int)this.writeHandle);
         } else
             static assert(0);
 
@@ -731,6 +752,7 @@ struct State {
 
             if(errorCode == 0) {
                 auto error = GetLastError();
+                this.reading.rawReadFailed;
 
                 if(error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
@@ -751,6 +773,7 @@ struct State {
 
             if(errorCode == 0) {
                 auto error = GetLastError();
+                this.reading.rawReadFailed;
 
                 if(error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
@@ -774,20 +797,24 @@ struct State {
                 return true;
             } else if(canBeRead == 0) {
                 // empty not an error, but didn't complete
+                this.reading.rawReadFailed;
             } else {
                 switch(errno) {
                 case EAGAIN:
                     // ok not a failure
+                    this.reading.rawReadFailed;
                     break;
 
                 case EBADF:
                     // not a handle
                     atomicStore(readStillOpen, false);
+                    this.reading.rawReadFailed;
                     this.cleanupRead;
                     break;
 
                 default:
                     // unknown error
+                    this.reading.rawReadFailed;
                     break;
                 }
             }

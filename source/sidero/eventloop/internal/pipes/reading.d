@@ -8,11 +8,13 @@ import sidero.base.containers.dynamicarray;
 import sidero.base.allocators;
 import sidero.base.logger;
 import sidero.base.internal.logassert;
+import sidero.base.errors;
 
 struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     private {
         size_t amountFromFirst;
 
+        bool wantedAChunk;
         size_t wantedAmount;
         Slice!ubyte stopArray;
         FutureTriggerStorage!(Slice!ubyte)* triggerForHandler;
@@ -27,7 +29,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
 @safe nothrow @nogc:
 
-    ~this() scope {
+     ~this() scope {
     }
 
     bool initialize() {
@@ -41,8 +43,6 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
     // this is last resort, cleanup routine
     void cleanup() scope {
-        import sidero.base.errors;
-
         if(triggerForHandler !is null) {
             auto got = trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
             triggerForHandler = null;
@@ -56,6 +56,24 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
     void push(Slice!ubyte data) scope {
         queue.push(data);
+    }
+
+    // NOTE: needs guarding
+    bool requestFromUserChunk(out Future!(Slice!ubyte) future) scope @trusted {
+        if(inProgress)
+            return false;
+
+        auto ifu = acquireInstantiableFuture!(Slice!ubyte);
+        future = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
+        assert(!future.isNull);
+
+        cast(void)waitOnTrigger(future, triggerForHandler);
+        assert(triggerForHandler !is null);
+
+        stopArray = typeof(stopArray).init;
+        wantedAmount = 0;
+        wantedAChunk = false;
+        return true;
     }
 
     // NOTE: needs guarding
@@ -74,6 +92,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
         wantedAmount = amount;
         stopArray = typeof(stopArray).init;
+        wantedAChunk = false;
         return true;
     }
 
@@ -93,6 +112,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
         stopArray = stopCondition;
         wantedAmount = 0;
+        wantedAChunk = false;
         return true;
     }
 
@@ -120,7 +140,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         bool success;
 
         void handleWithData(AD)(scope AD availableData, scope ref size_t tryingToConsume) @safe {
-            if (availableData.isNull) // nothing we can do
+            if(availableData.isNull) // nothing we can do
                 return;
 
             void subsetFromAvailable(ptrdiff_t amount) @trusted {
@@ -138,7 +158,10 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
                 tryingToConsume = slicedG.length;
             }
 
-            if(wantedAmount > 0 && availableData.length > 0) {
+            if(wantedAChunk) {
+                subsetFromAvailable(availableData.length);
+                success = availableData.length > 0;
+            } else if(wantedAmount > 0 && availableData.length > 0) {
                 const canDo = wantedAmount > availableData.length ? availableData.length : wantedAmount;
 
                 subsetFromAvailable(canDo);
@@ -221,7 +244,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
                     return tryingToConsume;
                 });
             }
-        } else if (!success) {
+        } else if(!success) {
             // if we don't have encryption we'll need to feed the data straight from the stream raw
             size_t tryingToConsume;
 
@@ -240,5 +263,14 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         }
 
         return success;
+    }
+
+    // NOTE: needs guarding
+    void rawReadFailed() {
+        if(wantedAChunk && triggerForHandler !is null) {
+            auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, read failed"));
+            triggerForHandler = null;
+            wantedAChunk = false;
+        }
     }
 }

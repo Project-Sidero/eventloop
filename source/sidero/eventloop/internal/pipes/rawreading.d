@@ -18,7 +18,7 @@ struct RawReadingState(StateObject, string TitleOfPipe) {
 package(sidero.eventloop):
 @safe nothrow @nogc:
 
-    ~this() scope {
+     ~this() scope {
     }
 
     bool initialize() scope @trusted {
@@ -67,7 +67,7 @@ package(sidero.eventloop):
         if(attemptRead(stateObject)) {
             return true;
         } else {
-            if(stateObject.attemptReadLater) {
+            static if(stateObject.attemptReadLater) {
                 stateObject.delayReadForLater;
                 return true;
             } else {

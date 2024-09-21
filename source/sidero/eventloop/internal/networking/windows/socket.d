@@ -392,12 +392,13 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
                 // we must make sure to tell the socket that we are no longer connected
                 logger.info("Failed to read initiate closing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
                 socketState.unpinGuarded;
+                socketState.reading.rawReadFailed;
                 break;
 
             case WSAEWOULDBLOCK:
+                logger.debug_("Reading failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
                 // we cannot read right now, so we'll say none is read and attempt again later
                 needToBeRetriggered(socketState);
-                logger.debug_("Reading failed as it would block, try again later for ", socketState.handle, " on ", Thread.self);
                 break;
 
             case WSA_IO_PENDING:
@@ -409,6 +410,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
             default:
                 logger.notice("Unknown error while reading ", errorCode, " for ", socketState.handle, " on ", Thread.self);
                 socketState.pinExtra;
+                socketState.reading.rawReadFailed;
                 break;
             }
 
