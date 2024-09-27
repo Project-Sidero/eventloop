@@ -32,7 +32,7 @@ struct FileState {
 
     ulong currentReadPosition;
     ulong currentWritePosition;
-    bool noUpdateReadPosition;
+    bool noUpdateReadPosition; // set to true to have buffers cleared on next read
     bool noUpdateWritePosition;
 
     PlatformFile platform;

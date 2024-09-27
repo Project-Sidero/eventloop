@@ -9,7 +9,7 @@ package(sidero.eventloop):
 struct RawReadingState(StateObject, string TitleOfPipe) {
     private {
         DynamicArray!ubyte buffer;
-        size_t toConsume, amountFilled, amountPrepared;
+        size_t toConsume, amountFilled;
         bool triggered;
 
         LoggerReference logger;
@@ -43,6 +43,18 @@ package(sidero.eventloop):
         if(triggered)
             return false;
 
+        // seeking, has an updated read position, therefore whatever data is in our buffer is wrong.
+        static if (__traits(hasMember, stateObject, "noUpdateReadPosition")) {
+            if (stateObject.noUpdateReadPosition) {
+                toConsume = 0;
+                amountFillled = 0;
+                stateObject.noUpdateReadPosition = false;
+
+                // whatever data was occured is dead, cleanup anything left over
+                stateObject.reading.cleanup(stateObject);
+            }
+        }
+
         // we are not currently triggered so it is safe to shift left the buffer
         if(toConsume > 0) {
             auto full = buffer.unsafeGetLiteral;
@@ -60,7 +72,6 @@ package(sidero.eventloop):
 
         if(oldLength < amountFilled + toRead) {
             buffer.length = amountFilled + toRead;
-            amountPrepared = toRead;
         }
 
         triggered = true;
@@ -84,19 +95,6 @@ package(sidero.eventloop):
     bool attemptRead(scope StateObject* stateObject) scope @trusted {
         if(!triggered)
             return false;
-
-        // seeking, has an updated read position, therefore whatever data is in our buffer is wrong.
-        static if (__traits(hasMember, stateObject, "noUpdateReadPosition")) {
-            if (stateObject.noUpdateReadPosition) {
-                toConsume = 0;
-                amountFillled = 0;
-                amountPrepared = 0;
-                stateObject.noUpdateReadPosition = false;
-
-                // whatever data was occured is dead, cleanup anything left over
-                stateObject.reading.cleanup(stateObject);
-            }
-        }
 
         auto slice = buffer.unsafeGetLiteral;
 
@@ -136,6 +134,8 @@ package(sidero.eventloop):
 
         triggered = false;
         stateObject.notifiedOfReadComplete(stateObject);
+
+        const amountPrepared = this.buffer.length - (this.toConsume + this.amountFilled);
 
         if(completedAmount > amountPrepared) {
             assert(logger);
