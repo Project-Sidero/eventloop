@@ -83,7 +83,7 @@ struct SocketState {
                 shutdown(&this, false);
                 forceClose(&this);
                 encryption.cleanup(&this);
-                reading.cleanup;
+                reading.cleanup(&this);
 
                 RCAllocator alloc = this.allocator;
                 alloc.dispose(&this);

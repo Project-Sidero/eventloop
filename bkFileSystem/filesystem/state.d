@@ -30,6 +30,11 @@ struct FileState {
     RawReadingState!(FileState, "file") rawReading;
     RawWritingState!(FileState, "file") rawWriting;
 
+    ulong currentReadPosition;
+    ulong currentWritePosition;
+    bool noUpdateReadPosition;
+    bool noUpdateWritePosition;
+
     PlatformFile platform;
     alias platform this;
 

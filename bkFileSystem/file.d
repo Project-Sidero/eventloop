@@ -101,9 +101,26 @@ export @safe nothrow @nogc:
             state.close();
     }
 
+    Result!ulong size() scope;
+
+    ulong seekReadPosition() scope;
+    ulong seekWritePosition() scope;
+
+    ErrorResult seekRead(ulong offsetFromCurrent) scope;
+    ErrorResult seekReadFromStart(ulong offsetFromStart) scope;
+    ErrorResult seekReadFromEnd(ulong offsetFromEnd) scope;
+
+    ErrorResult seekWrite(ulong offsetFromCurrent) scope;
+    ErrorResult seekWriteFromStart(ulong offsetFromStart) scope;
+    ErrorResult seekWriteFromEnd(ulong offsetFromEnd) scope;
+
+    /// Can return less, if handle was closed
     Future!(Slice!ubyte) read(size_t amount) scope @trusted;
-    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition) scope;
-    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted;
+    /// Reads a chunk that is 1 or more bytes big (depends upon implementation, and available data in stream)
+    Future!(Slice!ubyte) readChunk() scope @trusted;
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF=false) scope;
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF=false) scope @trusted;
+
     void write(scope return DynamicArray!ubyte data) scope;
     void write(scope return Slice!ubyte data) scope;
 

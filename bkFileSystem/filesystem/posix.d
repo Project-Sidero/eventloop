@@ -116,5 +116,6 @@ bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer) {
 }
 
 bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer) {
+    // pread
     assert(0);
 }

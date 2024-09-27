@@ -89,5 +89,6 @@ bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer) {
 }
 
 bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer) {
+    // OVERLAPPED specifies offset, must always be set
     assert(0);
 }

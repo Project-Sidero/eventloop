@@ -275,7 +275,7 @@ export @safe nothrow @nogc:
         return SystemHandle(cast(void*)state.readHandle, ReadOnlyPipeHandleType);
     }
 
-    ///
+    /// Can return less, if handle was closed
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
         if(isNull || !isOpen)
             return typeof(return).init;
@@ -315,19 +315,19 @@ export @safe nothrow @nogc:
     }
 
     ///
-    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition) scope {
-        return this.readUntil(endCondition.asReadOnly());
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF=false) scope {
+        return this.readUntil(endCondition.asReadOnly(), giveDataOnEOF);
     }
 
     ///
-    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF=false) scope @trusted {
         if(isNull || !isOpen)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
 
         state.guard(() @safe {
-            const cond = state.reading.requestFromUser(endCondition, ret);
+            const cond = state.reading.requestFromUser(endCondition, giveDataOnEOF, ret);
 
             if(cond) {
                 state.rawReading.tryRead(state);
@@ -603,7 +603,7 @@ struct State {
         if(this.readHandle is null)
             return;
 
-        reading.cleanup;
+        reading.cleanup(&this);
 
         version(Windows) {
             import sidero.eventloop.internal.windows.bindings : CloseHandle;
@@ -752,7 +752,7 @@ struct State {
 
             if(errorCode == 0) {
                 auto error = GetLastError();
-                this.reading.rawReadFailed;
+                this.reading.rawReadFailed(&this);
 
                 if(error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
@@ -773,7 +773,7 @@ struct State {
 
             if(errorCode == 0) {
                 auto error = GetLastError();
-                this.reading.rawReadFailed;
+                this.reading.rawReadFailed(&this);
 
                 if(error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);

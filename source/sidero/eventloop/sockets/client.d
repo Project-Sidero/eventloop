@@ -80,7 +80,7 @@ export @safe nothrow @nogc:
         state.close(graceFully);
     }
 
-    ///
+    /// Can return less, if handle was closed
     Future!(Slice!ubyte) read(size_t amount) scope @trusted {
         if(isNull)
             return typeof(return).init;
@@ -95,7 +95,7 @@ export @safe nothrow @nogc:
                 state.performReadWrite;
 
                 if(nowOrNever && !ret.isComplete()) {
-                    state.reading.cleanup();
+                    state.reading.cleanup(state);
                 }
             }
         });
@@ -119,7 +119,7 @@ export @safe nothrow @nogc:
                 state.performReadWrite;
 
                 if(nowOrNever && !ret.isComplete()) {
-                    state.reading.cleanup();
+                    state.reading.cleanup(state);
                 }
             }
         });
@@ -129,26 +129,26 @@ export @safe nothrow @nogc:
     }
 
     ///
-    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition) scope {
-        return this.readUntil(endCondition.asReadOnly());
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF=false) scope {
+        return this.readUntil(endCondition.asReadOnly(), giveDataOnEOF);
     }
 
     ///
-    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition) scope @trusted {
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF=false) scope @trusted {
         if(isNull)
             return typeof(return).init;
 
         Future!(Slice!ubyte) ret;
 
         state.guard(() @safe {
-            const cond = state.reading.requestFromUser(endCondition, ret);
+            const cond = state.reading.requestFromUser(endCondition, giveDataOnEOF, ret);
             const nowOrNever = state.haveBeenShutdown;
 
             if(cond) {
                 state.performReadWrite;
 
                 if(nowOrNever && !ret.isComplete()) {
-                    state.reading.cleanup();
+                    state.reading.cleanup(state);
                 }
             }
         });

@@ -225,7 +225,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
             socketState.performReadWrite();
             shutdown(socketState.fd, SHUT_WR);
 
-            socketState.reading.cleanup();
+            socketState.reading.cleanup(socketState);
             socketState.performReadWrite();
         }
     } else
@@ -284,13 +284,13 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
         if (err == 0) {
             logger.info("Failed to read initiate closing for ", socketState.handle, " on ", Thread.self);
             socketState.rawReading.complete(socketState, 0);
-            socketState.reading.rawReadFailed();
+            socketState.reading.rawReadFailed(socketState);
             socketState.unpinGuarded;
             return false;
         } else if (err > 0) {
             logger.debug_("Immediate completion of read ", socketState.handle, " on ", Thread.self);
             socketState.rawReading.complete(socketState, err);
-            socketState.reading.rawReadFailed();
+            socketState.reading.rawReadFailed(socketState);
             return true;
         } else {
             socketState.rawReading.complete(socketState, 0);
@@ -300,7 +300,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
                 return socketState.needToBeRetriggered(socketState);
             } else {
                 logger.info("Failed to read initiate closing ", errno, " for ", socketState.handle, " on ", Thread.self);
-                socketState.reading.rawReadFailed();
+                socketState.reading.rawReadFailed(socketState);
                 socketState.unpinGuarded;
                 return false;
             }

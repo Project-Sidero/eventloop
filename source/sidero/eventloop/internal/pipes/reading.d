@@ -17,7 +17,9 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         bool wantedAChunk;
         size_t wantedAmount;
         Slice!ubyte stopArray;
+
         FutureTriggerStorage!(Slice!ubyte)* triggerForHandler;
+        bool giveDataOnEOF;
 
         DynamicArray!ubyte appendingArray;
 
@@ -42,7 +44,9 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     }
 
     // this is last resort, cleanup routine
-    void cleanup() scope {
+    void cleanup(scope StateObject* stateObject) scope {
+        this.rawReadFailed(stateObject, true);
+
         if(triggerForHandler !is null) {
             auto got = trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
             triggerForHandler = null;
@@ -93,11 +97,12 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         wantedAmount = amount;
         stopArray = typeof(stopArray).init;
         wantedAChunk = false;
+        this.giveDataOnEOF = true;
         return true;
     }
 
     // NOTE: needs guarding
-    bool requestFromUser(return scope Slice!ubyte stopCondition, out Future!(Slice!ubyte) future) scope @trusted {
+    bool requestFromUser(return scope Slice!ubyte stopCondition, bool giveDataOnEOF, out Future!(Slice!ubyte) future) scope @trusted {
         assert(stopCondition.length > 0);
 
         if(inProgress)
@@ -113,6 +118,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         stopArray = stopCondition;
         wantedAmount = 0;
         wantedAChunk = false;
+        this.giveDataOnEOF = giveDataOnEOF;
         return true;
     }
 
@@ -266,11 +272,53 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     }
 
     // NOTE: needs guarding
-    void rawReadFailed() {
-        if(wantedAChunk && triggerForHandler !is null) {
-            auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, read failed"));
+    void rawReadFailed(scope StateObject* stateObject, bool isEOF=false) {
+        if (triggerForHandler is null)
+            return;
+
+        if(wantedAChunk) {
+            Slice!ubyte dataToCallWith;
+
+            stateObject.rawReading.readRaw((availableData) {
+                dataToCallWith = availableData.asReadOnly;
+                return availableData.length;
+            });
+
+            if (dataToCallWith.length > 0) {
+                assert(triggerForHandler is null);
+                cast(void)trigger(triggerForHandler, dataToCallWith);
+            } else {
+                auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, read failed"));
+
+                if (!got) {
+                    logger.info("Failed to trigger failing read ", TitleOfPipe, " of ", stateObject.readHandle, " with error ", got.getError(), " on ", Thread.self);
+                }
+            }
+
             triggerForHandler = null;
             wantedAChunk = false;
+        } else if (isEOF) {
+            if (this.giveDataOnEOF) {
+                Slice!ubyte dataToCallWith;
+
+                stateObject.rawReading.readRaw((availableData) {
+                    dataToCallWith = availableData.asReadOnly;
+                    return availableData.length;
+                });
+
+                assert(triggerForHandler is null);
+                cast(void)trigger(triggerForHandler, dataToCallWith);
+
+                triggerForHandler = null;
+                wantedAmount = 0;
+                this.giveDataOnEOF = false;
+            } else {
+                auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, stream is EOF"));
+
+                if (!got) {
+                    logger.info("Failed to trigger EOF ", TitleOfPipe, " of ", stateObject.readHandle, " with error ", got.getError(), " on ", Thread.self);
+                }
+            }
         }
     }
 }

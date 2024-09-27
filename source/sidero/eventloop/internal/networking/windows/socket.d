@@ -237,7 +237,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
                         WSAGetLastError(), " on thread ", Thread.self);
             }
 
-            socketState.reading.cleanup();
+            socketState.reading.cleanup(socketState);
             socketState.performReadWrite();
             forceClose(socketState);
         }
@@ -392,7 +392,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
                 // we must make sure to tell the socket that we are no longer connected
                 logger.info("Failed to read initiate closing ", errorCode, " for ", socketState.handle, " on ", Thread.self);
                 socketState.unpinGuarded;
-                socketState.reading.rawReadFailed;
+                socketState.reading.rawReadFailed(socketState);
                 break;
 
             case WSAEWOULDBLOCK:
@@ -410,7 +410,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
             default:
                 logger.notice("Unknown error while reading ", errorCode, " for ", socketState.handle, " on ", Thread.self);
                 socketState.pinExtra;
-                socketState.reading.rawReadFailed;
+                socketState.reading.rawReadFailed(socketState);
                 break;
             }
 
