@@ -210,9 +210,10 @@ struct SocketState {
 
     package(sidero.eventloop) {
         size_t amountToRead() scope {
-            import std.algorithm : max;
+            import sidero.base.algorithm : min, max;
 
-            return max(this.encryption.amountOfBytesToRead(), 4096);
+            const wantedAmount = this.reading.wantedAmount > 0 ? min(4 * 1024 * 1024, this.reading.wantedAmount) : 0;
+            return max(this.encryption.amountOfBytesToRead(), max(4096, wantedAmount));
         }
 
         void delayReadForLater() scope {

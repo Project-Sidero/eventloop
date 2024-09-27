@@ -584,7 +584,6 @@ struct State {
     shared(bool) readStillOpen = true, writeStillOpen = true;
 
     enum attemptReadLater = true;
-    enum amountToRead = 4096;
 
     ReadingState!(State, "pipe", false) reading;
     RawReadingState!(State, "pipe") rawReading;
@@ -717,6 +716,13 @@ struct State {
         wp.__ctor(wp);
 
         addWritePipeToList(wp);
+    }
+
+    size_t amountToRead() scope {
+        import sidero.base.algorithm : min, max;
+
+        const wantedAmount = this.reading.wantedAmount > 0 ? min(4 * 1024 * 1024, this.reading.wantedAmount) : 0;
+        return max(4096, wantedAmount);
     }
 
     bool performARead() scope @trusted {

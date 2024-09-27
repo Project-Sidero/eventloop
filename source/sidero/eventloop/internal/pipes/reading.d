@@ -15,7 +15,6 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         size_t amountFromFirst;
 
         bool wantedAChunk;
-        size_t wantedAmount;
         Slice!ubyte stopArray;
 
         FutureTriggerStorage!(Slice!ubyte)* triggerForHandler;
@@ -27,6 +26,10 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         FiFoConcurrentQueue!(Slice!ubyte) queue;
 
         LoggerReference logger;
+    }
+
+    package(sidero.eventloop) {
+        size_t wantedAmount;
     }
 
 @safe nothrow @nogc:
@@ -48,9 +51,13 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         this.rawReadFailed(stateObject, true);
 
         if(triggerForHandler !is null) {
-            auto got = trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, socket has died"));
+            auto got = trigger(triggerForHandler, UnknownPlatformBehaviorException("Could not complete future, " ~ TitleOfPipe ~ " has died"));
             triggerForHandler = null;
         }
+
+        this.appendingArray = typeof(this.appendingArray).init;
+        this.queue = typeof(this.queue).init;
+        this.amountFromFirst = 0;
     }
 
     // NOTE: needs guarding
@@ -272,8 +279,8 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     }
 
     // NOTE: needs guarding
-    void rawReadFailed(scope StateObject* stateObject, bool isEOF=false) {
-        if (triggerForHandler is null)
+    void rawReadFailed(scope StateObject* stateObject, bool isEOF = false) {
+        if(triggerForHandler is null)
             return;
 
         if(wantedAChunk) {
@@ -284,21 +291,22 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
                 return availableData.length;
             });
 
-            if (dataToCallWith.length > 0) {
+            if(dataToCallWith.length > 0) {
                 assert(triggerForHandler is null);
                 cast(void)trigger(triggerForHandler, dataToCallWith);
             } else {
                 auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, read failed"));
 
-                if (!got) {
-                    logger.info("Failed to trigger failing read ", TitleOfPipe, " of ", stateObject.readHandle, " with error ", got.getError(), " on ", Thread.self);
+                if(!got) {
+                    logger.info("Failed to trigger failing read ", TitleOfPipe, " of ", stateObject.readHandle,
+                            " with error ", got.getError(), " on ", Thread.self);
                 }
             }
 
             triggerForHandler = null;
             wantedAChunk = false;
-        } else if (isEOF) {
-            if (this.giveDataOnEOF) {
+        } else if(isEOF) {
+            if(this.giveDataOnEOF) {
                 Slice!ubyte dataToCallWith;
 
                 stateObject.rawReading.readRaw((availableData) {
@@ -315,8 +323,9 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
             } else {
                 auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, stream is EOF"));
 
-                if (!got) {
-                    logger.info("Failed to trigger EOF ", TitleOfPipe, " of ", stateObject.readHandle, " with error ", got.getError(), " on ", Thread.self);
+                if(!got) {
+                    logger.info("Failed to trigger EOF ", TitleOfPipe, " of ", stateObject.readHandle, " with error ",
+                            got.getError(), " on ", Thread.self);
                 }
             }
         }

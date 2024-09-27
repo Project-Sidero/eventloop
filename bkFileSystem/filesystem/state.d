@@ -21,7 +21,7 @@ struct FileState {
     shared(bool) isAlive;
 
     enum attemptReadLater = false;
-    size_t amountToRead;
+    size_t amountToReadSuggestion;
 
     FilePath filePath;
     FileRights fileRights;
@@ -63,13 +63,11 @@ struct FileState {
         // The default 16kb is perfactly good for that scenario.
 
         if(estimatedSize >= 8 * 1024 * 1024)
-            this.amountToRead = 256 * 1024; // 256kb is how much gets mapped into the kernel
+            this.amountToReadSuggestion = 256 * 1024; // 256kb is how much gets mapped into the kernel
         else if(estimatedSize >= 1024 * 1024) // for small image files
-            this.amountToRead = 128 * 1024; // 1/2 of what gets mapped into the kernel
+            this.amountToReadSuggestion = 128 * 1024; // 1/2 of what gets mapped into the kernel
         else if(estimatedSize >= 64 * 1024) // for smallish files like configuration
-            this.amountToRead = 64 * 1024; // 1/4th of what gets mapped into the kernel
-        else
-            this.amountToRead = 16 * 1024; // 16kb will be enough for a large number of smaller files like configuration
+            this.amountToReadSuggestion = 64 * 1024; // 1/4th of what gets mapped into the kernel
     }
 
     ~this() scope {
@@ -178,6 +176,11 @@ struct FileState {
     }
 
     package(sidero.eventloop) {
+        size_t amountToRead() scope {
+            import sidero.base.algorithm : max, min;
+            return max(this.amountToReadSuggestion, min(4 * 1024 * 1024, this.reading.wantedAmount));
+        }
+
         void delayReadForLater() scope {
             assert(0);
         }
