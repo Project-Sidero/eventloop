@@ -85,6 +85,19 @@ package(sidero.eventloop):
         if(!triggered)
             return false;
 
+        // seeking, has an updated read position, therefore whatever data is in our buffer is wrong.
+        static if (__traits(hasMember, stateObject, "noUpdateReadPosition")) {
+            if (stateObject.noUpdateReadPosition) {
+                toConsume = 0;
+                amountFillled = 0;
+                amountPrepared = 0;
+                stateObject.noUpdateReadPosition = false;
+
+                // whatever data was occured is dead, cleanup anything left over
+                stateObject.reading.cleanup(stateObject);
+            }
+        }
+
         auto slice = buffer.unsafeGetLiteral;
 
         if(stateObject.tryRead(slice[amountFilled .. $])) {
