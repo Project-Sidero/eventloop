@@ -5,9 +5,24 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.logger;
 import sidero.base.errors;
 
+struct QueuedWrite {
+    Slice!ubyte data;
+    ulong position;
+
+@safe nothrow @nogc:
+
+    this(scope ref QueuedWrite other) scope @trusted {
+        this.tupleof = other.tupleof;
+    }
+
+    void opAssign(scope QueuedWrite other) scope {
+        this.__ctor(other);
+    }
+}
+
 struct RawWritingState(StateObject, string TitleOfPipe) {
     private {
-        FiFoConcurrentQueue!(Slice!ubyte) queue;
+        FiFoConcurrentQueue!QueuedWrite queue;
 
         LoggerReference logger;
     }
@@ -19,7 +34,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
 
 @safe nothrow @nogc:
 
-    ~this() scope {
+     ~this() scope {
     }
 
     bool initialize() scope {
@@ -33,12 +48,12 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
     }
 
     // NOTE: this needs guarding
-    void push(Slice!ubyte data) scope {
-        queue.push(data);
+    void push(Slice!ubyte data, ulong position = 0) scope {
+        queue.push(QueuedWrite(data, position));
     }
 
     // NOTE: this needs guarding
-    Result!(Slice!ubyte) pop() scope {
+    Result!QueuedWrite pop() scope {
         return queue.pop;
     }
 
@@ -48,7 +63,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
     }
 
     bool tryWrite(scope StateObject* stateObject) scope @trusted {
-        if (!logger || logger.isNull)
+        if(!logger || logger.isNull)
             return false;
 
         if(triggered) {
@@ -60,27 +75,28 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
             auto firstItem = queue.peek;
 
             if(firstItem) {
-                firstItem = firstItem[amountFromFirst .. $];
+                auto firstItemData = firstItem.data[amountFromFirst .. $];
 
-                if(firstItem) {
-                    if(firstItem.length == 0) {
+                if(firstItemData) {
+                    if(firstItemData.length == 0) {
                         cast(void)queue.pop;
                         amountFromFirst = 0;
                         logger.debug_("Done with first item");
+
                         continue;
                     } else {
-                        logger.debug_("Attempting to write ", firstItem.length, " with offset ", amountFromFirst,
+                        logger.debug_("Attempting to write ", firstItemData.length, " with offset ", amountFromFirst,
                                 " items to " ~ TitleOfPipe ~ " ", stateObject.writeHandle, " on thread ", Thread.self);
                         triggered = true;
-                        bool result = stateObject.tryWrite(cast(ubyte[])firstItem.unsafeGetLiteral);
+                        bool result = stateObject.tryWrite(cast(ubyte[])firstItemData.unsafeGetLiteral, firstItem.position + amountFromFirst);
 
                         if(result) {
-                            logger.debug_("Have triggered ", firstItem.length, " items to " ~ TitleOfPipe ~ " ",
+                            logger.debug_("Have triggered ", firstItemData.length, " items to " ~ TitleOfPipe ~ " ",
                                     stateObject.writeHandle, " on thread ", Thread.self);
                             return true;
                         } else {
-                            logger.info("Have failed to trigger ", firstItem.length, " items to " ~ TitleOfPipe ~ " ",
-                                    stateObject.writeHandle, " on thread ", Thread.self);
+                            logger.info("Have failed to trigger ", firstItemData.length,
+                                    " items to " ~ TitleOfPipe ~ " ", stateObject.writeHandle, " on thread ", Thread.self);
                             triggered = false;
                             return false;
                         }
@@ -115,7 +131,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
 
         const proposedAmount = amountFromFirst + completedAmount;
 
-        if(proposedAmount < firstItem.length) {
+        if(proposedAmount < firstItem.data.length) {
             amountFromFirst = completedAmount;
         } else {
             cast(void)queue.pop;

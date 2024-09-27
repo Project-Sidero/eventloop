@@ -53,6 +53,8 @@ package(sidero.eventloop):
                 // whatever data was occured is dead, cleanup anything left over
                 stateObject.reading.cleanup(stateObject);
             }
+
+            stateObject.requestedReadPosition = stateObject.currentReadPosition;
         }
 
         // we are not currently triggered so it is safe to shift left the buffer
@@ -150,5 +152,11 @@ package(sidero.eventloop):
                 amountPrepared, " for " ~ TitleOfPipe ~ " ", stateObject.readHandle, " on thread ", Thread.self);
 
         amountFilled += completedAmount;
+
+        static if (__traits(hasMember, stateObject, "noUpdateReadPosition")) {
+            if (!stateObject.noUpdateReadPosition) {
+                currentReadPosition += completedAmount;
+            }
+        }
     }
 }

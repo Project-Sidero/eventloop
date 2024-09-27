@@ -830,7 +830,7 @@ struct State {
             static assert(0);
     }
 
-    bool tryWrite(ubyte[] data) scope @trusted {
+    bool tryWrite(ubyte[] data, ulong position) scope @trusted {
         import sidero.base.internal.atomic;
 
         if(!atomicLoad(writeStillOpen))

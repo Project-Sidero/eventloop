@@ -229,7 +229,7 @@ struct SocketState {
         }
 
         // NOTE: this needs guarding
-        bool tryWrite(ubyte[] buffer) scope @trusted {
+        bool tryWrite(ubyte[] buffer, ulong position) scope @trusted {
             return tryWriteMechanism(&this, buffer);
         }
 

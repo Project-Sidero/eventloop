@@ -30,10 +30,9 @@ struct FileState {
     RawReadingState!(FileState, "file") rawReading;
     RawWritingState!(FileState, "file") rawWriting;
 
-    ulong currentReadPosition;
+    ulong currentReadPosition, requestedReadPosition;
     ulong currentWritePosition;
     bool noUpdateReadPosition; // set to true to have buffers cleared on next read
-    bool noUpdateWritePosition;
 
     PlatformFile platform;
     alias platform this;
@@ -194,8 +193,8 @@ struct FileState {
         }
 
         // NOTE: this needs guarding
-        bool tryWrite(ubyte[] buffer) scope @trusted {
-            return tryWriteMechanism(&this, buffer);
+        bool tryWrite(ubyte[] buffer, ulong position) scope @trusted {
+            return tryWriteMechanism(&this, buffer, position);
         }
 
         // NOTE: this needs guarding

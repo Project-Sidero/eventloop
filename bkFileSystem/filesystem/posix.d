@@ -111,11 +111,13 @@ void forceClose(scope FileState* fileState) {
         assert(0);
 }
 
-bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer) {
+bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer, ulong position) {
     assert(0);
 }
 
 bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer) {
+    // fileState.requestedReadPosition
+
     // pread
     assert(0);
 }
