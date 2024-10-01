@@ -1,5 +1,5 @@
 module sidero.eventloop.sockets.client;
-import sidero.eventloop.sockets.control;
+import sidero.eventloop.control;
 import sidero.eventloop.sockets.server;
 import sidero.eventloop.internal.networking.state;
 import sidero.eventloop.handles;
@@ -238,7 +238,7 @@ export @safe nothrow @nogc:
         Returns: The connected socket or the error.
     */
     static Result!Socket connectTo(NetworkAddress address, Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
-        import sidero.eventloop.tasks.workers : registerAsTask;
+        import sidero.eventloop.control : registerAsTask;
 
         if(allocator.isNull)
             allocator = globalAllocator();
@@ -269,7 +269,7 @@ export @safe nothrow @nogc:
     */
     static Result!Socket connectTo(InstanceableCoroutine!(void, Socket) onConnect, NetworkAddress address,
             Socket.Protocol protocol, scope return RCAllocator allocator = RCAllocator.init) @trusted {
-        import sidero.eventloop.tasks.workers : registerAsTask;
+        import sidero.eventloop.control : registerAsTask;
 
         if(onConnect.isNull)
             return typeof(return)(MalformedInputException("On connect coroutine cannot be null"));

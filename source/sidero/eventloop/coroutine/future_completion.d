@@ -1,4 +1,4 @@
-module sidero.eventloop.tasks.future_completion;
+module sidero.eventloop.coroutine.future_completion;
 import sidero.eventloop.coroutine.future;
 import sidero.eventloop.coroutine.generic;
 import sidero.eventloop.coroutine.instanceable;

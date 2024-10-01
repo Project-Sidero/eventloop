@@ -88,6 +88,9 @@ export @safe nothrow @nogc:
     }
 
     ///
+    FilePath path() scope;
+
+    ///
     FileRights rights() scope {
         if(this.isNull)
             return FileRights.init;
@@ -106,13 +109,13 @@ export @safe nothrow @nogc:
     ulong seekReadPosition() scope;
     ulong seekWritePosition() scope;
 
-    ErrorResult seekRead(ulong offsetFromCurrent) scope;
-    ErrorResult seekReadFromStart(ulong offsetFromStart) scope;
-    ErrorResult seekReadFromEnd(ulong offsetFromEnd) scope;
+    ErrorResult seekRead(long offsetFromCurrent) scope;
+    ErrorResult seekReadFromStart(long offsetFromStart) scope;
+    ErrorResult seekReadFromEnd(long offsetFromEnd) scope;
 
-    ErrorResult seekWrite(ulong offsetFromCurrent) scope;
-    ErrorResult seekWriteFromStart(ulong offsetFromStart) scope;
-    ErrorResult seekWriteFromEnd(ulong offsetFromEnd) scope;
+    ErrorResult seekWrite(long offsetFromCurrent) scope;
+    ErrorResult seekWriteFromStart(long offsetFromStart) scope;
+    ErrorResult seekWriteFromEnd(long offsetFromEnd) scope;
 
     /// Can return less, if handle was closed
     Future!(Slice!ubyte) read(size_t amount) scope @trusted;
@@ -177,7 +180,9 @@ export @safe nothrow @nogc:
 
     ///
     static Result!File from(FilePath path, FileRights rights) @trusted {
-        import sidero.eventloop.filesystem.control : ensureItIsSetup;
+        import sidero.eventloop.control : ensureItIsSetup;
+        import sidero.eventloop.internal.filesystem.platform;
+
         if (!ensureItIsSetup)
             return typeof(return)(UnknownPlatformBehaviorException("Could not start filesystem and workers"));
 
@@ -197,7 +202,7 @@ export @safe nothrow @nogc:
         File ret;
         ret.state = allocator.make!FileState(allocator, path.dup, rights, estimatedSize);
 
-        auto err = connectToSpecificFile(ret);
+        auto err = openFile(ret);
         if (!err)
             return typeof(return)(err.getError);
 

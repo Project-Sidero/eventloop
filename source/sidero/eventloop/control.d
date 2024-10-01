@@ -1,10 +1,11 @@
-module sidero.eventloop.tasks.workers;
+module sidero.eventloop.control;
 import sidero.eventloop.threads;
 import sidero.eventloop.coroutine.generic;
 import sidero.eventloop.coroutine.future;
 import sidero.eventloop.coroutine.instanceable;
 import sidero.base.errors;
 import iw = sidero.eventloop.internal.workers;
+import sidero.eventloop.internal.networking.platform;
 
 export @safe nothrow @nogc:
 
@@ -19,6 +20,38 @@ ErrorResult startWorkerThreads() @trusted {
 ///
 void shutdownWorkerThreads() @trusted {
     iw.shutdownWorkers();
+}
+
+///
+ErrorResult startUpNetworking() @trusted {
+    mutex.pureLock;
+    scope(exit)
+        mutex.unlock;
+
+    if(isInitialized)
+        return ErrorResult.init;
+
+    if(!startUpNetworkingMechanism)
+        return ErrorResult(UnknownPlatformBehaviorException("Could not start networking"));
+
+    isInitialized = true;
+    return ErrorResult.init;
+}
+
+///
+void shutdownNetworking() @trusted {
+    import sidero.eventloop.internal.event_waiting;
+
+    mutex.pureLock;
+    scope(exit)
+        mutex.unlock;
+
+    if(!isInitialized)
+        return;
+
+    shutdownEventWaiterThreads;
+    shutdownNetworkingMechanism;
+    isInitialized = false;
 }
 
 /**
@@ -57,4 +90,21 @@ void registerAsTask(ResultType)(Future!ResultType coroutine) {
 void registerAsTask(ResultType, Args...)(InstanceableCoroutine!(ResultType, Args) coroutine) {
     auto co = coroutine.asGeneric();
     iw.addCoroutineTask(co);
+}
+
+package(sidero.eventloop):
+import sidero.base.synchronization.mutualexclusion;
+
+__gshared {
+    TestTestSetLockInline mutex;
+    bool isInitialized;
+}
+
+bool ensureItIsSetup() {
+    if(!startUpNetworking)
+        return false;
+    else if(!startWorkerThreads)
+        return false;
+
+    return true;
 }

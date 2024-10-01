@@ -8,14 +8,6 @@ version(Windows) {
 } else {
     static assert(0, "Unimplemented");
 
-    bool startUpFileSystemMechanism() {
-        assert(0);
-    }
-
-    void shutdownFileSystemMechanism() {
-        assert(0);
-    }
-
     struct PlatformFile {
         void* handle;
 
@@ -34,7 +26,7 @@ version(Windows) {
         }
     }
 
-    ErrorResult connectToSpecificFile(File file) {
+    ErrorResult openFile(File file) {
         assert(0);
     }
 
@@ -42,11 +34,11 @@ version(Windows) {
         assert(0);
     }
 
-    bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer) {
+    bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer, long position) {
         assert(0);
     }
 
-    bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer) {
+    bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position) {
         assert(0);
     }
 }

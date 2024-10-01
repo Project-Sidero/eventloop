@@ -47,7 +47,7 @@ package(sidero.eventloop):
         static if (__traits(hasMember, stateObject, "noUpdateReadPosition")) {
             if (stateObject.noUpdateReadPosition) {
                 toConsume = 0;
-                amountFillled = 0;
+                amountFilled = 0;
                 stateObject.noUpdateReadPosition = false;
 
                 // whatever data was occured is dead, cleanup anything left over
@@ -155,7 +155,7 @@ package(sidero.eventloop):
 
         static if (__traits(hasMember, stateObject, "noUpdateReadPosition")) {
             if (!stateObject.noUpdateReadPosition) {
-                currentReadPosition += completedAmount;
+                stateObject.currentReadPosition += completedAmount;
             }
         }
     }

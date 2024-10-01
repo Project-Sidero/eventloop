@@ -58,7 +58,7 @@ struct PlatformListenSocket {
 
 void uponSocketAccept(Socket socket) @trusted {
     version(Windows) {
-        import sidero.eventloop.tasks.workers : registerAsTask;
+        import sidero.eventloop.control : registerAsTask;
         import sidero.base.internal.atomic;
         import core.stdc.math : hypotf, cbrtf;
 
@@ -371,7 +371,7 @@ void postAccept(ListenSocketPair listenSocketPair, size_t numberOfAccepts) @trus
     import sidero.eventloop.internal.workers.kernelwait.windows;
     import sidero.eventloop.internal.event_waiting;
     import sidero.base.bitmanip : bigEndianToNative, nativeToBigEndian;
-    import sidero.eventloop.tasks.workers : registerAsTask;
+    import sidero.eventloop.control : registerAsTask;
     import sidero.base.internal.atomic;
 
     assert(listenSocketPair.perSocket);

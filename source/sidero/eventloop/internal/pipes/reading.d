@@ -1,7 +1,7 @@
 module sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.threads.osthread;
 import sidero.eventloop.coroutine.future;
-import sidero.eventloop.tasks.future_completion;
+import sidero.eventloop.coroutine.future_completion;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;

@@ -1,13 +1,17 @@
 module sidero.eventloop.internal.filesystem.state;
+import sidero.eventloop.internal.filesystem.defs;
 import sidero.eventloop.internal.filesystem.platform;
 import sidero.eventloop.internal.pipes.reading;
 import sidero.eventloop.internal.pipes.rawreading;
 import sidero.eventloop.internal.pipes.rawwriting;
+import sidero.eventloop.filesystem.file;
+import sidero.eventloop.threads;
 import sidero.base.synchronization.system.lock;
 import sidero.base.allocators;
-import sidero.base.path.networking;
+import sidero.base.path.file;
 import sidero.base.internal.atomic;
 import sidero.base.errors;
+import sidero.base.logger;
 
 struct FileState {
     private {
@@ -30,8 +34,8 @@ struct FileState {
     RawReadingState!(FileState, "file") rawReading;
     RawWritingState!(FileState, "file") rawWriting;
 
-    ulong currentReadPosition, requestedReadPosition;
-    ulong currentWritePosition;
+    long currentReadPosition, requestedReadPosition;
+    long currentWritePosition;
     bool noUpdateReadPosition; // set to true to have buffers cleared on next read
 
     PlatformFile platform;
@@ -42,11 +46,13 @@ struct FileState {
     this(return scope RCAllocator allocator, FilePath filePath, FileRights fileRights, ulong estimatedSize) scope {
         import sidero.base.internal.logassert;
 
+        checkInit;
+
         this.allocator = allocator;
         this.refCount = 1;
         this.refCountExtra = 0;
 
-        this.filePath = filepath;
+        this.filePath = filePath;
         this.fileRights = fileRights;
 
         if(fileRights.read) {
@@ -80,7 +86,7 @@ struct FileState {
 
             if(refCount == 0) {
                 forceClose(&this);
-                reading.cleanup;
+                reading.cleanup(&this);
 
                 RCAllocator alloc = this.allocator;
                 alloc.dispose(&this);
@@ -102,7 +108,6 @@ struct FileState {
     void unpin() scope @trusted {
         mutex.lock.assumeOkay;
         bool wasAlive = cas(isAlive, true, false);
-        shutdown(&this);
         mutex.unlock;
 
         if(wasAlive)
@@ -123,7 +128,6 @@ struct FileState {
 
     package(sidero.eventloop.internal) void unpinGuarded() scope @trusted {
         bool wasAlive = cas(isAlive, true, false);
-        shutdown(&this);
 
         if(wasAlive)
             rc(false);
@@ -199,7 +203,7 @@ struct FileState {
 
         // NOTE: this needs guarding
         bool tryRead(ubyte[] buffer) scope @trusted {
-            return tryReadMechanism(&this, buffer);
+            return tryReadMechanism(&this, buffer, requestedReadPosition);
         }
     }
 }

@@ -41,7 +41,10 @@ version(Windows) {
         int WSARecv(SOCKET, WSABUF*, DWORD, DWORD*, DWORD*, OVERLAPPED*, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
         bool WSAGetOverlappedResult(SOCKET, OVERLAPPED*, DWORD*, bool, DWORD*);
         int WSASend(SOCKET, WSABUF*, DWORD, DWORD*, DWORD, OVERLAPPED*, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
+
         bool CancelIoEx(SOCKET, OVERLAPPED*);
+        bool CancelIoEx(HANDLE, OVERLAPPED*);
+        bool GetOverlappedResult(HANDLE, OVERLAPPED*, DWORD*, bool);
 
         bool CryptEncodeObjectEx(DWORD, LPCSTR, const(void)*, DWORD, CRYPT_ENCODE_PARAM*, void*, DWORD*);
         bool CertStrToNameW(DWORD, LPCWSTR, DWORD, void*, ubyte*, DWORD*, LPCWSTR*);
@@ -150,6 +153,7 @@ version(Windows) {
         WSA_WAIT_EVENT_0 = WAIT_OBJECT_0,
         WSA_WAIT_TIMEOUT = WAIT_TIMEOUT,
         WSA_IO_INCOMPLETE = ERROR_IO_INCOMPLETE,
+        ERROR_HANDLE_EOF = 38,
         WSA_OPERATION_ABORTED = 995,
         ERROR_OPERATION_ABORTED = WSA_OPERATION_ABORTED,
         WSA_IO_PENDING = 997,
@@ -344,8 +348,14 @@ version(Windows) {
     struct OVERLAPPED {
         ULONG_PTR Internal;
         ULONG_PTR InternalHigh;
-        DWORD Offset;
-        DWORD OffsetHigh;
+        union {
+            struct {
+                DWORD Offset;
+                DWORD OffsetHigh;
+            }
+
+            void* Pointer;
+        }
         HANDLE hEvent;
     }
 

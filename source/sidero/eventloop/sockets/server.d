@@ -1,5 +1,5 @@
 module sidero.eventloop.sockets.server;
-import sidero.eventloop.sockets.control;
+import sidero.eventloop.control;
 import sidero.eventloop.sockets.client;
 import sidero.eventloop.internal.networking.state;
 import sidero.eventloop.coroutine.instanceable;
@@ -20,19 +20,19 @@ struct ListenSocket {
         ListenSocketState* state;
     }
 
-    export @safe nothrow @nogc:
+export @safe nothrow @nogc:
 
     ///
     this(return scope ref ListenSocket other) scope {
         this.state = other.state;
 
-        if (state !is null)
+        if(state !is null)
             state.rc(true);
     }
 
     ///
     ~this() scope {
-        if (state !is null)
+        if(state !is null)
             state.rc(false);
     }
 
@@ -43,7 +43,7 @@ struct ListenSocket {
 
     ///
     NetworkAddress address() scope {
-        if (isNull)
+        if(isNull)
             return NetworkAddress.init;
         return state.address;
     }
@@ -51,6 +51,32 @@ struct ListenSocket {
     ///
     bool isAlive() scope {
         return !isNull && atomicLoad(state.isAlive);
+    }
+
+    ///
+    bool opEquals(scope const ListenSocket other) scope const {
+        if(this.isNull && other.isNull)
+            return true;
+        else if(this.isNull || other.isNull)
+            return false;
+        else
+            return this.state is other.state;
+    }
+
+    ///
+    int opCmp(scope const ListenSocket other) scope const {
+        if(this.isNull && other.isNull)
+            return 0;
+        else if(this.isNull)
+            return -1;
+        else if(other.isNull)
+            return 1;
+        else if(this.state < other.state)
+            return -1;
+        else if(this.state > other.state)
+            return 1;
+        else
+            return 0;
     }
 
     /**
@@ -70,24 +96,24 @@ struct ListenSocket {
         Returns: The listen socket or the error.
     */
     static Result!ListenSocket from(InstanceableCoroutine!(void, Socket) onAccept, NetworkAddress address, Socket.Protocol protocol,
-        Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
-        bool reuseAddr = true, Optional!Duration keepAliveInterval = Optional!Duration.init,
-        bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) @trusted {
+            Socket.EncryptionProtocol encryption = Socket.EncryptionProtocol.None, Certificate fallbackCertificate = Certificate.init,
+            bool reuseAddr = true, Optional!Duration keepAliveInterval = Optional!Duration.init,
+            bool validateCertificates = true, scope return RCAllocator allocator = RCAllocator.init) @trusted {
 
-        if (onAccept.isNull)
+        if(onAccept.isNull)
             return typeof(return)(MalformedInputException("On accept coroutine cannot be null"));
 
-        if (allocator.isNull)
+        if(allocator.isNull)
             allocator = globalAllocator();
 
-        if (!ensureItIsSetup)
+        if(!ensureItIsSetup)
             return typeof(return)(UnknownPlatformBehaviorException("Could not setup networking handling"));
 
         ListenSocket ret;
         ret.state = allocator.make!ListenSocketState(allocator, onAccept, address, protocol, encryption,
-        fallbackCertificate, validateCertificates);
+                fallbackCertificate, validateCertificates);
 
-        if (!ret.state.startUp(reuseAddr, keepAliveInterval))
+        if(!ret.state.startUp(reuseAddr, keepAliveInterval))
             return typeof(return)(UnknownPlatformBehaviorException("Could not initialize socket"));
 
         return typeof(return)(ret);

@@ -3,6 +3,7 @@ import sidero.eventloop.sockets;
 import sidero.eventloop.processes;
 import sidero.eventloop.threads;
 import sidero.eventloop.pipes;
+import sidero.eventloop.filesystem.file;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.containers.queue.concurrentqueue;
@@ -289,7 +290,7 @@ void timerThreadProc() @trusted {
 void whenReady() @trusted {
     logger.debug_("Cleanup timer start");
 
-    size_t handledSockets, handlesProcesses, handledReadPipe, handledWritePipe;
+    size_t handledSockets, handledFiles, handlesProcesses, handledReadPipe, handledWritePipe;
 
     socketRetryQueuePick = !socketRetryQueuePick;
     while(!socketRetryQueue[!socketRetryQueuePick].empty) {
@@ -335,7 +336,7 @@ void whenReady() @trusted {
     }
 
     version(Posix) {
-        import sidero.eventloop.tasks.future_completion;
+        import sidero.eventloop.coroutine.future_completion;
         import sidero.eventloop.internal.posix.bindings : WIFEXITED, WEXITSTATUS, WIFSIGNALED, WTERMSIG;
         import core.sys.posix.sys.wait : waitpid, WNOHANG;
         import core.stdc.errno : errno;
@@ -393,6 +394,6 @@ void whenReady() @trusted {
         }
     }
 
-    logger.debug_("Cleanup timer handled ", handledSockets, " sockets, ", handlesProcesses, " processes ",
-            handledReadPipe, " read pipes ", handledWritePipe, " write pipes");
+    logger.debug_("Cleanup timer handled ", handledSockets, " sockets, ", handledFiles, " files, ", handlesProcesses,
+            " processes, ", handledReadPipe, " read pipes, ", handledWritePipe, " write pipes");
 }

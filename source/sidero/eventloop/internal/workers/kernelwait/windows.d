@@ -1,9 +1,10 @@
 module sidero.eventloop.internal.workers.kernelwait.windows;
 import sidero.eventloop.internal.workers;
 import sidero.eventloop.internal.networking.state;
-import sidero.eventloop.internal.networking.windows.socketserver;
+import sidero.eventloop.internal.filesystem.state;
 import sidero.eventloop.sockets;
 import sidero.eventloop.threads;
+import sidero.eventloop.filesystem.file;
 import sidero.base.logger;
 import sidero.base.text;
 import sidero.base.internal.atomic;
@@ -11,6 +12,8 @@ import sidero.base.errors;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
+    import sidero.eventloop.internal.filesystem.windows;
+    import sidero.eventloop.internal.networking.windows.socketserver;
 
     private __gshared {
         LoggerReference logger;
@@ -26,21 +29,28 @@ version(Windows) {
 }
 
 struct IOCPwork {
-    ubyte[5] key; //(l)sock
+    ubyte[5] key; //(l)sock/file
 
-    SocketState* socketState;
-    ListenSocketState* listenSocketState;
-    ResultReference!PlatformListenSocket perSocket;
+    union {
+        struct {
+            SocketState* socketState;
+            ListenSocketState* listenSocketState;
+            ResultReferenceAlternative!PlatformListenSocket perSocket;
+        }
+
+        FileState* fileState;
+    }
 
 @safe nothrow @nogc:
 
-    this(return scope ref IOCPwork other) scope {
+    this(return scope ref IOCPwork other) scope @trusted {
         this.tupleof = other.tupleof;
     }
 
     enum : ubyte[5] {
         Socket = cast(ubyte[5])"SOCK\0",
         ListenSocket = cast(ubyte[5])"LSOCK",
+        File = cast(ubyte[5])"FILE\0",
     }
 }
 
@@ -131,6 +141,28 @@ bool associateWithIOCP(Socket socket) @trusted {
         assert(0);
 }
 
+bool associateWithIOCP(File file) @trusted {
+    version(Windows) {
+        logger.debug_("Associated file with IOCP for file ", file.state.handle, " using key ",
+                cast(size_t)&file.state.iocpWork, " on ", Thread.self);
+
+        file.state.iocpWork.key = IOCPwork.File;
+        file.state.iocpWork.fileState = file.state;
+
+        HANDLE completionPort2 = CreateIoCompletionPort(cast(void*)file.state.handle, completionPort,
+                cast(size_t)&file.state.iocpWork, 0);
+
+        if(completionPort2 !is completionPort) {
+            logger.debug_("Could not associate file with IOCP with code ", WSAGetLastError(), " for file ",
+                    file.state.handle, " on ", Thread.self);
+            return false;
+        }
+
+        return true;
+    } else
+        assert(0);
+}
+
 bool associateWithIOCP(ListenSocketPair listenSocketPair) @trusted {
     version(Windows) {
         assert(listenSocketPair.perSocket);
@@ -139,7 +171,7 @@ bool associateWithIOCP(ListenSocketPair listenSocketPair) @trusted {
 
         listenSocketPair.perSocket.iocpWork.key = IOCPwork.ListenSocket;
         listenSocketPair.perSocket.iocpWork.listenSocketState = listenSocketPair.listenSocket.state;
-        listenSocketPair.perSocket.iocpWork.perSocket = listenSocketPair.perSocket;
+        listenSocketPair.perSocket.iocpWork.perSocket = listenSocketPair.perSocket.asAlternative;
 
         HANDLE completionPort2 = CreateIoCompletionPort(cast(void*)listenSocketPair.perSocket.handle, completionPort,
                 cast(size_t)&listenSocketPair.perSocket.iocpWork, 0);
@@ -180,8 +212,6 @@ void workerProc() @trusted {
                 const errorCode = WSAGetLastError();
 
                 if(errorCode == WAIT_TIMEOUT) {
-                } else if(errorCode == ERROR_OPERATION_ABORTED) {
-                    // ok, explicitly cancelled event
                 } else if(overlapped is null) {
                     logger.warning("IOCP worker GetQueuedCompletionStatus did not complete with error ", errorCode, " on ", Thread.self);
                 } else {
@@ -253,12 +283,10 @@ void seeError(IOCPwork* work, OVERLAPPED* overlapped, int errorCode) @trusted {
                     // Ugh oh...
                     break;
                 }
-            } else if(overlapped is &socket.state.readOverlapped || overlapped is &socket.state.writeOverlapped ||
-                    overlapped is &socket.state.acceptOverlapped) {
+            } else {
                 socket.state.unpinExtra;
+                socket.state.unpin;
             }
-
-            socket.state.unpin;
         } else if(work.key == IOCPwork.ListenSocket) {
             assert(work.perSocket);
 
@@ -268,6 +296,57 @@ void seeError(IOCPwork* work, OVERLAPPED* overlapped, int errorCode) @trusted {
 
             forceClose(&work.perSocket.get());
             listenSocket.state.unpin;
+        } else if(work.key == IOCPwork.File) {
+            assert(work.fileState);
+
+            File file;
+            file.state = work.fileState;
+            file.state.rc(true);
+
+            logger.debug_("Seeing IOCP error for file ", file.state.handle, " as overlapped read ", &file.state.readOverlapped,
+                    " as overlapped write ", &file.state.writeOverlapped, " as overlapped always reading ",
+                    &file.state.alwaysReadingOverlapped, " on ", Thread.self);
+
+            if(overlapped is &file.state.alwaysReadingOverlapped) {
+                file.state.unpinExtra;
+
+                DWORD transferred;
+
+                const wasError = GetOverlappedResult(file.state.handle, &file.state.alwaysReadingOverlapped, &transferred, false);
+                errorCode = GetLastError();
+
+                switch(errorCode) {
+                case ERROR_HANDLE_EOF:
+                case ERROR_OPERATION_ABORTED:
+                    // This is completely ok, it is normal operation!
+                    return;
+
+                default:
+                    // Ugh oh...
+                    break;
+                }
+            } else if(overlapped is &file.state.readOverlapped) {
+                file.state.unpinExtra;
+
+                DWORD transferred;
+
+                const wasError = GetOverlappedResult(file.state.handle, &file.state.alwaysReadingOverlapped, &transferred, false);
+                errorCode = GetLastError();
+
+                switch(errorCode) {
+                case ERROR_HANDLE_EOF:
+                    file.state.reading.rawReadFailed(file.state, true);
+                    break;
+
+                default:
+                    // Ugh oh...
+                    break;
+                }
+            } else {
+                file.state.unpinExtra;
+                file.state.unpin;
+                file.state.forceClose();
+            }
         } else {
             logger.warning("Unknown work type ", work.key, " on ", Thread.self);
         }
@@ -317,6 +396,24 @@ void seeWork(IOCPwork* work, DWORD numberOfBytesTransferred, OVERLAPPED* overlap
             } else {
                 logger.debug_("Seeing IOCP work for listen socket ", work.perSocket.handle, " on ", Thread.self);
             }
+        } else if(work.key == IOCPwork.File) {
+            assert(work.fileState);
+
+            File file;
+            file.state = work.fileState;
+            file.state.rc(true);
+            file.state.unpinExtra;
+
+            logger.debug_("Seeing IOCP work for file ", file.state.handle, " on ", Thread.self);
+
+            file.state.guard(() {
+                if(overlapped is &file.state.writeOverlapped)
+                    file.state.rawWriting.complete(file.state, numberOfBytesTransferred);
+                else if(overlapped is &file.state.readOverlapped)
+                    handleFileReadNotification(file, numberOfBytesTransferred);
+
+                file.state.performReadWrite;
+            });
         } else {
             logger.warning("Unknown work type ", cast(char[5])work.key, " on ", Thread.self);
         }
@@ -338,6 +435,21 @@ void handleSocketReadNotification(Socket socket, DWORD transferredBytes) @truste
         }
 
         socket.state.rawReading.complete(socket.state, transferredBytes);
+    } else
+        assert(0);
+}
+
+void handleFileReadNotification(File file, DWORD transferredBytes) @trusted {
+    version(Windows) {
+        import core.sys.windows.winbase : GetLastError;
+
+        if(transferredBytes == 0) {
+            file.state.reading.rawReadFailed(file.state, true);
+        } else {
+            logger.debug_("Read from file ", transferredBytes, " for ", file.state.handle, " on ", Thread.self);
+        }
+
+        file.state.rawReading.complete(file.state, transferredBytes);
     } else
         assert(0);
 }

@@ -292,7 +292,7 @@ void handleListenSocketEvent(void* handle, void* user, scope void* eventResponse
 
 void onAccept(ListenSocketPair listenSocketPair) @trusted {
     version(Posix) {
-        import sidero.eventloop.tasks.workers : registerAsTask;
+        import sidero.eventloop.control : registerAsTask;
         import sidero.eventloop.internal.event_waiting;
 
         assert(listenSocketPair.perSock);

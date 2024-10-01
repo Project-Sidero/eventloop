@@ -48,7 +48,7 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
     }
 
     // NOTE: this needs guarding
-    void push(Slice!ubyte data, ulong position = 0) scope {
+    void push(Slice!ubyte data, long position = 0) scope {
         queue.push(QueuedWrite(data, position));
     }
 

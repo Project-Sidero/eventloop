@@ -1,7 +1,7 @@
 module sidero.eventloop.processes;
 import sidero.eventloop.pipes;
 import sidero.eventloop.coroutine.future;
-import sidero.eventloop.tasks.future_completion;
+import sidero.eventloop.coroutine.future_completion;
 import sidero.base.text;
 import sidero.base.allocators;
 import sidero.base.containers.readonlyslice;
