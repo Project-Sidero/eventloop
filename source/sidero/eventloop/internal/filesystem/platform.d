@@ -41,4 +41,8 @@ version(Windows) {
     bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position) {
         assert(0);
     }
+
+    ulong getFileSize(scope FileState* fileState) {
+        assert(0);
+    }
 }

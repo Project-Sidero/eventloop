@@ -23,6 +23,7 @@ struct FileState {
     }
 
     shared(bool) isAlive;
+    shared(bool) isClosed;
 
     enum attemptReadLater = false;
     size_t amountToReadSuggestion;
@@ -133,10 +134,17 @@ struct FileState {
             rc(false);
     }
 
-    void guard(Args...)(scope void delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
-        mutex.lock.assumeOkay;
-        del(args);
-        mutex.unlock;
+    ReturnType guard(ReturnType, Args...)(scope ReturnType delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
+        static if (is(ReturnType == void)) {
+            mutex.lock.assumeOkay;
+            del(args);
+            mutex.unlock;
+        } else {
+            mutex.lock.assumeOkay;
+            ReturnType ret = del(args);
+            mutex.unlock;
+            return ret;
+        }
     }
 
     void close() scope @trusted {

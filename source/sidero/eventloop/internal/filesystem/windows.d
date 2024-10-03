@@ -22,8 +22,6 @@ struct PlatformFile {
     }
 
     enum keepAReadAlwaysGoing = true;
-    shared(bool) isClosed;
-
     bool havePendingAlwaysWaitingRead, havePendingRead;
 
 @safe nothrow @nogc:
@@ -259,6 +257,20 @@ bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position)
 
             return false;
         }
+    } else
+        assert(0);
+}
+
+// does not need guarding
+ulong getFileSize(scope FileState* fileState) {
+    version(Windows) {
+        return fileState.guard(() @trusted {
+            LARGE_INTEGER i;
+            if(!GetFileSizeEx(fileState.handle, &i))
+                return 0;
+
+            return i.QuadPart;
+        });
     } else
         assert(0);
 }

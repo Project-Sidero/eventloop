@@ -7,6 +7,7 @@ import sidero.base.logger;
 
 version(Posix) {
     import core.sys.posix.unistd;
+    import core.sys.posix.stat;
 }
 
 @safe nothrow @nogc:
@@ -20,7 +21,6 @@ struct PlatformFile {
     }
 
     enum keepAReadAlwaysGoing = false;
-    shared(bool) isClosed;
 
 @safe nothrow @nogc:
 
@@ -158,6 +158,17 @@ void handleFileEvent(void* handle, void* user, scope void* eventResponsePtr) @tr
                         fileState.handle, " on ", Thread.self);
             }
         }
+    } else
+        assert(0);
+}
+
+ulong getFileSize(scope FileState* fileState) @trusted {
+    version(Posix) {
+        stat buf;
+        if(fstat(fileState.fd, &buf) != 0)
+            return 0;
+
+        return buf.st_size;
     } else
         assert(0);
 }

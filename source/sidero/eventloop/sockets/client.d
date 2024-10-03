@@ -89,15 +89,9 @@ export @safe nothrow @nogc:
 
         state.guard(() {
             const cond = state.reading.requestFromUser(amount, ret);
-            const nowOrNever = state.haveBeenShutdown;
 
-            if(cond) {
+            if(cond)
                 state.performReadWrite;
-
-                if(nowOrNever && !ret.isComplete()) {
-                    state.reading.cleanup(state);
-                }
-            }
         });
 
         assert(!ret.isNull);
@@ -113,15 +107,9 @@ export @safe nothrow @nogc:
 
         state.guard(() {
             const cond = state.reading.requestFromUserChunk(ret);
-            const nowOrNever = state.haveBeenShutdown;
 
-            if(cond) {
+            if(cond)
                 state.performReadWrite;
-
-                if(nowOrNever && !ret.isComplete()) {
-                    state.reading.cleanup(state);
-                }
-            }
         });
 
         assert(!ret.isNull);
@@ -129,12 +117,12 @@ export @safe nothrow @nogc:
     }
 
     ///
-    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF=false) scope {
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF = false) scope {
         return this.readUntil(endCondition.asReadOnly(), giveDataOnEOF);
     }
 
     ///
-    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF=false) scope @trusted {
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF = false) scope @trusted {
         if(isNull)
             return typeof(return).init;
 
@@ -142,15 +130,9 @@ export @safe nothrow @nogc:
 
         state.guard(() @safe {
             const cond = state.reading.requestFromUser(endCondition, giveDataOnEOF, ret);
-            const nowOrNever = state.haveBeenShutdown;
 
-            if(cond) {
+            if(cond)
                 state.performReadWrite;
-
-                if(nowOrNever && !ret.isComplete()) {
-                    state.reading.cleanup(state);
-                }
-            }
         });
 
         assert(!ret.isNull);

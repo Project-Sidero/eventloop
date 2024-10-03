@@ -68,27 +68,30 @@ export @safe nothrow @nogc:
     bool isAlive() scope const {
         import sidero.base.internal.atomic;
 
-        if (isNull)
+        if(isNull)
             return false;
         return atomicLoad(this.state.isAlive);
     }
 
     ///
     bool isReadInProgress() scope {
-        if (isNull)
+        if(isNull)
             return false;
 
         bool ret;
 
-        this.state.guard(() {
-            ret = this.state.rawReading.inProgress();
-        });
+        this.state.guard(() { ret = this.state.rawReading.inProgress(); });
 
         return ret;
     }
 
     ///
-    FilePath path() scope;
+    FilePath path() scope {
+        if(this.isNull)
+            return FilePath.init;
+        else
+            return state.filePath;
+    }
 
     ///
     FileRights rights() scope {
@@ -100,32 +103,308 @@ export @safe nothrow @nogc:
 
     ///
     void close() scope {
-        if (!isNull)
+        if(!isNull)
             state.close();
     }
 
-    Result!ulong size() scope;
+    ///
+    Result!ulong size() scope {
+        import sidero.eventloop.internal.filesystem.platform;
 
-    ulong seekReadPosition() scope;
-    ulong seekWritePosition() scope;
+        if(this.isNull)
+            return typeof(return)(NullPointerException);
+        else
+            return typeof(return)(getFileSize(state));
+    }
 
-    ErrorResult seekRead(long offsetFromCurrent) scope;
-    ErrorResult seekReadFromStart(long offsetFromStart) scope;
-    ErrorResult seekReadFromEnd(long offsetFromEnd) scope;
+    /// If pending read, this will be the position the read started at
+    ulong seekReadPosition() scope {
+        if(this.isNull)
+            return 0;
+        else
+            return state.currentReadPosition;
+    }
 
-    ErrorResult seekWrite(long offsetFromCurrent) scope;
-    ErrorResult seekWriteFromStart(long offsetFromStart) scope;
-    ErrorResult seekWriteFromEnd(long offsetFromEnd) scope;
+    ///
+    ulong seekWritePosition() scope {
+        if(this.isNull)
+            return 0;
+        else
+            return state.currentWritePosition;
+    }
+
+    ///
+    void seekRead(long offsetFromCurrent) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = state.currentReadPosition + offsetFromCurrent;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentReadPosition = pos;
+            state.noUpdateReadPosition = true;
+        });
+    }
+
+    ///
+    void seekReadFromStart(long offsetFromStart) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = offsetFromStart;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentReadPosition = pos;
+            state.noUpdateReadPosition = true;
+        });
+    }
+
+    ///
+    void seekReadFromEnd(long offsetFromEnd) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = size - offsetFromEnd;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentReadPosition = pos;
+            state.noUpdateReadPosition = true;
+        });
+    }
+
+    ///
+    void seekWrite(long offsetFromCurrent) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = state.currentWritePosition + offsetFromCurrent;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentWritePosition = pos;
+        });
+    }
+
+    ///
+    void seekWriteFromStart(long offsetFromStart) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = offsetFromStart;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentWritePosition = pos;
+        });
+    }
+
+    ///
+    void seekWriteFromEnd(long offsetFromEnd) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = size - offsetFromEnd;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentWritePosition = pos;
+        });
+    }
+
+    ///
+    void seekReadWrite(long offsetFromCurrentRead, long offsetFromCurrentWrite) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long posRead = state.currentReadPosition + offsetFromCurrentRead;
+            long posWrite = state.currentWritePosition + offsetFromCurrentWrite;
+
+            if(posRead < 0)
+                posRead = 0;
+            else if(posRead > size)
+                posRead = size;
+
+            if(posWrite < 0)
+                posWrite = 0;
+            else if(posWrite > size)
+                posWrite = size;
+
+            state.currentReadPosition = posRead;
+            state.noUpdateReadPosition = true;
+
+            state.currentWritePosition = posWrite;
+        });
+    }
+
+    ///
+    void seekReadWriteFromStart(long offsetFromStart) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = offsetFromStart;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentReadPosition = pos;
+            state.noUpdateReadPosition = true;
+
+            state.currentWritePosition = pos;
+        });
+    }
+
+    ///
+    void seekReadWriteFromEnd(long offsetFromEnd) scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return;
+
+        state.guard(() {
+            const size = getFileSize(state);
+            long pos = size - offsetFromEnd;
+
+            if(pos < 0)
+                pos = 0;
+            else if(pos > size)
+                pos = size;
+
+            state.currentReadPosition = pos;
+            state.noUpdateReadPosition = true;
+
+            state.currentWritePosition = pos;
+        });
+    }
 
     /// Can return less, if handle was closed
-    Future!(Slice!ubyte) read(size_t amount) scope @trusted;
-    /// Reads a chunk that is 1 or more bytes big (depends upon implementation, and available data in stream)
-    Future!(Slice!ubyte) readChunk() scope @trusted;
-    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF=false) scope;
-    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF=false) scope @trusted;
+    Future!(Slice!ubyte) read(size_t amount) scope @trusted {
+        if(isNull)
+            return typeof(return).init;
 
-    void write(scope return DynamicArray!ubyte data) scope;
-    void write(scope return Slice!ubyte data) scope;
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() {
+            const cond = state.reading.requestFromUser(amount, ret);
+
+            if(cond)
+                state.performReadWrite;
+        });
+
+        assert(!ret.isNull);
+        return ret;
+    }
+
+    /// Reads a chunk that is 1 or more bytes big (depends upon implementation, and available data in stream)
+    Future!(Slice!ubyte) readChunk() scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() {
+            const cond = state.reading.requestFromUserChunk(ret);
+
+            if(cond)
+                state.performReadWrite;
+        });
+
+        assert(!ret.isNull);
+        return ret;
+    }
+
+    ///
+    Future!(Slice!ubyte) readUntil(scope return DynamicArray!ubyte endCondition, bool giveDataOnEOF = false) scope {
+        return this.readUntil(endCondition.asReadOnly(), giveDataOnEOF);
+    }
+
+    ///
+    Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF = false) scope @trusted {
+        if(isNull)
+            return typeof(return).init;
+
+        Future!(Slice!ubyte) ret;
+
+        state.guard(() @safe {
+            const cond = state.reading.requestFromUser(endCondition, giveDataOnEOF, ret);
+
+            if(cond)
+                state.performReadWrite;
+        });
+
+        assert(!ret.isNull);
+        return ret;
+    }
+
+    ///
+    void write(scope return DynamicArray!ubyte data) scope {
+        this.write(data.asReadOnly());
+    }
+
+    ///
+    void write(scope return Slice!ubyte data) scope {
+        if(isAlive()) {
+            state.guard(() @trusted {
+                state.rawWriting.push(data, state.currentWritePosition);
+                state.currentWritePosition += data.length;
+                state.performReadWrite;
+            });
+        }
+    }
 
     ///
     bool opEquals(scope const ref File other) scope const {
@@ -183,7 +462,7 @@ export @safe nothrow @nogc:
         import sidero.eventloop.control : ensureItIsSetup;
         import sidero.eventloop.internal.filesystem.platform;
 
-        if (!ensureItIsSetup)
+        if(!ensureItIsSetup)
             return typeof(return)(UnknownPlatformBehaviorException("Could not start filesystem and workers"));
 
         if(!rights.read && !rights.write)
@@ -203,7 +482,7 @@ export @safe nothrow @nogc:
         ret.state = allocator.make!FileState(allocator, path.dup, rights, estimatedSize);
 
         auto err = openFile(ret);
-        if (!err)
+        if(!err)
             return typeof(return)(err.getError);
 
         return typeof(return)(ret);
