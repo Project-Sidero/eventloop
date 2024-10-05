@@ -638,10 +638,13 @@ struct State {
 
     void addToEventWait() scope @trusted {
         import sidero.eventloop.internal.event_waiting;
+        import sidero.eventloop.control;
 
         if(!logger || logger.isNull)
             logger = Logger.forName(String_UTF8(__MODULE__));
         assert(logger);
+
+        ensureItIsSetup;
 
         version(Posix) {
             import core.sys.posix.poll;
@@ -758,17 +761,17 @@ struct State {
 
             if(errorCode == 0) {
                 auto error = GetLastError();
-                this.reading.rawReadFailed(&this);
 
                 if(error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
+                    this.reading.rawReadFailed(&this, true);
                     this.cleanupRead;
                 }
 
                 return false;
             }
 
-            if(errorCode == 0 || canBeRead == 0) {
+            if(canBeRead == 0) {
                 return false;
             }
 
@@ -779,11 +782,12 @@ struct State {
 
             if(errorCode == 0) {
                 auto error = GetLastError();
-                this.reading.rawReadFailed(&this);
 
                 if(error == ERROR_BROKEN_PIPE) {
                     atomicStore(readStillOpen, false);
                     this.cleanupRead;
+                } else {
+                    this.reading.rawReadFailed(&this, false);
                 }
 
                 return false;
