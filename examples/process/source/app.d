@@ -38,8 +38,7 @@ void main() {
 
     writeln("Hello ", String_UTF8(cast(string)resultText.unsafeGetLiteral).strip, " ", resultCode);
 
-    import sidero.eventloop.tasks.workers;
-    import sidero.eventloop.sockets;
+    import sidero.eventloop.control;
     shutdownWorkerThreads;
     shutdownNetworking;
 }

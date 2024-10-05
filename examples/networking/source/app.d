@@ -1,6 +1,6 @@
 import sidero.base.text;
 import sidero.eventloop.sockets;
-import sidero.eventloop.sockets.control;
+import sidero.eventloop.control;
 import sidero.eventloop.certificates;
 import sidero.eventloop.coroutine;
 import sidero.base.console;
@@ -29,7 +29,6 @@ version(UseClientASync) {
 }
 
 int main(string[] args) {
-    import sidero.eventloop.tasks.workers;
     import sidero.base.text.format;
     import sidero.base.path.networking;
     import sidero.base.datetime;

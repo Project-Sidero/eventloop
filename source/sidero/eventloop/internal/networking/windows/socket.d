@@ -203,9 +203,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
             shutdown(socketState.handle, SD_SEND);
 
             if(socketState.rawReading.inProgress) {
-                CancelIoEx(socketState.handle, &socketState.readOverlapped);
-
-                if(CancelIoEx(socketState.handle, &socketState.readOverlapped) != 0) {
+                if(CancelIoEx(cast(HANDLE)socketState.handle, &socketState.readOverlapped) != 0) {
                     logger.debug_("Successfully cancelled read for socket ", socketState.handle, " on ", Thread.self);
 
                     DWORD transferred;
@@ -218,7 +216,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
             }
 
             if(socketState.havePendingAlwaysWaitingRead) {
-                if(CancelIoEx(socketState.handle, &socketState.alwaysReadingOverlapped) != 0) {
+                if(CancelIoEx(cast(HANDLE)socketState.handle, &socketState.alwaysReadingOverlapped) != 0) {
                     logger.debug_("Successfully cancelled always reading read for socket ", socketState.handle, " on ", Thread.self);
 
                     DWORD transferred;
@@ -230,7 +228,7 @@ void shutdown(scope SocketState* socketState, bool haveReferences = true) @trust
                 }
             }
 
-            if(CancelIoEx(socketState.handle, null) != 0) {
+            if(CancelIoEx(cast(HANDLE)socketState.handle, null) != 0) {
                 logger.debug_("Successfully cancelled any socket operations for ", socketState.handle, " on ", Thread.self);
             } else {
                 logger.info("Socket operations for ", socketState.handle, " failed to cancel with error ",
@@ -335,7 +333,7 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
             return false;
 
         if(socketState.havePendingAlwaysWaitingRead) {
-            if(CancelIoEx(socketState.handle, &socketState.alwaysReadingOverlapped) != 0) {
+            if(CancelIoEx(cast(HANDLE)socketState.handle, &socketState.alwaysReadingOverlapped) != 0) {
                 logger.debug_("Successfully cancelled always reading read for socket ", socketState.handle, " on ", Thread.self);
 
                 // This is required otherwise the receive is going to fail with a very

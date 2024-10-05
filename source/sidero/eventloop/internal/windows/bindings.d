@@ -42,7 +42,6 @@ version(Windows) {
         bool WSAGetOverlappedResult(SOCKET, OVERLAPPED*, DWORD*, bool, DWORD*);
         int WSASend(SOCKET, WSABUF*, DWORD, DWORD*, DWORD, OVERLAPPED*, LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 
-        bool CancelIoEx(SOCKET, OVERLAPPED*);
         bool CancelIoEx(HANDLE, OVERLAPPED*);
         bool GetOverlappedResult(HANDLE, OVERLAPPED*, DWORD*, bool);
 
