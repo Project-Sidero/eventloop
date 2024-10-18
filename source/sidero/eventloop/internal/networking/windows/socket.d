@@ -51,6 +51,8 @@ struct PlatformSocket {
     void notifiedOfReadComplete(scope SocketState* socketState) scope @trusted {
         this.havePendingAlwaysWaitingRead = false;
         this.havePendingRead = false;
+
+        initiateAConstantlyRunningReadRequest(socketState);
     }
 
     // NOTE: must be guarded
@@ -343,8 +345,16 @@ bool tryReadMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
                 DWORD flags;
                 WSAGetOverlappedResult(socketState.handle, &socketState.alwaysReadingOverlapped, &transferred, false, &flags);
             } else {
-                logger.debug_("Always pending read for socket ", socketState.handle, " failed to cancel ",
-                        &socketState.alwaysReadingOverlapped, " with error ", WSAGetLastError(), " on thread ", Thread.self);
+                auto error = GetLastError();
+
+                switch(error) {
+                case ERROR_NOT_FOUND:
+                    break; // all ok, it isn't being used
+
+                default:
+                    logger.debug_("Always pending read for socket ", socketState.handle, " failed to cancel ",
+                            &socketState.alwaysReadingOverlapped, " with error ", WSAGetLastError(), " on thread ", Thread.self);
+                }
             }
 
             socketState.havePendingAlwaysWaitingRead = false;

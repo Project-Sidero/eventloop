@@ -74,6 +74,8 @@ struct FileState {
             this.amountToReadSuggestion = 128 * 1024; // 1/2 of what gets mapped into the kernel
         else if(estimatedSize >= 64 * 1024) // for smallish files like configuration
             this.amountToReadSuggestion = 64 * 1024; // 1/4th of what gets mapped into the kernel
+        else
+            this.amountToReadSuggestion = 4 * 1024; // Don't try to read too much in, we may end up seeking and clear out buffers.
     }
 
     ~this() scope {
@@ -135,7 +137,7 @@ struct FileState {
     }
 
     ReturnType guard(ReturnType, Args...)(scope ReturnType delegate(return scope Args) @safe nothrow @nogc del, return scope Args args) scope @trusted {
-        static if (is(ReturnType == void)) {
+        static if(is(ReturnType == void)) {
             mutex.lock.assumeOkay;
             del(args);
             mutex.unlock;
@@ -180,16 +182,19 @@ struct FileState {
         do {
             logger.debug_("Doing read/write for ", this.handle);
 
-            didSomeWork = this.rawReading.tryRead(&this);
+            didSomeWork = this.reading.tryFulfillRequest(&this);
+            didSomeWork = this.rawReading.tryRead(&this) || didSomeWork;
             didSomeWork = this.rawWriting.tryWrite(&this) || didSomeWork;
+            didSomeWork = this.reading.tryFulfillRequest(&this) || didSomeWork;
         }
         while(didSomeWork);
     }
 
     package(sidero.eventloop) {
         size_t amountToRead() scope {
-            import sidero.base.algorithm : max, min;
-            return max(this.amountToReadSuggestion, min(4 * 1024 * 1024, this.reading.wantedAmount));
+            import sidero.base.algorithm : max;
+
+            return max(this.reading.wantedAmount, this.amountToReadSuggestion);
         }
 
         void delayReadForLater() scope {

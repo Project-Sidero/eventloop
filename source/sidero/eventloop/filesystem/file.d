@@ -22,7 +22,7 @@ struct FileRights {
     bool read;
     ///
     bool write;
-    ///
+    /// If file exists, it will fail to open.
     bool create;
     ///
     bool forceAppend;
@@ -117,20 +117,54 @@ export @safe nothrow @nogc:
             return typeof(return)(getFileSize(state));
     }
 
+    /**
+        Checks to see if read seek position is at or after end of file.
+        Only call this if not reads are in progress, otherwise it will be inaccurate.
+    */
+    Result!bool isReadEOF() scope {
+        import sidero.eventloop.internal.filesystem.platform;
+
+        if(this.isNull)
+            return typeof(return)(NullPointerException);
+
+        ulong position;
+        bool inProgress;
+        const size = getFileSize(state);
+
+        state.guard(() {
+            position = state.currentReadPosition;
+            inProgress = !this.state.noUpdateReadPosition && this.state.rawReading.inProgress();
+        });
+
+        if(inProgress)
+            return typeof(return)(MalformedInputException(
+                    "Do not check for if read position is EOF with a read in progress, it will not be accurate"));
+
+        return typeof(return)(position >= size);
+    }
+
     /// If pending read, this will be the position the read started at
     ulong seekReadPosition() scope {
         if(this.isNull)
             return 0;
-        else
-            return state.currentReadPosition;
+
+        ulong ret;
+
+        state.guard(() { ret = state.currentReadPosition; });
+
+        return ret;
     }
 
     ///
     ulong seekWritePosition() scope {
         if(this.isNull)
             return 0;
-        else
-            return state.currentWritePosition;
+
+        ulong ret;
+
+        state.guard(() { ret = state.currentWritePosition; });
+
+        return ret;
     }
 
     ///

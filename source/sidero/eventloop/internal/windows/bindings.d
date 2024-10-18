@@ -14,7 +14,7 @@ version(Windows) {
     public import core.sys.windows.winbase : INFINITE, WAIT_OBJECT_0, FileTimeToSystemTime, SYSTEMTIME, GetLastError, LocalAlloc,
         LocalFree, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE, FINDEX_INFO_LEVELS, FINDEX_SEARCH_OPS, FILETIME;
     public import core.sys.windows.winnt : CHAR, WCHAR, LONGLONG, LPSTR, LPCSTR, LPWSTR, LPCWSTR, PLUID, LPCWSTR;
-    public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT, ERROR_SUCCESS;
+    public import core.sys.windows.winerror : ERROR_IO_INCOMPLETE, WAIT_TIMEOUT, ERROR_SUCCESS, ERROR_NOT_FOUND;
     public import core.sys.windows.basetsd : HANDLE, ULONG_PTR;
     public import core.sys.windows.basetyps : GUID;
 

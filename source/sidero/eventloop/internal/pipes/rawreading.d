@@ -70,6 +70,8 @@ package(sidero.eventloop):
         }
 
         const toRead = stateObject.amountToRead;
+        assert(toRead > 0);
+
         const oldLength = buffer.length;
 
         if(oldLength < amountFilled + toRead) {
@@ -99,6 +101,7 @@ package(sidero.eventloop):
             return false;
 
         auto slice = buffer.unsafeGetLiteral;
+        assert(slice.length > amountFilled);
 
         if(stateObject.tryRead(slice[amountFilled .. $])) {
             logger.debug_("Successfully performed raw reading for " ~ TitleOfPipe ~ " for a length of ", buffer.length,

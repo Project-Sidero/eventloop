@@ -176,7 +176,8 @@ struct SocketState {
         do {
             logger.debug_("Doing read/write for ", this.handle);
 
-            didSomeWork = this.rawReading.tryRead(&this);
+            didSomeWork = this.rawWriting.tryWrite(&this);
+            didSomeWork = this.rawReading.tryRead(&this) || didSomeWork;
 
             if(this.encryption.enabled && this.encryption.negotiating) {
                 didSomeWork = this.encryption.negotiate(&this) || didSomeWork;

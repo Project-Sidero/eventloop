@@ -131,7 +131,7 @@ bool associateWithIOCP(Socket socket) @trusted {
                 cast(size_t)&socket.state.iocpWork, 0);
 
         if(completionPort2 !is completionPort) {
-            logger.debug_("Could not associate socket with IOCP with code ", WSAGetLastError(), " for socket ",
+            logger.debug_("Could not associate socket with IOCP with code ", GetLastError(), " for socket ",
                     socket.state.handle, " on ", Thread.self);
             return false;
         }
@@ -153,7 +153,7 @@ bool associateWithIOCP(File file) @trusted {
                 cast(size_t)&file.state.iocpWork, 0);
 
         if(completionPort2 !is completionPort) {
-            logger.debug_("Could not associate file with IOCP with code ", WSAGetLastError(), " for file ",
+            logger.debug_("Could not associate file with IOCP with code ", GetLastError(), " for file ",
                     file.state.handle, " on ", Thread.self);
             return false;
         }
@@ -319,29 +319,36 @@ void seeError(IOCPwork* work, OVERLAPPED* overlapped, int errorCode) @trusted {
                 case ERROR_HANDLE_EOF:
                 case ERROR_OPERATION_ABORTED:
                     // This is completely ok, it is normal operation!
-                    return;
+                    break;
 
                 default:
                     // Ugh oh...
                     break;
                 }
+
+                file.state.guard(() { file.state.performReadWrite; });
             } else if(overlapped is &file.state.readOverlapped) {
                 file.state.unpinExtra;
 
                 DWORD transferred;
 
-                const wasError = GetOverlappedResult(file.state.handle, &file.state.alwaysReadingOverlapped, &transferred, false);
+                const wasError = GetOverlappedResult(file.state.handle, &file.state.readOverlapped, &transferred, false);
                 errorCode = GetLastError();
 
                 switch(errorCode) {
                 case ERROR_HANDLE_EOF:
-                    file.state.reading.rawReadFailed(file.state, true);
+                    file.state.guard(() {
+                        file.state.reading.rawReadFailed(file.state, true);
+                        file.state.rawReading.complete(file.state, 0);
+                    });
                     break;
 
                 default:
                     // Ugh oh...
                     break;
                 }
+
+                file.state.guard(() { file.state.performReadWrite; });
             } else {
                 file.state.unpinExtra;
                 file.state.unpin;
@@ -443,13 +450,11 @@ void handleFileReadNotification(File file, DWORD transferredBytes) @trusted {
     version(Windows) {
         import core.sys.windows.winbase : GetLastError;
 
-        if(transferredBytes == 0) {
-            file.state.reading.rawReadFailed(file.state, true);
-        } else {
-            logger.debug_("Read from file ", transferredBytes, " for ", file.state.handle, " on ", Thread.self);
-        }
+        logger.debug_("Read from file ", transferredBytes, " for ", file.state.handle, " on ", Thread.self);
 
-        file.state.rawReading.complete(file.state, transferredBytes);
+        file.state.guard(() {
+            file.state.rawReading.complete(file.state, transferredBytes);
+        });
     } else
         assert(0);
 }

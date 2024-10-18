@@ -42,8 +42,15 @@ ErrorResult openFile(File file) {
         String_UTF8 path8 = file.state.filePath.toString();
 
         // DO NOT ADD O_NONBLOCK, posix systems only support blocking using this API
-        uint flags = O_CLOEXEC | O_RDONLY | O_WRONLY | O_RDWR | O_LARGEFILE;
+        uint flags = O_CLOEXEC | O_LARGEFILE;
         uint mode = S_IRUSR | S_IWUSR;
+
+        if (file.state.fileRights.read && file.state.fileRights.write)
+            flags |= O_RDWR;
+        else if (file.state.fileRights.read)
+            flags |= O_RDONLY;
+        else if (file.state.fileRights.write)
+            flags |= O_WRONLY;
 
         if(file.state.fileRights.forceAppend)
             flags |= O_APPEND;

@@ -9,7 +9,7 @@ import sidero.base.logger;
 
 version(Windows) {
     import sidero.eventloop.internal.windows.bindings;
-    import sidero.eventloop.internal.workers.kernelwait.windows;
+    import sidero.eventloop.internal.workers.kernelwait.windows : associateWithIOCP, IOCPwork;
 }
 
 @safe nothrow @nogc:
@@ -30,6 +30,8 @@ struct PlatformFile {
     void notifiedOfReadComplete(scope FileState* fileState) scope @trusted {
         this.havePendingAlwaysWaitingRead = false;
         this.havePendingRead = false;
+
+        initiateAConstantlyRunningReadRequest(fileState);
     }
 
     void initiateAConstantlyRunningReadRequest(scope FileState* fileState) @trusted {
@@ -49,7 +51,7 @@ struct PlatformFile {
             ubyte[1] buf;
             auto result = ReadFile(fileState.handle, buf.ptr, 0, null, &fileState.alwaysReadingOverlapped);
 
-            if(result == 0) {
+            if(result != 0) {
                 // completed, IOCP will be notified of completion
                 logger.trace("Immediate completion of read ", fileState.handle, " on ", Thread.self);
                 fileState.pinExtra;
@@ -79,8 +81,18 @@ ErrorResult openFile(File file) @trusted {
     version(Windows) {
         String_UTF16 path16 = file.state.filePath.toStringUTF16();
 
-        DWORD access = GENERIC_READ | GENERIC_WRITE;
-        DWORD shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+        DWORD access;
+        DWORD shareMode;
+
+        if (file.state.fileRights.read) {
+            access = GENERIC_READ;
+            shareMode = FILE_SHARE_READ;
+        }
+
+        if (file.state.fileRights.write) {
+            access |= GENERIC_WRITE;
+            shareMode |= FILE_SHARE_WRITE;
+        }
 
         if(file.state.fileRights.forceAppend)
             access |= FILE_APPEND_DATA;
@@ -94,7 +106,7 @@ ErrorResult openFile(File file) @trusted {
             file.state.handle = CreateFileW(path16.ptr, access, shareMode, null, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, null);
         }
 
-        if(file.state.handle is null)
+        if(file.state.handle is INVALID_HANDLE_VALUE)
             return typeof(return)(UnknownPlatformBehaviorException("Could not open/create a file given the path"));
 
         if(!associateWithIOCP(file)) {
@@ -203,6 +215,8 @@ bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer, long position
 }
 
 bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position) @trusted {
+    assert(buffer.length > 0);
+
     version(Windows) {
         import sidero.base.internal.atomic;
 
@@ -219,8 +233,16 @@ bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position)
                 DWORD transferred;
                 GetOverlappedResult(fileState.handle, &fileState.alwaysReadingOverlapped, &transferred, false);
             } else {
-                logger.debug_("Always pending read for file ", fileState.handle, " failed to cancel ",
-                        &fileState.alwaysReadingOverlapped, " with error ", GetLastError(), " on thread ", Thread.self);
+                auto error = GetLastError();
+
+                switch(error) {
+                case ERROR_NOT_FOUND:
+                    break; // all ok, it isn't being used
+
+                default:
+                    logger.debug_("Always pending read for file ", fileState.handle, " failed to cancel ",
+                            &fileState.alwaysReadingOverlapped, " with error ", GetLastError(), " on thread ", Thread.self);
+                }
             }
 
             fileState.havePendingAlwaysWaitingRead = false;
@@ -233,18 +255,18 @@ bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position)
 
         auto result = ReadFile(fileState.handle, buffer.ptr, cast(uint)buffer.length, null, &fileState.readOverlapped);
 
-        if(result == 0) {
+        if(result != 0) {
             // completed, IOCP will be notified of completion
             logger.debug_("Immediate completion of read ", fileState.handle, " on ", Thread.self);
             fileState.pinExtra;
             return true;
         } else {
-            const errorCode = WSAGetLastError();
+            const errorCode = GetLastError();
 
             switch(errorCode) {
             case ERROR_IO_PENDING:
                 // this is okay, its delayed via IOCP
-                logger.debug_("Reading delayed via IOCP for ", fileState.handle, " on ", Thread.self);
+                logger.debug_("Reading delayed via IOCP for ", fileState.handle, " with buffer length ", buffer.length, " on ", Thread.self);
                 fileState.pinExtra;
                 return true;
 

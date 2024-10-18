@@ -129,12 +129,16 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
         return true;
     }
 
+    // NOTE: needs guarding
     bool tryFulfillRequest(scope StateObject* stateObject) scope @trusted {
         logger.trace("Trying to fulfill a request for ", TitleOfPipe, " of ", stateObject.readHandle, " if ",
                 inProgress, " with ", queue.empty, " on ", Thread.self);
 
         if(!inProgress)
             return false;
+
+        if(appendingArray.isNull)
+            appendingArray = DynamicArray!ubyte(globalAllocator());
 
         bool checkIfStop(ptrdiff_t start1, ptrdiff_t end1, ptrdiff_t start2, ptrdiff_t end2) @trusted {
             auto first = appendingArray[start1 .. end1];
@@ -164,10 +168,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
                 logAssert(cast(bool)sliced, null, sliced.getError());
                 auto slicedG = sliced.get;
 
-                if(appendingArray.length == 0)
-                    appendingArray = typeof(appendingArray).init;
                 appendingArray ~= slicedG;
-
                 tryingToConsume = slicedG.length;
             }
 
@@ -263,11 +264,16 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
             stateObject.rawReading.readRaw((availableData) {
                 handleWithData(availableData, tryingToConsume);
+                if(!success)
+                    tryingToConsume = 0;
                 return tryingToConsume;
             });
         }
 
         if(success) {
+            logger.debug_("Fulfilling request of read data by ", TitleOfPipe, " of ", stateObject.readHandle,
+                    " with data count ", dataToCallWith.length, " on ", Thread.self);
+
             assert(toTrigger !is null);
             assert(triggerForHandler is null);
             cast(void)trigger(toTrigger, dataToCallWith);
@@ -280,7 +286,13 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
     // NOTE: needs guarding
     void rawReadFailed(scope StateObject* stateObject, bool isEOF = false) {
+        logger.debug_("A raw read failed reading on a ", TitleOfPipe, " cannot complete of ", stateObject.readHandle,
+                " if ", inProgress, " on ", Thread.self);
+
         if(triggerForHandler is null)
+            return;
+
+        if(this.tryFulfillRequest(stateObject))
             return;
 
         if(wantedAChunk) {
@@ -292,7 +304,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
             });
 
             if(dataToCallWith.length > 0) {
-                assert(triggerForHandler is null);
+                assert(triggerForHandler !is null);
                 cast(void)trigger(triggerForHandler, dataToCallWith);
             } else {
                 auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, read failed"));
@@ -314,14 +326,16 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
                     return availableData.length;
                 });
 
-                assert(triggerForHandler is null);
+                assert(triggerForHandler !is null);
                 cast(void)trigger(triggerForHandler, dataToCallWith);
 
                 triggerForHandler = null;
                 wantedAmount = 0;
                 this.giveDataOnEOF = false;
             } else {
+                assert(triggerForHandler !is null);
                 auto got = trigger(triggerForHandler, PlatformStateNotMatchingArgument("Could not complete future, stream is EOF"));
+                triggerForHandler = null;
 
                 if(!got) {
                     logger.info("Failed to trigger EOF ", TitleOfPipe, " of ", stateObject.readHandle, " with error ",
