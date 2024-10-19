@@ -60,8 +60,15 @@ ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType
     return trigger(cast(FutureTrigger*)triggerStorage);
 }
 
+ErrorResult trigger(TriggerStorage = FutureTriggerStorage!void*)(scope TriggerStorage triggerStorage) @trusted {
+    if(triggerStorage is null)
+        return ErrorResult(NullPointerException("Trigger argument is null"));
+
+    return trigger(cast(FutureTrigger*)triggerStorage);
+}
+
 ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope TriggerStorage triggerStorage,
-        scope return ResultType result) @trusted {
+        scope return ResultType result) @trusted if (!is(ResultType == void)) {
     if(triggerStorage is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
 

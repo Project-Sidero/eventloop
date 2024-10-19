@@ -1,5 +1,8 @@
 module sidero.eventloop.internal.pipes.rawwriting;
 import sidero.eventloop.threads.osthread;
+import sidero.eventloop.coroutine;
+import sidero.eventloop.coroutine.future_completion;
+import sidero.base.allocators;
 import sidero.base.containers.queue.concurrentqueue;
 import sidero.base.containers.readonlyslice;
 import sidero.base.logger;
@@ -8,6 +11,7 @@ import sidero.base.errors;
 struct QueuedWrite {
     Slice!ubyte data;
     ulong position;
+    FutureTriggerStorage!void* toTrigger;
 
 @safe nothrow @nogc:
 
@@ -53,6 +57,21 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
     }
 
     // NOTE: this needs guarding
+    void push(Slice!ubyte data, long position, out GenericCoroutine onCompletionCo) scope @trusted {
+        FutureTriggerStorage!void* triggerForHandler;
+
+        auto ifu = acquireInstantiableFuture!void;
+        auto future = ifu.makeInstance(RCAllocator.init, &triggerForHandler);
+        assert(!future.isNull);
+
+        cast(void)waitOnTrigger(future, triggerForHandler);
+        assert(triggerForHandler !is null);
+
+        queue.push(QueuedWrite(data, position, triggerForHandler));
+        onCompletionCo = future.asGeneric;
+    }
+
+    // NOTE: this needs guarding
     Result!QueuedWrite pop() scope {
         return queue.pop;
     }
@@ -88,7 +107,8 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
                         logger.debug_("Attempting to write ", firstItemData.length, " with offset ", amountFromFirst,
                                 " items to " ~ TitleOfPipe ~ " ", stateObject.writeHandle, " on thread ", Thread.self);
                         triggered = true;
-                        bool result = stateObject.tryWrite(cast(ubyte[])firstItemData.unsafeGetLiteral, firstItem.position + amountFromFirst);
+                        bool result = stateObject.tryWrite(cast(ubyte[])firstItemData.unsafeGetLiteral,
+                                firstItem.position + amountFromFirst);
 
                         if(result) {
                             logger.debug_("Have triggered ", firstItemData.length, " items to " ~ TitleOfPipe ~ " ",
@@ -134,7 +154,17 @@ struct RawWritingState(StateObject, string TitleOfPipe) {
         if(proposedAmount < firstItem.data.length) {
             amountFromFirst = completedAmount;
         } else {
-            cast(void)queue.pop;
+            auto got = queue.pop;
+            assert(got);
+
+            if(got.toTrigger !is null) {
+                auto errorResult = trigger(got.toTrigger);
+
+                if(!errorResult)
+                    logger.info("Failed to trigger future completion of write due to ", errorResult,
+                            " on " ~ TitleOfPipe ~ " ", stateObject.writeHandle, " on thread ", Thread.self);
+            }
+
             amountFromFirst = 0;
         }
     }

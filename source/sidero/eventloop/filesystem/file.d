@@ -1,7 +1,7 @@
 module sidero.eventloop.filesystem.file;
 import sidero.eventloop.filesystem.introspection;
 import sidero.eventloop.handles;
-import sidero.eventloop.coroutine.future;
+import sidero.eventloop.coroutine;
 import sidero.eventloop.internal.filesystem.state;
 import sidero.base.attributes;
 import sidero.base.containers.readonlyslice;
@@ -425,19 +425,23 @@ export @safe nothrow @nogc:
     }
 
     ///
-    void write(scope return DynamicArray!ubyte data) scope {
-        this.write(data.asReadOnly());
+    GenericCoroutine write(scope return DynamicArray!ubyte data) scope {
+        return this.write(data.asReadOnly());
     }
 
     ///
-    void write(scope return Slice!ubyte data) scope {
+    GenericCoroutine write(scope return Slice!ubyte data) scope {
+        GenericCoroutine ret;
+
         if(isAlive()) {
             state.guard(() @trusted {
-                state.rawWriting.push(data, state.currentWritePosition);
+                state.rawWriting.push(data, state.currentWritePosition, ret);
                 state.currentWritePosition += data.length;
                 state.performReadWrite;
             });
         }
+
+        return ret;
     }
 
     ///
