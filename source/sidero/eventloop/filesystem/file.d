@@ -402,6 +402,11 @@ export @safe nothrow @nogc:
     }
 
     ///
+    Future!(Slice!ubyte) readUntil(scope return String_ASCII endCondition, bool giveDataOnEOF = false) scope {
+        return this.readUntil(endCondition.asSlice(), giveDataOnEOF);
+    }
+
+    ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF = false) scope @trusted {
         if(isNull)
             return typeof(return).init;
@@ -422,6 +427,11 @@ export @safe nothrow @nogc:
     ///
     GenericCoroutine write(scope return DynamicArray!ubyte data) scope {
         return this.write(data.asReadOnly());
+    }
+
+    ///
+    GenericCoroutine write(scope return String_ASCII data) scope {
+        return this.write(data.asSlice());
     }
 
     ///
