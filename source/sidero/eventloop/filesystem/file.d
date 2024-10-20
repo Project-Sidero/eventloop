@@ -119,13 +119,13 @@ export @safe nothrow @nogc:
 
     /**
         Checks to see if read seek position is at or after end of file.
-        Only call this if not reads are in progress, otherwise it will be inaccurate.
+        Only call this if no reads are in progress, otherwise it will be inaccurate.
     */
-    Result!bool isReadEOF() scope {
+    bool isReadEOF() scope {
         import sidero.eventloop.internal.filesystem.platform;
 
         if(this.isNull)
-            return typeof(return)(NullPointerException);
+            return false;
 
         ulong position;
         bool inProgress;
@@ -133,14 +133,9 @@ export @safe nothrow @nogc:
 
         state.guard(() {
             position = state.currentReadPosition;
-            inProgress = !this.state.noUpdateReadPosition && this.state.rawReading.inProgress();
         });
 
-        if(inProgress)
-            return typeof(return)(MalformedInputException(
-                    "Do not check for if read position is EOF with a read in progress, it will not be accurate"));
-
-        return typeof(return)(position >= size);
+        return position >= size;
     }
 
     /// If pending read, this will be the position the read started at

@@ -239,6 +239,7 @@ version(Windows) {
 
         INVALID_HANDLE_VALUE = cast(HANDLE)-1,
         NO_ERROR = 0,
+        ERROR_SHARING_VIOLATION = 32,
         ERROR_IO_PENDING = 997,
 
         AF_INET = 2,

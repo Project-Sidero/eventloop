@@ -13,6 +13,7 @@ struct FutureTrigger;
 /// The storage for a future trigger, matches internals of a coroutine return value.
 alias FutureTriggerStorage(ResultType) = Result!ResultType;
 
+/// Acquire a specialized coroutine to be used by all functions in this module. Descriptor only.
 InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireInstantiableFuture(ResultType)() @trusted {
     import sidero.eventloop.coroutine.internal.state;
 
@@ -26,6 +27,87 @@ InstanceableCoroutine!(ResultType, FutureTriggerStorage!ResultType**) acquireIns
     return storage;
 }
 
+/// Complete a future completion without the requirement of waiting on and then triggering it globally
+ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!(ResultType) co,
+        scope TriggerStorage triggerStorage, scope return ErrorMessage errorMessage, string moduleName = __MODULE__, int line = __LINE__) @trusted {
+    if(co.isNull)
+        return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
+    else if(triggerStorage is null)
+        return ErrorResult(NullPointerException("Trigger argument is null"));
+
+    *triggerStorage = Result!ResultType(errorMessage, moduleName, line);
+    return completeWithoutATrigger(co, cast(FutureTrigger*)triggerStorage);
+}
+
+/// Ditto
+ErrorResult completeWithoutATrigger(TriggerStorage = FutureTriggerStorage!void*)(scope Future!(void) co, scope TriggerStorage triggerStorage) @trusted {
+    if(co.isNull)
+        return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
+    else if(triggerStorage is null)
+        return ErrorResult(NullPointerException("Trigger argument is null"));
+
+    return completeWithoutATrigger(co, cast(FutureTrigger*)triggerStorage);
+}
+
+/// Ditto
+ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!(
+        ResultType) co, scope TriggerStorage triggerStorage, scope return ResultType result) @trusted
+        if (!is(ResultType == void)) {
+    if(co.isNull)
+        return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
+    else if(triggerStorage is null)
+        return ErrorResult(NullPointerException("Trigger argument is null"));
+
+    *triggerStorage = result;
+    return completeWithoutATrigger(co, cast(FutureTrigger*)triggerStorage);
+}
+
+/// Ditto
+ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!(ResultType) co, scope TriggerStorage triggerStorage, scope return Result!ResultType result) @trusted {
+    if(co.isNull)
+        return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
+    else if(triggerStorage is null)
+        return ErrorResult(NullPointerException("Trigger argument is null"));
+
+    *triggerStorage = result;
+    return completeWithoutATrigger(co, cast(FutureTrigger*)triggerStorage);
+}
+
+/// Ditto
+ErrorResult completeWithoutATrigger(ResultType)(scope Future!(ResultType) co, scope FutureTrigger* trigger) @trusted {
+    if(co.isNull)
+        return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
+    else if(trigger is null)
+        return ErrorResult(NullPointerException("Trigger argument is null"));
+
+    ErrorResult errorResult = co.unsafeResume();
+    if(!errorResult)
+        return errorResult;
+
+    return ErrorResult.init;
+}
+
+///
+unittest {
+    InstanceableCoroutine!(int, FutureTriggerStorage!int**) instantiable = acquireInstantiableFuture!int();
+
+    FutureTriggerStorage!int* triggerStorage;
+
+    Future!int future = instantiable.makeInstance(RCAllocator.init, &triggerStorage);
+    assert(!future.isNull);
+    assert(!future.isComplete);
+    assert(triggerStorage !is null);
+    assert(future.condition.waitingOn == CoroutineCondition.WaitingOn.ExternalTrigger);
+
+    auto errorResult = completeWithoutATrigger(future, triggerStorage, 3);
+    assert(errorResult);
+
+    auto got = future.result();
+    assert(got);
+    assert(got == 3);
+}
+
+/// Wait on a trigger, so it may be tirggered later
 ErrorResult waitOnTrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!ResultType coroutine,
         TriggerStorage triggerStorage) @trusted {
     if(triggerStorage is null)
@@ -35,6 +117,7 @@ ErrorResult waitOnTrigger(ResultType, TriggerStorage = FutureTriggerStorage!Resu
     return waitOnTrigger(co, cast(FutureTrigger*)triggerStorage);
 }
 
+/// Ditto
 ErrorResult waitOnTrigger(scope GenericCoroutine coroutine, FutureTrigger* trigger) @trusted {
     if(trigger is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
@@ -51,15 +134,17 @@ ErrorResult waitOnTrigger(scope GenericCoroutine coroutine, FutureTrigger* trigg
     return ErrorResult(DuplicateValueException("Future trigger has already been registered"));
 }
 
+/// Ditto
 ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope TriggerStorage triggerStorage,
         scope return ErrorMessage errorMessage, string moduleName = __MODULE__, int line = __LINE__) @trusted {
     if(triggerStorage is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
 
-    *triggerStorage = Result!ResultType(result, moduleName, line);
+    *triggerStorage = Result!ResultType(errorMessage, moduleName, line);
     return trigger(cast(FutureTrigger*)triggerStorage);
 }
 
+/// Ditto
 ErrorResult trigger(TriggerStorage = FutureTriggerStorage!void*)(scope TriggerStorage triggerStorage) @trusted {
     if(triggerStorage is null)
         return ErrorResult(NullPointerException("Trigger argument is null"));
@@ -67,6 +152,7 @@ ErrorResult trigger(TriggerStorage = FutureTriggerStorage!void*)(scope TriggerSt
     return trigger(cast(FutureTrigger*)triggerStorage);
 }
 
+/// Ditto
 ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope TriggerStorage triggerStorage,
         scope return ResultType result) @trusted if (!is(ResultType == void)) {
     if(triggerStorage is null)
@@ -76,6 +162,7 @@ ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType
     return trigger(cast(FutureTrigger*)triggerStorage);
 }
 
+/// Ditto
 ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope TriggerStorage triggerStorage,
         scope return Result!ResultType result) @trusted {
     if(triggerStorage is null)
@@ -85,6 +172,7 @@ ErrorResult trigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType
     return trigger(cast(FutureTrigger*)triggerStorage);
 }
 
+/// Ditto
 ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
     import sidero.eventloop.internal.workers : coroutineCompletedTask;
 
@@ -121,6 +209,7 @@ ErrorResult trigger(scope FutureTrigger* trigger) @trusted {
     return ErrorResult.init;
 }
 
+///
 unittest {
     InstanceableCoroutine!(int, FutureTriggerStorage!int**) instantiable = acquireInstantiableFuture!int();
 

@@ -82,17 +82,13 @@ ErrorResult openFile(File file) @trusted {
         String_UTF16 path16 = file.state.filePath.toStringUTF16();
 
         DWORD access;
-        DWORD shareMode;
+        DWORD shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
 
-        if (file.state.fileRights.read) {
+        if(file.state.fileRights.read)
             access = GENERIC_READ;
-            shareMode = FILE_SHARE_READ;
-        }
 
-        if (file.state.fileRights.write) {
+        if(file.state.fileRights.write)
             access |= GENERIC_WRITE;
-            shareMode |= FILE_SHARE_WRITE;
-        }
 
         if(file.state.fileRights.forceAppend)
             access |= FILE_APPEND_DATA;
@@ -106,8 +102,16 @@ ErrorResult openFile(File file) @trusted {
             file.state.handle = CreateFileW(path16.ptr, access, shareMode, null, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, null);
         }
 
-        if(file.state.handle is INVALID_HANDLE_VALUE)
-            return typeof(return)(UnknownPlatformBehaviorException("Could not open/create a file given the path"));
+        if(file.state.handle is INVALID_HANDLE_VALUE) {
+            switch(GetLastError()) {
+            case ERROR_SHARING_VIOLATION:
+                return typeof(return)(
+                        UnknownPlatformBehaviorException("Could not open/create a file given the path due to sharing violation"));
+
+            default:
+                return typeof(return)(UnknownPlatformBehaviorException("Could not open/create a file given the path"));
+            }
+        }
 
         if(!associateWithIOCP(file)) {
             file.state.forceClose;
@@ -266,7 +270,8 @@ bool tryReadMechanism(scope FileState* fileState, ubyte[] buffer, long position)
             switch(errorCode) {
             case ERROR_IO_PENDING:
                 // this is okay, its delayed via IOCP
-                logger.debug_("Reading delayed via IOCP for ", fileState.handle, " with buffer length ", buffer.length, " on ", Thread.self);
+                logger.debug_("Reading delayed via IOCP for ", fileState.handle, " with buffer length ", buffer.length,
+                        " on ", Thread.self);
                 fileState.pinExtra;
                 return true;
 

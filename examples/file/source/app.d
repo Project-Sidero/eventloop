@@ -34,13 +34,32 @@ int main() {
         writeln("Opened ", theFile.path, " with rights ", theFile.rights);
     }
 
-    version(UseAsync) {
-        registerAsTask(createCo().makeInstance(globalAllocator(), theFile));
-    } else {
-        handleSyncFile(theFile);
+    {
+        version(UseAsync) {
+            registerAsTask(createCo().makeInstance(globalAllocator(), theFile));
+        } else {
+            handleSyncFile(theFile);
+        }
+
+        acceptLoop;
     }
 
-    acceptLoop;
+    {
+        Future!StringBuilder_UTF8 fileText = readAllUTF8(filePath);
+        fileText.blockUntilCompleteOrHaveValue();
+
+        auto result = fileText.result;
+        if (!result) {
+            writeln("Failed to read file using utility function ", result);
+            return 4;
+        }
+
+        writeln("\\/\\/ File contents \\/\\/");
+        writeln(result.get);
+        writeln("/\\/\\ File contents /\\/\\");
+
+        acceptLoop;
+    }
 
     shutdownWorkerThreads;
     shutdownNetworking;
@@ -56,6 +75,8 @@ void acceptLoop() {
     if(!atomicLoad(haveACo))
         return;
 
+    atomicStore(allowedToShutdown, false);
+
     writeln("Hit enter to stop:");
     bool wantClose;
 
@@ -69,6 +90,8 @@ void acceptLoop() {
 
         //cast(void)Thread.sleep(1.seconds);
     }
+
+    atomicStore(haveACo, false);
 }
 
 @safe nothrow @nogc:

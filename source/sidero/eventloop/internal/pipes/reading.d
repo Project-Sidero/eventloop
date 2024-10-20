@@ -83,7 +83,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
 
         stopArray = typeof(stopArray).init;
         wantedAmount = 0;
-        wantedAChunk = false;
+        wantedAChunk = true;
         return true;
     }
 
@@ -132,7 +132,8 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     // NOTE: needs guarding
     bool tryFulfillRequest(scope StateObject* stateObject) scope @trusted {
         logger.trace("Trying to fulfill a request for ", TitleOfPipe, " of ", stateObject.readHandle, " if ",
-                inProgress, " with ", queue.empty, " on ", Thread.self);
+                inProgress, " with ", queue.empty, " wants chunk? ", this.wantedAChunk, " give on EOF? ",
+                this.giveDataOnEOF, " on ", Thread.self);
 
         if(!inProgress)
             return false;
@@ -287,7 +288,7 @@ struct ReadingState(StateObject, string TitleOfPipe, bool SupportEncryption) {
     // NOTE: needs guarding
     void rawReadFailed(scope StateObject* stateObject, bool isEOF = false) {
         logger.debug_("A raw read failed reading on a ", TitleOfPipe, " cannot complete of ", stateObject.readHandle,
-                " if ", inProgress, " on ", Thread.self);
+                " if ", inProgress, " wants chunk? ", this.wantedAChunk, " give on EOF? ", this.giveDataOnEOF, " on ", Thread.self);
 
         if(triggerForHandler is null)
             return;
