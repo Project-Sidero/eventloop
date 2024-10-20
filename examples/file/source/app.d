@@ -140,8 +140,7 @@ InstanceableCoroutine!(void, File) createCo() {
     };
 
     builder[Stages.StartRead] = (scope ref state) @trusted {
-        auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-        state.nextLine = state.file.readUntil(tempSlice, true);
+        state.nextLine = state.file.readUntil(String_ASCII("\n"), true);
         assert(!state.nextLine.isNull);
 
         // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -178,8 +177,7 @@ InstanceableCoroutine!(void, File) createCo() {
         if(state.readLineNumber == 3)
             return Builder.complete(); // ok thats everything
         else {
-            auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-            state.nextLine = state.file.readUntil(tempSlice, true);
+            state.nextLine = state.file.readUntil(String_ASCII("\n"), true);
             assert(!state.nextLine.isNull);
 
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -208,8 +206,7 @@ void handleSyncFile(File file) @trusted {
 
     for(;;) {
         {
-            auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-            nextLine = file.readUntil(tempSlice, true);
+            nextLine = file.readUntil(String_ASCII("\n"), true);
             assert(!nextLine.isNull);
         }
 

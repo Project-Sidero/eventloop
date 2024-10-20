@@ -17,12 +17,12 @@ void main() {
 
     auto pstdout = process.outputPipe;
     assert(!pstdout.isNull);
-    auto textToRead = pstdout.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
+    auto textToRead = pstdout.readUntil(String_ASCII("\n"));
     assert(!textToRead.isNull);
 
     String_UTF8 un = userName();
     process.inputPipe.write(Slice!ubyte(cast(ubyte[])un.unsafeGetLiteral));
-    process.inputPipe.write(Slice!ubyte(cast(ubyte[])"!\n"));
+    process.inputPipe.write(String_ASCII("!\n"));
 
     while(!result.isComplete || !textToRead.isComplete) {
         cast(void)Thread.sleep(10.microSecond);

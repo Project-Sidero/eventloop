@@ -261,7 +261,7 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
 
             writeln("RECEIVED: ", text);
 
-            cast(void)state.socket.write(Slice!ubyte(cast(ubyte[])"> "));
+            cast(void)state.socket.write(String_ASCII("> "));
             cast(void)state.socket.write(result);
 
             if(result.get == cast(ubyte[])"DONE\n") {
@@ -272,7 +272,7 @@ InstanceableCoroutine!(void, Socket) createServerCo() {
 
         {
             assert(!state.socket.isNull);
-            state.nextLine = state.socket.readUntil(Slice!ubyte(cast(ubyte[])"\n"));
+            state.nextLine = state.socket.readUntil(String_ASCII("\n"));
             assert(!state.nextLine.isNull);
 
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -335,21 +335,16 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
             assert(socketTLSError);
         }
 
-        auto tempSlice = Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n");
-        cast(void)state.socket.write(tempSlice);
+        cast(void)state.socket.write(String_ASCII("GET / HTTP/1.1\r\n"));
 
         version(UseRemote) {
-            tempSlice = Slice!ubyte(cast(ubyte[])"Host: example.com\r\n");
-            cast(void)state.socket.write(tempSlice);
+            cast(void)state.socket.write(String_ASCII("Host: example.com\r\n"));
         }
 
-        tempSlice = Slice!ubyte(cast(ubyte[])"Accept-Encoding: identity\r\n");
-        cast(void)state.socket.write(tempSlice);
-        tempSlice = Slice!ubyte(cast(ubyte[])"\r\n");
-        cast(void)state.socket.write(tempSlice);
+        cast(void)state.socket.write(String_ASCII)("Accept-Encoding: identity\r\n");
+        cast(void)state.socket.write(String_ASCII("\r\n"));
 
-        tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-        state.nextLine = state.socket.readUntil(tempSlice);
+        state.nextLine = state.socket.readUntil(String_ASCII("\n"));
         assert(!state.nextLine.isNull);
 
         // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -386,8 +381,7 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
         }
 
         {
-            auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-            state.nextLine = state.socket.readUntil(tempSlice);
+            state.nextLine = state.socket.readUntil(String_ASCII("\n"));
             assert(!state.nextLine.isNull);
 
             // workaround for: https://issues.dlang.org/show_bug.cgi?id=23835
@@ -428,20 +422,17 @@ void handleSyncClient(Socket socket) @trusted {
 
     {
         auto tempSlice = Slice!ubyte(cast(ubyte[])"GET / HTTP/1.1\r\n");
-        cast(void)socket.write(tempSlice);
+        cast(void)socket.write(String_ASCII());
 
         version(UseRemote) {
             tempSlice = Slice!ubyte(cast(ubyte[])"Host: example.com\r\n");
-            cast(void)socket.write(tempSlice);
+            cast(void)socket.write(String_ASCII());
         }
 
-        tempSlice = Slice!ubyte(cast(ubyte[])"Accept-Encoding: identity\r\n");
-        cast(void)socket.write(tempSlice);
-        tempSlice = Slice!ubyte(cast(ubyte[])"\r\n");
-        cast(void)socket.write(tempSlice);
+        cast(void)socket.write(String_ASCII("Accept-Encoding: identity\r\n"));
+        cast(void)socket.write(String_ASCII("\r\n"));
 
-        tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-        nextLine = socket.readUntil(tempSlice);
+        nextLine = socket.readUntil(String_ASCII("\n"));
         assert(!nextLine.isNull);
     }
 
@@ -475,8 +466,7 @@ void handleSyncClient(Socket socket) @trusted {
         }
 
         {
-            auto tempSlice = Slice!ubyte(cast(ubyte[])"\n");
-            nextLine = socket.readUntil(tempSlice);
+            nextLine = socket.readUntil(String_ASCII("\n"));
             assert(!nextLine.isNull);
         }
     }
