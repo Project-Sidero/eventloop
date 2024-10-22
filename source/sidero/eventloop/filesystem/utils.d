@@ -315,3 +315,53 @@ Future!StringBuilder_UTF32 readAllUTF32(FilePath fileName) {
     registerAsTask(ret);
     return ret;
 }
+
+///
+GenericCoroutine write(FilePath fileName, String_UTF8 data) {
+    return write(fileName, data.asRawSlice);
+}
+
+///
+GenericCoroutine write(FilePath fileName, String_UTF16 data) {
+    return write(fileName, data.asRawSlice);
+}
+
+///
+GenericCoroutine write(FilePath fileName, String_UTF32 data) {
+    return write(fileName, data.asRawSlice);
+}
+
+///
+GenericCoroutine write(FilePath fileName, DynamicArray!ubyte data) {
+    return write(fileName, data.asReadOnly);
+}
+
+///
+GenericCoroutine write(FilePath fileName, Slice!ubyte data) {
+    assert(0);
+}
+
+///
+GenericCoroutine append(FilePath fileName, String_UTF8 data) {
+    return append(fileName, data.asRawSlice);
+}
+
+///
+GenericCoroutine append(FilePath fileName, String_UTF16 data) {
+    return append(fileName, data.asRawSlice);
+}
+
+///
+GenericCoroutine append(FilePath fileName, String_UTF32 data) {
+    return append(fileName, data.asRawSlice);
+}
+
+///
+GenericCoroutine append(FilePath fileName, DynamicArray!ubyte data) {
+    return append(fileName, data.asReadOnly);
+}
+
+///
+GenericCoroutine append(FilePath fileName, Slice!ubyte data) {
+    assert(0);
+}

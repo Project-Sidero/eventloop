@@ -407,6 +407,21 @@ export @safe nothrow @nogc:
     }
 
     ///
+    Future!(Slice!ubyte) readUntil(scope return String_UTF8 endCondition, bool giveDataOnEOF = false) scope {
+        return this.readUntil(endCondition.asRawSlice(), giveDataOnEOF);
+    }
+
+    ///
+    Future!(Slice!ubyte) readUntil(scope return String_UTF16 endCondition, bool giveDataOnEOF = false) scope {
+        return this.readUntil(endCondition.asRawSlice(), giveDataOnEOF);
+    }
+
+    ///
+    Future!(Slice!ubyte) readUntil(scope return String_UTF32 endCondition, bool giveDataOnEOF = false) scope {
+        return this.readUntil(endCondition.asRawSlice(), giveDataOnEOF);
+    }
+
+    ///
     Future!(Slice!ubyte) readUntil(scope return Slice!ubyte endCondition, bool giveDataOnEOF = false) scope @trusted {
         if(isNull)
             return typeof(return).init;
@@ -432,6 +447,21 @@ export @safe nothrow @nogc:
     ///
     GenericCoroutine write(scope return String_ASCII data) scope {
         return this.write(data.asSlice());
+    }
+
+    ///
+    GenericCoroutine write(scope return String_UTF8 data) scope {
+        return this.write(data.asRawSlice());
+    }
+
+    ///
+    GenericCoroutine write(scope return String_UTF16 data) scope {
+        return this.write(data.asRawSlice());
+    }
+
+    ///
+    GenericCoroutine write(scope return String_UTF32 data) scope {
+        return this.write(data.asRawSlice());
     }
 
     ///
