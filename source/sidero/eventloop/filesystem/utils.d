@@ -1,8 +1,8 @@
 module sidero.eventloop.filesystem.utils;
+import sidero.eventloop.filesystem;
 import sidero.eventloop.coroutine;
 import sidero.eventloop.coroutine.future_completion;
 import sidero.eventloop.control;
-import sidero.eventloop.filesystem;
 import sidero.base.containers.dynamicarray;
 import sidero.base.containers.appender;
 import sidero.base.containers.readonlyslice;
@@ -338,7 +338,21 @@ GenericCoroutine write(FilePath fileName, DynamicArray!ubyte data) {
 
 ///
 GenericCoroutine write(FilePath fileName, Slice!ubyte data) {
-    assert(0);
+    const alreadyExists = fileName.exists;
+
+    auto theFile = File.from(fileName, false, true, !alreadyExists);
+    if(!theFile) {
+        InstanceableCoroutine!(void, FutureTriggerStorage!void**) instantiable = acquireInstantiableFuture!(void)();
+        FutureTriggerStorage!void* triggerStorage;
+        Future!void future = instantiable.makeInstance(RCAllocator.init, &triggerStorage);
+
+        auto errorResult = completeWithoutATrigger(future, triggerStorage, theFile.getError().info);
+        assert(errorResult);
+
+        return future.asGeneric();
+    }
+
+    return theFile.write(data);
 }
 
 ///
@@ -363,5 +377,19 @@ GenericCoroutine append(FilePath fileName, DynamicArray!ubyte data) {
 
 ///
 GenericCoroutine append(FilePath fileName, Slice!ubyte data) {
-    assert(0);
+    const alreadyExists = fileName.exists;
+
+    auto theFile = File.from(fileName, false, true, !alreadyExists, true);
+    if(!theFile) {
+        InstanceableCoroutine!(void, FutureTriggerStorage!void**) instantiable = acquireInstantiableFuture!(void)();
+        FutureTriggerStorage!void* triggerStorage;
+        Future!void future = instantiable.makeInstance(RCAllocator.init, &triggerStorage);
+
+        auto errorResult = completeWithoutATrigger(future, triggerStorage, theFile.getError().info);
+        assert(errorResult);
+
+        return future.asGeneric();
+    }
+
+    return theFile.write(data);
 }

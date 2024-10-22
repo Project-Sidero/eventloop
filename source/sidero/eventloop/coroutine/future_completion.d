@@ -50,8 +50,8 @@ ErrorResult completeWithoutATrigger(TriggerStorage = FutureTriggerStorage!void*)
 }
 
 /// Ditto
-ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!(
-        ResultType) co, scope TriggerStorage triggerStorage, scope return ResultType result) @trusted
+ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(
+        scope Future!(ResultType) co, scope TriggerStorage triggerStorage, scope return ResultType result) @trusted
         if (!is(ResultType == void)) {
     if(co.isNull)
         return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
@@ -63,7 +63,9 @@ ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerSt
 }
 
 /// Ditto
-ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(scope Future!(ResultType) co, scope TriggerStorage triggerStorage, scope return Result!ResultType result) @trusted {
+ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerStorage!ResultType*)(
+        scope Future!(ResultType) co, scope TriggerStorage triggerStorage, scope return Result!ResultType result) @trusted
+        if (!is(ResultType == void)) {
     if(co.isNull)
         return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
     else if(triggerStorage is null)
@@ -74,7 +76,8 @@ ErrorResult completeWithoutATrigger(ResultType, TriggerStorage = FutureTriggerSt
 }
 
 /// Ditto
-ErrorResult completeWithoutATrigger(ResultType)(scope Future!(ResultType) co, scope FutureTrigger* trigger) @trusted {
+ErrorResult completeWithoutATrigger(ResultType)(scope Future!(ResultType) co, scope FutureTrigger* trigger) @trusted
+        if (!is(ResultType == void)) {
     if(co.isNull)
         return ErrorResult(NullPointerException("Coroutine to trigger complete upon is null"));
     else if(trigger is null)
