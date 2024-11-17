@@ -343,8 +343,8 @@ export @safe nothrow @nogc:
     }
 
     ///
-    String_UTF8 toString(RCAllocator allocator = RCAllocator.init) @trusted {
-        StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
+    String_UTF8 toString() @trusted {
+        StringBuilder_UTF8 ret = StringBuilder_UTF8();
         toString(ret);
         return ret.asReadOnly;
     }
@@ -355,8 +355,8 @@ export @safe nothrow @nogc:
     }
 
     ///
-    String_UTF8 toStringPretty(RCAllocator allocator = RCAllocator.init) @trusted {
-        StringBuilder_UTF8 ret = StringBuilder_UTF8(allocator);
+    String_UTF8 toStringPretty() @trusted {
+        StringBuilder_UTF8 ret = StringBuilder_UTF8();
         toStringPretty(ret);
         return ret.asReadOnly;
     }
