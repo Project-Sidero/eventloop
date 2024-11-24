@@ -131,9 +131,7 @@ export @safe nothrow @nogc:
         bool inProgress;
         const size = getFileSize(state);
 
-        state.guard(() {
-            position = state.currentReadPosition;
-        });
+        state.guard(() { position = state.currentReadPosition; });
 
         return position >= size;
     }
@@ -507,20 +505,21 @@ export @safe nothrow @nogc:
     }
 
     ///
-    void toString(Sink)(scope ref Sink sink) @trusted {
-        sink.formattedWrite("File({:p})", this.unsafeGetHandle().handle);
+    void toString(scope ref StringBuilder_UTF8 builder) @trusted {
+        builder.formattedWrite("File({:p})", this.unsafeGetHandle().handle);
     }
 
     ///
-    String_UTF8 toStringPretty() @trusted {
+    String_UTF8 toStringPretty(PrettyPrint pp) @trusted {
         StringBuilder_UTF8 ret = StringBuilder_UTF8();
-        toStringPretty(ret);
+        toStringPretty(ret, pp);
         return ret.asReadOnly;
     }
 
     ///
-    void toStringPretty(Sink)(scope ref Sink sink) @trusted {
-        sink.formattedWrite("File({:p}@{:p}, isAlive={:s}, isReadInProgress={:s})", this.unsafeGetHandle().handle,
+    void toStringPretty(scope ref StringBuilder_UTF8 builder, PrettyPrint pp) @trusted {
+        pp.emitPrefix(builder);
+        builder.formattedWrite("File({:p}@{:p}, isAlive={:s}, isReadInProgress={:s})", this.unsafeGetHandle().handle,
                 cast(void*)this.state, this.isAlive, this.isReadInProgress);
     }
 

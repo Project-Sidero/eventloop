@@ -390,20 +390,21 @@ export @safe nothrow @nogc:
     }
 
     ///
-    void toString(Sink)(scope ref Sink sink) @trusted {
-        sink.formattedWrite("Thread({:p})", this.unsafeGetHandle().handle);
+    void toString(scope ref StringBuilder_UTF8 builder) @trusted {
+        builder.formattedWrite("Thread({:p})", this.unsafeGetHandle().handle);
     }
 
     ///
-    String_UTF8 toStringPretty() @trusted {
+    String_UTF8 toStringPretty(PrettyPrint pp) @trusted {
         StringBuilder_UTF8 ret = StringBuilder_UTF8();
-        toStringPretty(ret);
+        toStringPretty(ret, pp);
         return ret.asReadOnly;
     }
 
     ///
-    void toStringPretty(Sink)(scope ref Sink sink) @trusted {
-        sink.formattedWrite("Thread({:p}@{:p}, isAlive={:s})", this.unsafeGetHandle().handle, cast(void*)this.state, this.isRunning);
+    void toStringPretty(scope ref StringBuilder_UTF8 builder, PrettyPrint pp) @trusted {
+        pp.emitPrefix(builder);
+        builder.formattedWrite("Thread({:p}@{:p}, isAlive={:s})", this.unsafeGetHandle().handle, cast(void*)this.state, this.isRunning);
     }
 
 private:

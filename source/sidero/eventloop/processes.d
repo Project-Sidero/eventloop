@@ -130,28 +130,30 @@ export @safe nothrow @nogc:
     }
 
     ///
-    void toString(Sink)(scope ref Sink sink) @trusted {
+    void toString(scope ref StringBuilder_UTF8 builder) @trusted {
         if(isNull)
-            sink.formattedWrite("Process(null)");
+            builder.formattedWrite("Process(null)");
         else
-            sink.formattedWrite("Process({:p})", this.id);
+            builder.formattedWrite("Process({:p})", this.id);
     }
 
     ///
-    String_UTF8 toStringPretty() @trusted {
+    String_UTF8 toStringPretty(PrettyPrint pp) @trusted {
         StringBuilder_UTF8 ret = StringBuilder_UTF8();
-        toStringPretty(ret);
+        toStringPretty(ret, pp);
         return ret.asReadOnly;
     }
 
     ///
-    void toStringPretty(Sink)(scope ref Sink sink) @trusted {
+    void toStringPretty(scope ref StringBuilder_UTF8 builder, PrettyPrint pp) @trusted {
+        pp.emitPrefix(builder);
+
         if(isNull)
-            sink.formattedWrite("Process(null)");
+            builder.formattedWrite("Process(null)");
         else if(!this.state.result.isComplete())
-            sink.formattedWrite("Process({:p})", this.id);
+            builder.formattedWrite("Process({:p})", this.id);
         else
-            sink.formattedWrite("Process({:p}, exitCode={:s})", this.id, this.state.result.result().assumeOkay);
+            builder.formattedWrite("Process({:p}, exitCode={:s})", this.id, this.state.result.result().assumeOkay);
     }
 
     ///
@@ -491,8 +493,8 @@ Result!Process executePosix(T)(scope String_UTF8 executable, scope String_UTF8 c
 
                 String_UTF8 text = builder.asReadOnly; // null terminates
 
-                    (envStrings[offset] = text).assumeOkay;
-                    (envStringPtrs[offset++] = cast(char*)text.ptr).assumeOkay;
+                (envStrings[offset] = text).assumeOkay;
+                (envStringPtrs[offset++] = cast(char*)text.ptr).assumeOkay;
             }
         }
 
