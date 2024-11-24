@@ -155,6 +155,11 @@ export @safe nothrow @nogc:
     }
 
     ///
+    static CoroutineResultType complete(ErrorMessage error, string mod = __MODULE__, int line = __LINE__) {
+        return CoroutineResultType(CoroutineResultType.Tag.Error, Stages.init, ErrorInfo(error, mod, line));
+    }
+
+    ///
     static CoroutineResultType complete(ErrorInfo error) {
         return CoroutineResultType(CoroutineResultType.Tag.Error, Stages.init, error);
     }
