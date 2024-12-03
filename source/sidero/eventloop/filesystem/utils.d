@@ -9,8 +9,10 @@ import sidero.base.containers.readonlyslice;
 import sidero.base.text;
 import sidero.base.allocators;
 
+export @safe nothrow @nogc:
+
 ///
-Future!(DynamicArray!ubyte) readAll(FilePath fileName) {
+Future!(DynamicArray!ubyte) readAll(FilePath fileName) @trusted {
     static struct State {
         File file;
         Appender!ubyte buffer;
@@ -87,7 +89,7 @@ Future!(DynamicArray!ubyte) readAll(FilePath fileName) {
 }
 
 ///
-Future!StringBuilder_UTF8 readAllUTF8(FilePath fileName) {
+Future!StringBuilder_UTF8 readAllUTF8(FilePath fileName) @trusted {
     static struct State {
         File file;
         StringBuilder_UTF8 buffer;
@@ -165,7 +167,7 @@ Future!StringBuilder_UTF8 readAllUTF8(FilePath fileName) {
 }
 
 ///
-Future!StringBuilder_UTF16 readAllUTF16(FilePath fileName) {
+Future!StringBuilder_UTF16 readAllUTF16(FilePath fileName) @trusted {
     static struct State {
         File file;
         StringBuilder_UTF16 buffer;
@@ -241,7 +243,7 @@ Future!StringBuilder_UTF16 readAllUTF16(FilePath fileName) {
 }
 
 ///
-Future!StringBuilder_UTF32 readAllUTF32(FilePath fileName) {
+Future!StringBuilder_UTF32 readAllUTF32(FilePath fileName) @trusted {
     static struct State {
         File file;
         StringBuilder_UTF32 buffer;
@@ -337,7 +339,7 @@ GenericCoroutine write(FilePath fileName, DynamicArray!ubyte data) {
 }
 
 ///
-GenericCoroutine write(FilePath fileName, Slice!ubyte data) {
+GenericCoroutine write(FilePath fileName, Slice!ubyte data) @trusted {
     const alreadyExists = fileName.exists;
 
     auto theFile = File.from(fileName, false, true, !alreadyExists);
@@ -376,7 +378,7 @@ GenericCoroutine append(FilePath fileName, DynamicArray!ubyte data) {
 }
 
 ///
-GenericCoroutine append(FilePath fileName, Slice!ubyte data) {
+GenericCoroutine append(FilePath fileName, Slice!ubyte data) @trusted {
     const alreadyExists = fileName.exists;
 
     auto theFile = File.from(fileName, false, true, !alreadyExists, true);
