@@ -71,7 +71,7 @@ FileType getType(FilePath path) @trusted {
                 return FileType.ReparsePoint;
 
             }
-        } else if((fileAttributes & SYMBOLIC_LINK_FLAG_DIRECTORY) != 0)
+        } else if((fileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
             return FileType.Directory;
         else
             return FileType.File;
@@ -407,9 +407,13 @@ void entriesImpl(int Mode)(FilePath path, scope bool delegate(FilePath, FileType
                 const originalLength = directoryBuffer.length;
                 const neededLength = directoryBuffer.length + directoryPath.length + 3; // \*Z
                 if(originalLength < neededLength)
-                    directoryBuffer.length = neededLength - originalLength;
+                    directoryBuffer.length = neededLength;
 
                 wchar[] into = directoryBuffer.unsafeGetLiteral;
+
+                if (usedOfDirectoryBuffer > 1 && into[usedOfDirectoryBuffer-1] == '\0') {
+                    usedOfDirectoryBuffer -= 2;
+                }
 
                 foreach(v; directoryPath) {
                     into[usedOfDirectoryBuffer++] = v;
@@ -426,7 +430,7 @@ void entriesImpl(int Mode)(FilePath path, scope bool delegate(FilePath, FileType
                 usedOfDirectoryBuffer = originalUsed;
 
             WIN32_FIND_DATAW entry;
-            HANDLE iterator = FindFirstFileExW(directoryBuffer.ptr, FINDEX_INFO_LEVELS.FindExInfoBasic, &entry,
+            HANDLE iterator = FindFirstFileExW(directoryBuffer.ptr, FINDEX_INFO_LEVELS.FindExInfoStandard, &entry,
                     FINDEX_SEARCH_OPS.FindExSearchNameMatch, null, FIND_FIRST_EX_LARGE_FETCH);
 
             if(iterator !is INVALID_HANDLE_VALUE) {
@@ -436,50 +440,53 @@ void entriesImpl(int Mode)(FilePath path, scope bool delegate(FilePath, FileType
 
                 do {
                     // minor optimization check point, to prevent needing memory allocation
-                    if((entry.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_DIRECTORY |
-                            FILE_ATTRIBUTE_REPARSE_POINT) > 0) {
                         const nameLength = wcslen(entry.cFileName.ptr);
 
-                        (seenFilePathBuffer ~= String_UTF8(entry.cFileName.ptr[0 .. nameLength])).assumeOkay;
-                        scope(exit)
-                            seenFilePathBuffer.removeComponents(1);
+                        if(!((nameLength == 1 && entry.cFileName.ptr[0] == '.') || (nameLength == 2 &&
+                                entry.cFileName.ptr[0] == '.' && entry.cFileName.ptr[1] == '.'))) {
+                            (seenFilePathBuffer ~= String_UTF8(entry.cFileName.ptr[0 .. nameLength])).assumeOkay;
+                            scope(exit) {
+                                const len = seenFilePathBuffer.components.length;
+                                seenFilePathBuffer.removeComponents(1);
+                                assert(seenFilePathBuffer.components.length < len);
+                            }
 
-                        FilePath seenEntry = seenFilePathBuffer.dup, currentEntry = seenEntry;
-                        bool doNext = true;
-                        bool directoryFollowAllowed = true;
+                            FilePath seenEntry = seenFilePathBuffer.dup, currentEntry = seenEntry;
+                            bool doNext = true;
+                            bool directoryFollowAllowed = true;
 
-                        // NOTE: the following code is more or less the same between the version branches
-                    HandleSeenEntry:
-                        FileType fileType = seenEntry.getType;
+                            // NOTE: the following code is more or less the same between the version branches
+                        HandleSeenEntry:
+                            FileType fileType = seenEntry.getType;
 
-                        if(fileType == FileType.File) {
-                            doNext = del(currentEntry, fileType);
-                        } else if(fileType == FileType.Directory) {
-                            static if(Mode == 0) {
+                            if(fileType == FileType.File) {
                                 doNext = del(currentEntry, fileType);
-                            } else static if(Mode == 1) {
-                                doNext = del(currentEntry, fileType);
-                                if(doNext && directoryFollowAllowed)
-                                    doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
-                            } else static if(Mode == 2) {
-                                if(directoryFollowAllowed)
-                                    doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
-                                if(doNext)
+                            } else if(fileType == FileType.Directory) {
+                                static if(Mode == 0) {
                                     doNext = del(currentEntry, fileType);
-                            }
-                        } else if(fileType == FileType.SymbolicLink) {
-                            auto temp = seenEntry.followSymbolicLink;
-                            directoryFollowAllowed = allowedToFollowIntoSymbolicLink;
+                                } else static if(Mode == 1) {
+                                    doNext = del(currentEntry, fileType);
+                                    if(doNext && directoryFollowAllowed)
+                                        doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
+                                } else static if(Mode == 2) {
+                                    if(directoryFollowAllowed)
+                                        doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
+                                    if(doNext)
+                                        doNext = del(currentEntry, fileType);
+                                }
+                            } else if(fileType == FileType.SymbolicLink) {
+                                auto temp = seenEntry.followSymbolicLink;
+                                directoryFollowAllowed = allowedToFollowIntoSymbolicLink;
 
-                            if(temp) {
-                                seenEntry = temp;
-                                goto HandleSeenEntry;
+                                if(temp) {
+                                    seenEntry = temp;
+                                    goto HandleSeenEntry;
+                                }
                             }
+
+                            if(!doNext)
+                                return false;
                         }
-
-                        if(!doNext)
-                            return false;
-                    }
                 }
                 while(FindNextFileW(iterator, &entry));
             }
@@ -488,6 +495,8 @@ void entriesImpl(int Mode)(FilePath path, scope bool delegate(FilePath, FileType
         }
 
         String_UTF16 path16 = path.toStringUTF16();
+        path16.stripZeroTerminator;
+
         handleDirectory(path16.unsafeGetLiteral);
     } else version(Posix) {
         import core.sys.posix.dirent : DIR, opendir, closedir, readdir, dirent;
