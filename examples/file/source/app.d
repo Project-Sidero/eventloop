@@ -39,8 +39,9 @@ int main() {
         FilePath cwd = currentWorkingDirectory;
         debugWriteln(cwd);
 
-        entriesInDirectoryBeforeRecursively(cwd, (path, type) {
-            debugWriteln(path);
+        entriesInDirectoryBeforeRecursively(cwd, (path, type) @trusted {
+            FilePath rel = path.asRelativeTo(cwd).assumeOkay;
+            writeln(path, " matches? ", rel.matchesGlob("*.d"));
             return true;
         });
     }
