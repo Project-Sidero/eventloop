@@ -401,33 +401,41 @@ void entriesImpl(int Mode)(FilePath path, scope bool delegate(FilePath, FileType
         size_t usedOfDirectoryBuffer;
 
         bool handleDirectory(const(wchar)[] directoryPath) @trusted nothrow @nogc {
-            const originalUsed = usedOfDirectoryBuffer;
+            size_t originalUsed = usedOfDirectoryBuffer;
 
             if(directoryPath.length > 0) {
+                if(originalUsed > 1 && directoryBuffer[originalUsed - 2] == '*' &&
+                        directoryBuffer[originalUsed - 1] == '\0')
+                    originalUsed -= 2;
+                usedOfDirectoryBuffer = originalUsed;
+
+                const needFirstSlash = usedOfDirectoryBuffer > 0 && directoryBuffer[originalUsed - 1] != '\\';
+                const needSecondSlash = directoryPath[$ - 1] != '\\';
+
                 const originalLength = directoryBuffer.length;
-                const neededLength = directoryBuffer.length + directoryPath.length + 3; // \*Z
+                const neededLength = directoryBuffer.length + directoryPath.length + needFirstSlash + needSecondSlash + 2; // *Z
                 if(originalLength < neededLength)
                     directoryBuffer.length = neededLength;
 
                 wchar[] into = directoryBuffer.unsafeGetLiteral;
 
-                if (usedOfDirectoryBuffer > 1 && into[usedOfDirectoryBuffer-1] == '\0') {
-                    usedOfDirectoryBuffer -= 2;
-                }
+                if(needFirstSlash)
+                    into[usedOfDirectoryBuffer++] = '\\';
 
                 foreach(v; directoryPath) {
                     into[usedOfDirectoryBuffer++] = v;
                 }
 
-                if(directoryPath[$ - 1] != '\\')
+                if(needSecondSlash)
                     into[usedOfDirectoryBuffer++] = '\\';
 
                 into[usedOfDirectoryBuffer++] = '*';
                 into[usedOfDirectoryBuffer++] = '\0';
             }
 
-            scope(exit)
+            scope(exit) {
                 usedOfDirectoryBuffer = originalUsed;
+            }
 
             WIN32_FIND_DATAW entry;
             HANDLE iterator = FindFirstFileExW(directoryBuffer.ptr, FINDEX_INFO_LEVELS.FindExInfoStandard, &entry,
@@ -440,53 +448,53 @@ void entriesImpl(int Mode)(FilePath path, scope bool delegate(FilePath, FileType
 
                 do {
                     // minor optimization check point, to prevent needing memory allocation
-                        const nameLength = wcslen(entry.cFileName.ptr);
+                    const nameLength = wcslen(entry.cFileName.ptr);
 
-                        if(!((nameLength == 1 && entry.cFileName.ptr[0] == '.') || (nameLength == 2 &&
-                                entry.cFileName.ptr[0] == '.' && entry.cFileName.ptr[1] == '.'))) {
-                            (seenFilePathBuffer ~= String_UTF8(entry.cFileName.ptr[0 .. nameLength])).assumeOkay;
-                            scope(exit) {
-                                const len = seenFilePathBuffer.components.length;
-                                seenFilePathBuffer.removeComponents(1);
-                                assert(seenFilePathBuffer.components.length < len);
-                            }
-
-                            FilePath seenEntry = seenFilePathBuffer.dup, currentEntry = seenEntry;
-                            bool doNext = true;
-                            bool directoryFollowAllowed = true;
-
-                            // NOTE: the following code is more or less the same between the version branches
-                        HandleSeenEntry:
-                            FileType fileType = seenEntry.getType;
-
-                            if(fileType == FileType.File) {
-                                doNext = del(currentEntry, fileType);
-                            } else if(fileType == FileType.Directory) {
-                                static if(Mode == 0) {
-                                    doNext = del(currentEntry, fileType);
-                                } else static if(Mode == 1) {
-                                    doNext = del(currentEntry, fileType);
-                                    if(doNext && directoryFollowAllowed)
-                                        doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
-                                } else static if(Mode == 2) {
-                                    if(directoryFollowAllowed)
-                                        doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
-                                    if(doNext)
-                                        doNext = del(currentEntry, fileType);
-                                }
-                            } else if(fileType == FileType.SymbolicLink) {
-                                auto temp = seenEntry.followSymbolicLink;
-                                directoryFollowAllowed = allowedToFollowIntoSymbolicLink;
-
-                                if(temp) {
-                                    seenEntry = temp;
-                                    goto HandleSeenEntry;
-                                }
-                            }
-
-                            if(!doNext)
-                                return false;
+                    if(!((nameLength == 1 && entry.cFileName.ptr[0] == '.') || (nameLength == 2 &&
+                            entry.cFileName.ptr[0] == '.' && entry.cFileName.ptr[1] == '.'))) {
+                        (seenFilePathBuffer ~= String_UTF8(entry.cFileName.ptr[0 .. nameLength])).assumeOkay;
+                        scope(exit) {
+                            const len = seenFilePathBuffer.components.length;
+                            seenFilePathBuffer.removeComponents(1);
+                            assert(seenFilePathBuffer.components.length < len);
                         }
+
+                        FilePath seenEntry = seenFilePathBuffer.dup, currentEntry = seenEntry;
+                        bool doNext = true;
+                        bool directoryFollowAllowed = true;
+
+                        // NOTE: the following code is more or less the same between the version branches
+                    HandleSeenEntry:
+                        FileType fileType = seenEntry.getType;
+
+                        if(fileType == FileType.File) {
+                            doNext = del(currentEntry, fileType);
+                        } else if(fileType == FileType.Directory) {
+                            static if(Mode == 0) {
+                                doNext = del(currentEntry, fileType);
+                            } else static if(Mode == 1) {
+                                doNext = del(currentEntry, fileType);
+                                if(doNext && directoryFollowAllowed)
+                                    doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
+                            } else static if(Mode == 2) {
+                                if(directoryFollowAllowed)
+                                    doNext = handleDirectory(entry.cFileName.ptr[0 .. nameLength]);
+                                if(doNext)
+                                    doNext = del(currentEntry, fileType);
+                            }
+                        } else if(fileType == FileType.SymbolicLink) {
+                            auto temp = seenEntry.followSymbolicLink;
+                            directoryFollowAllowed = allowedToFollowIntoSymbolicLink;
+
+                            if(temp) {
+                                seenEntry = temp;
+                                goto HandleSeenEntry;
+                            }
+                        }
+
+                        /+if(!doNext)
+                                return false;+/
+                    }
                 }
                 while(FindNextFileW(iterator, &entry));
             }
