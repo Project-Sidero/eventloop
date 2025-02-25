@@ -35,6 +35,17 @@ int main() {
     }
 
     {
+        import sidero.base.system;
+        FilePath cwd = currentWorkingDirectory;
+        debugWriteln(cwd);
+
+        entriesInDirectoryBeforeRecursively(cwd, (path, type) {
+            debugWriteln(path);
+            return true;
+        });
+    }
+
+    {
         version(UseAsync) {
             registerAsTask(createCo().makeInstance(globalAllocator(), theFile));
         } else {
