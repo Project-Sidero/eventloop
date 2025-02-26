@@ -342,7 +342,7 @@ GenericCoroutine write(FilePath fileName, DynamicArray!ubyte data) {
 GenericCoroutine write(FilePath fileName, Slice!ubyte data) @trusted {
     const alreadyExists = fileName.exists;
 
-    auto theFile = File.from(fileName, false, true, !alreadyExists);
+    auto theFile = File.from(fileName, true, !alreadyExists);
     if(!theFile) {
         InstanceableCoroutine!(void, FutureTriggerStorage!void**) instantiable = acquireInstantiableFuture!(void)();
         FutureTriggerStorage!void* triggerStorage;

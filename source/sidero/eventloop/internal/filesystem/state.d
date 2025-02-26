@@ -56,10 +56,8 @@ struct FileState {
         this.filePath = filePath;
         this.fileRights = fileRights;
 
-        if(fileRights.read) {
-            logAssert(reading.initialize, "Could not initialize reading for file");
-            logAssert(rawReading.initialize, "Could not initialize raw reading for file");
-        }
+        logAssert(reading.initialize, "Could not initialize reading for file");
+        logAssert(rawReading.initialize, "Could not initialize raw reading for file");
 
         if(fileRights.write || fileRights.forceAppend)
             logAssert(rawWriting.initialize, "Could not initialize raw writing for file");

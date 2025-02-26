@@ -81,11 +81,8 @@ ErrorResult openFile(File file) @trusted {
     version(Windows) {
         String_UTF16 path16 = file.state.filePath.toStringUTF16();
 
-        DWORD access;
+        DWORD access = GENERIC_READ;
         DWORD shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-
-        if(file.state.fileRights.read)
-            access = GENERIC_READ;
 
         if(file.state.fileRights.write)
             access |= GENERIC_WRITE;

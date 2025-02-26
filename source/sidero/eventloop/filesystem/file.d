@@ -19,8 +19,6 @@ enum FileHandleIdentifier = SystemHandleType.from("file");
 ///
 struct FileRights {
     ///
-    bool read;
-    ///
     bool write;
     /// If file exists, it will fail to open.
     bool create;
@@ -524,9 +522,9 @@ export @safe nothrow @nogc:
     }
 
     ///
-    static Result!File from(FilePath path, bool read = true, bool write = false, bool create = false, bool forceAppend = false,
+    static Result!File from(FilePath path, bool write = false, bool create = false, bool forceAppend = false,
             bool createAsExecutable = false) {
-        return File.from(path, FileRights(read, write, create, forceAppend, createAsExecutable));
+        return File.from(path, FileRights(write, create, forceAppend, createAsExecutable));
     }
 
     ///
@@ -537,8 +535,6 @@ export @safe nothrow @nogc:
         if(!ensureItIsSetup)
             return typeof(return)(UnknownPlatformBehaviorException("Could not start filesystem and workers"));
 
-        if(!rights.read && !rights.write)
-            return typeof(return)(MalformedInputException("Expected file rights must include at least one requested"));
         ulong estimatedSize;
 
         {
