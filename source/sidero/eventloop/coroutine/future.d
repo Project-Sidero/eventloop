@@ -6,6 +6,9 @@ import sidero.base.datetime.duration;
 import sidero.base.errors;
 
 ///
+alias FutureError = Future!void;
+
+///
 struct Future(ResultType) {
     package(sidero.eventloop.coroutine) {
         CoroutinePair!ResultType pair;

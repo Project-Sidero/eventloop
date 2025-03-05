@@ -1,6 +1,7 @@
 module sidero.eventloop.internal.networking.openssl;
 import sidero.eventloop.internal.networking.state;
 import sidero.eventloop.threads;
+import sidero.eventloop.coroutine.future_completion;
 import sidero.base.bindings.openssl.libcrypto;
 import sidero.base.bindings.openssl.libssl;
 import sidero.base.containers.readonlyslice;
@@ -204,9 +205,6 @@ struct OpenSSLEncryptionStateImpl {
             return typeof(return).init;
 
         socketState.rawReading.readRaw((rawReadBuffer) @trusted {
-
-        
-
             {
                 updateRawReadBuffer(socketState, rawReadBuffer.unsafeGetLiteral);
                 logger.trace("Encrypt raw read buffer ", bufRawRead, rawReadBuffer.toString());
@@ -312,10 +310,14 @@ struct OpenSSLEncryptionStateImpl {
             if(err == 1) {
                 socketState.encryption.negotiating = false;
                 ret = true;
+
+                socketState.encryption.encryptionSetupDoneSuccess();
                 logger.debug_("Socket openssl TLS finished negotiating ", socketState.handle, " on ", Thread.self);
             } else {
                 const error = SSL_get_error(openSSL, err);
                 ret = false;
+
+                socketState.encryption.encryptionSetupDoneFailure("Could not negotitate encyption");
 
                 switch(error) {
                 case SSL_ERROR_WANT_READ:

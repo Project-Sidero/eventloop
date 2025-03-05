@@ -199,15 +199,23 @@ export @safe nothrow @nogc:
 
         See_Also: addEncryption, addEncryptionServer
     */
-    ErrorResult addEncryptionClient(Hostname sniHostname = Hostname.init, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
+    Result!FutureError addEncryptionClient(Hostname sniHostname = Hostname.init, EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
             Certificate certificate = Certificate.init, bool validateCertificates = true) scope {
         if(!isAlive())
-            return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
+            return typeof(return)(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if(!state.encryption.addEncryption(this.state, sniHostname, certificate, Closure!(Certificate, String_UTF8)
-                .init, encryption, validateCertificates))
-            return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
-        return ErrorResult.init;
+        Future!void ret;
+        bool success;
+
+        state.guard(() @safe {
+            success = state.encryption.addEncryption(this.state, sniHostname, certificate, Closure!(Certificate,
+                String_UTF8).init, encryption, validateCertificates);
+            ret = state.encryption.encryptionSetupFuture;
+        });
+
+        if(!success)
+            return typeof(return)(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
+        return typeof(return)(ret);
     }
 
     /**
@@ -215,14 +223,23 @@ export @safe nothrow @nogc:
 
         See_Also: addEncryption, addEncryptionClient
     */
-    ErrorResult addEncryptionServer(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
+    Result!FutureError addEncryptionServer(EncryptionProtocol encryption = EncryptionProtocol.Best_TLS,
             Certificate fallbackCertificate = Certificate.init, Closure!(Certificate, String_UTF8) acquireCertificateForSNI) scope {
         if(!isAlive())
-            return ErrorResult(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
+            return typeof(return)(NullPointerException("Socket is not currently alive, so cannot be configured to have encryption"));
 
-        if(!state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate, acquireCertificateForSNI, encryption, true))
-            return ErrorResult(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
-        return ErrorResult.init;
+        Future!void ret;
+        bool success;
+
+        state.guard(() @safe {
+            success = state.encryption.addEncryption(this.state, Hostname.init, fallbackCertificate,
+                acquireCertificateForSNI, encryption, true);
+            ret = state.encryption.encryptionSetupFuture;
+        });
+
+        if(!success)
+            return typeof(return)(UnknownPlatformBehaviorException("Could not reinitialize encryption"));
+        return typeof(return)(ret);
     }
 
     ///

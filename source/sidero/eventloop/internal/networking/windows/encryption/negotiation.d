@@ -2,6 +2,7 @@ module sidero.eventloop.internal.networking.windows.encryption.negotiation;
 import sidero.eventloop.internal.networking.windows.encryption.state;
 import sidero.eventloop.internal.networking.windows.mechanism : logger;
 import sidero.eventloop.internal.networking.state.socket;
+import sidero.eventloop.coroutine.future_completion;
 import sidero.eventloop.threads;
 import sidero.eventloop.certificates;
 import sidero.base.synchronization.mutualexclusion;
@@ -91,6 +92,9 @@ struct NegotationState {
                     if (ss != SEC_E_OK) {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " with ", ss, " on ", Thread.self);
                         socketState.close(true);
+                    } else {
+                        socketState.encryption.encryptionSetupDoneSuccess();
+                        logger.debug_("Completed socket server negotation ", socketState.handle, " on ", Thread.self);
                     }
                 }
 
@@ -179,6 +183,7 @@ struct NegotationState {
                         logger.warning("Unable to negotiate socket encryption ", socketState.handle, " with ", ss, " on ", Thread.self);
                         socketState.close(true);
                     } else {
+                        socketState.encryption.encryptionSetupDoneSuccess();
                         logger.debug_("Completed socket client negotation ", socketState.handle, " on ", Thread.self);
                     }
                 }

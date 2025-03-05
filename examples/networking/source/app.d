@@ -333,6 +333,7 @@ InstanceableCoroutine!(void, Socket) createClientCo() {
             }
 
             assert(socketTLSError);
+            // we don't need to care about if it was successful or not
         }
 
         cast(void)state.socket.write(String_ASCII("GET / HTTP/1.1\r\n"));
@@ -415,6 +416,7 @@ void handleSyncClient(Socket socket) @trusted {
             }
 
             assert(socketTLSError);
+            // we don't need to care about if it was successful or not
         }
     }
 

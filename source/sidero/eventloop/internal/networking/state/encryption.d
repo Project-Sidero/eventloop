@@ -4,11 +4,14 @@ import sidero.eventloop.internal.networking.state.socket;
 import sidero.eventloop.sockets;
 import sidero.eventloop.certificates;
 import sidero.eventloop.closure.callable;
+import sidero.eventloop.coroutine.future;
+import sidero.eventloop.coroutine.future_completion;
 import sidero.eventloop.threads;
 import sidero.base.path.hostname;
 import sidero.base.containers.readonlyslice;
 import sidero.base.containers.dynamicarray;
 import sidero.base.text;
+import sidero.base.allocators;
 
 version(none) {
     struct EncryptionStateImpl {
@@ -48,6 +51,8 @@ struct EncryptionState {
         bool validateCertificates;
         size_t bufferSize;
 
+        FutureTriggerStorage!void* encryptionSetupFutureTrigger;
+
         version(Windows) {
             import sidero.eventloop.internal.networking.windows.encryption.state;
 
@@ -58,6 +63,7 @@ struct EncryptionState {
     }
 
     Hostname sniHostname;
+    Future!void encryptionSetupFuture;
     bool enabled;
     bool negotiating;
 
@@ -91,6 +97,15 @@ struct EncryptionState {
 
         this.enabled = true;
         this.negotiating = true;
+
+        if (encryptionSetupFutureTrigger is null) {
+            auto instantiable = acquireInstantiableFuture!void();
+            encryptionSetupFuture = instantiable.makeInstance(RCAllocator.init, &encryptionSetupFutureTrigger);
+
+            auto errorResult = waitOnTrigger(encryptionSetupFuture, encryptionSetupFutureTrigger);
+            assert(errorResult);
+        }
+
         return true;
     }
 
@@ -294,7 +309,29 @@ struct EncryptionState {
         return ret;
     }
 
+    void encryptionSetupDoneSuccess() scope {
+        if(encryptionSetupFutureTrigger is null)
+            return;
+
+        cast(void)trigger(encryptionSetupFutureTrigger);
+        encryptionSetupFutureTrigger = null;
+        encryptionSetupFuture = Future!void.init;
+    }
+
+    void encryptionSetupDoneFailure(string message, string m = __MODULE__, int line = __LINE__) scope {
+        import sidero.base.errors.stock;
+
+        if(encryptionSetupFutureTrigger is null)
+            return;
+
+        cast(void)trigger!void(encryptionSetupFutureTrigger, UnknownPlatformBehaviorException(message), m, line);
+        encryptionSetupFutureTrigger = null;
+        encryptionSetupFuture = Future!void.init;
+    }
+
     void cleanup(scope SocketState* socketState) scope {
+        encryptionSetupDoneFailure("Cleaning up socket encryption, could not finish negotiating");
+
         final switch(encryptionEngine) {
         case Certificate.Type.None:
         case Certificate.Type.Default:
