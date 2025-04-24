@@ -73,6 +73,8 @@ struct PlatformSocket {
 
 ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @trusted {
     version (Posix) {
+        import sidero.base.internal.posix;
+
         SocketState* socketState = socket.state;
 
         enum SockAddress4Size = sockaddr_in.sizeof;
@@ -148,6 +150,12 @@ ErrorResult connectToSpecificAddress(Socket socket, NetworkAddress address) @tru
             } else {
                 logger.debug_("Connected to port successfully ", socketState.handle, " on ", Thread.self);
             }
+        }
+
+        if (!applyPerSocketFlag(socketState.fd)) {
+            logger.notice("Could not apply Posix socket options needed for writing to ", socketState.handle, " with error ", errno, " on ", Thread.self);
+            close(socketState.fd);
+            return ErrorResult(UnknownPlatformBehaviorException("Could not apply posix socket options needed for writing"));
         }
 
         {
@@ -248,11 +256,12 @@ void forceClose(scope SocketState* socketState) @trusted {
 bool tryWriteMechanism(scope SocketState* socketState, ubyte[] buffer) @trusted {
     version (Posix) {
         import sidero.base.internal.atomic;
+        import sidero.base.internal.posix;
 
         if (atomicLoad(socketState.isClosed))
             return false;
 
-        const err = send(socketState.fd, buffer.ptr, buffer.length, 0);
+        const err = writeOnSocket(socketState.fd, buffer.ptr, buffer.length, 0);
 
         if (err >= 0) {
             logger.debug_("Immediate completion of write ", socketState.handle, " on ", Thread.self);

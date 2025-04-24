@@ -294,6 +294,7 @@ void onAccept(ListenSocketPair listenSocketPair) @trusted {
     version(Posix) {
         import sidero.eventloop.control : registerAsTask;
         import sidero.eventloop.internal.event_waiting;
+        import sidero.base.internal.posix;
 
         assert(listenSocketPair.perSock);
         short addressFamily, socketType, socketProtocol;
@@ -349,6 +350,12 @@ void onAccept(ListenSocketPair listenSocketPair) @trusted {
         if(acceptedSocket == -1) {
             logger.error("Error could not accept socket with error ", listenSocketPair.perSock.handle, " for ",
                     listenSocketPair.perSock.handle, " with error ", errno, " on ", Thread.self);
+            return;
+        }
+
+        if (!applyPerSocketFlag(acceptedSocket)) {
+            logger.notice("Could not apply Posix socket options needed for writing to ", acceptedSocket, " with error ", errno, " on ", Thread.self);
+            close(acceptedSocket);
             return;
         }
 

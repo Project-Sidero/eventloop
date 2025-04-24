@@ -92,11 +92,12 @@ void forceClose(scope FileState* fileState) {
 bool tryWriteMechanism(scope FileState* fileState, ubyte[] buffer, long position) {
     version(Posix) {
         import sidero.base.internal.atomic;
+        import sidero.base.internal.posix;
 
         if(atomicLoad(fileState.isClosed))
             return false;
 
-        const err = pwrite(fileState.fd, buffer.ptr, buffer.length, position);
+        const err = writeToOffset(fileState.fd, buffer.ptr, buffer.length, position);
 
         if(err >= 0) {
             logger.debug_("Immediate completion of write ", fileState.handle, " on ", Thread.self);

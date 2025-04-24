@@ -907,10 +907,11 @@ struct State {
             rawWriting.complete(&this, canBeWritten);
             return true;
         } else version(Posix) {
+            import sidero.base.internal.posix;
             import core.sys.posix.unistd;
             import core.stdc.errno;
 
-            auto canBeWritten = write(cast(int)this.writeHandle, data.ptr, data.length);
+            auto canBeWritten = writeAppend(cast(int)this.writeHandle, data.ptr, data.length);
             logger.trace("written ", canBeWritten, " errno ", errno);
 
             if(canBeWritten > 0) {
